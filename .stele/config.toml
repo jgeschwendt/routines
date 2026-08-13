@@ -1,0 +1,4 @@
+[exhaustiveness]
+# .github is CI wiring, docs is the design plan + plate — neither is code the
+# router reaches.
+exclude = [".github", "docs"]

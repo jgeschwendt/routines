@@ -1,0 +1,183 @@
+{
+  "adrs": {},
+  "landmarks": {
+    "bash-3-2": {
+      "file": "bin/routine",
+      "line": 3,
+      "node": "bin"
+    },
+    "catch-retry": {
+      "file": "bin/routine",
+      "line": 235,
+      "node": "bin"
+    },
+    "due-derivation": {
+      "file": "bin/routine",
+      "line": 128,
+      "node": "bin"
+    },
+    "due-tick": {
+      "file": "bin/routine",
+      "line": 370,
+      "node": "bin"
+    },
+    "last-run-contract": {
+      "file": "bin/routine",
+      "line": 196,
+      "node": "bin"
+    }
+  },
+  "nodes": {
+    "/": {
+      "budget": null,
+      "claims": [],
+      "commands": {
+        "test": "/bin/bash test/routine.test.sh"
+      },
+      "contains": [
+        "bin",
+        "routines",
+        "test"
+      ],
+      "declared": {
+        "allow": [],
+        "decided_by": [],
+        "depends": []
+      },
+      "extracted": {
+        "imports": []
+      },
+      "id": "/",
+      "kind": "system",
+      "purpose": "Executable markdown routines — bin/routine runs a document's fenced sh blocks under schedule, lock, and timeout; claude repairs failures; launchd and CI are dumb ticks ending at run --due."
+    },
+    "bin": {
+      "budget": null,
+      "claims": [
+        {
+          "anchor": "lm:bash-3-2",
+          "enforced_by": null,
+          "id": "bash-3-2",
+          "kind": "hazard",
+          "resolved": "bin/routine:3",
+          "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
+          "verified": {
+            "digest": null,
+            "sha": "9ce5be3082281726d8570600d0e4add9aa988300"
+          }
+        },
+        {
+          "anchor": "lm:catch-retry",
+          "enforced_by": null,
+          "id": "catch-retry",
+          "kind": "invariant",
+          "resolved": "bin/routine:235",
+          "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
+          "verified": {
+            "digest": null,
+            "sha": "9ce5be3082281726d8570600d0e4add9aa988300"
+          }
+        },
+        {
+          "anchor": "lm:due-derivation",
+          "enforced_by": null,
+          "id": "due-derivation",
+          "kind": "invariant",
+          "resolved": "bin/routine:128",
+          "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
+          "verified": {
+            "digest": null,
+            "sha": "9ce5be3082281726d8570600d0e4add9aa988300"
+          }
+        },
+        {
+          "anchor": "lm:due-tick",
+          "enforced_by": null,
+          "id": "due-tick",
+          "kind": "invariant",
+          "resolved": "bin/routine:370",
+          "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
+          "verified": {
+            "digest": null,
+            "sha": "9ce5be3082281726d8570600d0e4add9aa988300"
+          }
+        },
+        {
+          "anchor": "lm:last-run-contract",
+          "enforced_by": null,
+          "id": "last-run-contract",
+          "kind": "invariant",
+          "resolved": "bin/routine:196",
+          "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
+          "verified": {
+            "digest": null,
+            "sha": "9ce5be3082281726d8570600d0e4add9aa988300"
+          }
+        }
+      ],
+      "commands": {},
+      "contains": [],
+      "declared": {
+        "allow": [],
+        "decided_by": [],
+        "depends": []
+      },
+      "extracted": {
+        "imports": []
+      },
+      "id": "bin",
+      "kind": "container",
+      "purpose": "The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run."
+    },
+    "routines": {
+      "budget": null,
+      "claims": [
+        {
+          "anchor": "routines/heartbeat.md#heartbeat",
+          "enforced_by": null,
+          "id": "heartbeat",
+          "kind": "invariant",
+          "resolved": "routines/heartbeat.md:7",
+          "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
+          "verified": {
+            "digest": null,
+            "sha": "9ce5be3082281726d8570600d0e4add9aa988300"
+          }
+        }
+      ],
+      "commands": {},
+      "contains": [],
+      "declared": {
+        "allow": [],
+        "decided_by": [],
+        "depends": []
+      },
+      "extracted": {
+        "imports": []
+      },
+      "id": "routines",
+      "kind": "container",
+      "purpose": "The routine documents — frontmatter (schedule, timeout, requires, on_error), prose written as the error-handler's context, fenced sh blocks as the mechanics."
+    },
+    "test": {
+      "budget": null,
+      "claims": [],
+      "commands": {
+        "test": "/bin/bash test/routine.test.sh"
+      },
+      "contains": [],
+      "declared": {
+        "allow": [],
+        "decided_by": [],
+        "depends": []
+      },
+      "extracted": {
+        "imports": []
+      },
+      "id": "test",
+      "kind": "container",
+      "purpose": "Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about six seconds."
+    }
+  },
+  "version": 1
+}

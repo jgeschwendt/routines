@@ -1,5 +1,6 @@
 #!/bin/bash
 # routine — executable markdown on rails. Design: docs/PLAN.md.
+# stele:landmark bash-3-2
 set -u
 
 # ─── environment ──────────────────────────────────────────────────────────────
@@ -124,6 +125,7 @@ expand() { # $1=field $2=lo $3=hi — prints the expanded value set
   printf '%s\n' "$out"
 }
 
+# stele:landmark due-derivation
 next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly after
   local start="$1" f_min f_hour f_dom f_mon f_dow mins hours doms mons dows
   local day0 d=0 de mm dd ww ok h m t
@@ -191,6 +193,7 @@ divider() { # $1=ascii label — 80 columns
   printf '%s %s %s\n' "$(dash 8)" "$1" "$(dash $((70 - ${#1})))"
 }
 
+# stele:landmark last-run-contract
 on_exit() {
   local rc=$? fin
   if [ -n "${WD_PID:-}" ]; then kill "$WD_PID" 2>/dev/null; fi
@@ -229,6 +232,7 @@ exec_block() { # $1=index $2=capture file
   wait "$p" 2>/dev/null
 }
 
+# stele:landmark catch-retry
 catch_block() { # $1=index $2=capture file $3=block exit code
   local prompt cout p rc
   if [ "$ON_ERROR" = fail ]; then return "$3"; fi
@@ -363,6 +367,7 @@ cmd_run() { # $1=name
   exit "$rc"
 }
 
+# stele:landmark due-tick
 cmd_due() {
   local f name rc=0
   for f in "$ROUTINE_DIR"/*.md; do

@@ -97,7 +97,7 @@ Scale: the runner is ~200 lines of bash plus two small generators (plist, workfl
 
 ## Migration (follow-on, not this build)
 
-The three `~/.orrery/routines` entries each become `routines/<slug>.md`: `command` entries inline as a single block; skill-audit's prompt.txt becomes the document's prose plus a claude block; `default_hash` dies — git tracks drift once the prompt lives in the repo. `~/README.routine.md` is already this shape — prose procedure over a mechanics script — the standing proof of the format.
+Existing ad-hoc routines port one per document: a scheduled shell command inlines as a single block; an unattended-claude prompt becomes the document's prose plus a claude block, with git tracking its drift once it lives in the repo. A prose procedure paired with a mechanics script is already this shape — the standing proof of the format.
 
 ## Rejected alternatives
 
