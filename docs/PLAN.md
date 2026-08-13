@@ -57,7 +57,7 @@ The agent never steers control flow — the deterministic retry is the verdict, 
 
 ## Due-ness: derived, never matched
 
-A routine is due when `next-fire-after(last started run, schedule) ≤ now`; a missing `last-run.json` means due. One evaluator buys three things:
+A routine is due when `next-fire-after(last started run, schedule) ≤ now`; a missing `last-run.json` means due. Cron evaluates in UTC — one clock for launchd, CI, and the shell. One evaluator buys three things:
 
 - CI correctness under delayed or skipped Actions ticks — compare against the last run, not "does now match the expr".
 - launchd catch-up after sleep, for free.
@@ -72,7 +72,7 @@ A routine is due when `next-fire-after(last started run, schedule) ≤ now`; a m
 
 ## `routine run` — the shared wrapper
 
-frontmatter → `requires` gate (exit 78, loud list of missing vars) → lock (`mkdir .state/<name>/lock`, pid inside; live pid ⇒ exit 75, dead pid ⇒ reap) → bash-native watchdog timeout (SIGTERM, SIGKILL after grace; exit 124) → blocks under the try/catch contract → `last-run.json` `{started, finished, exit, duration}` written on every path (trap) → the failing block's exit passes through.
+frontmatter → `requires` gate (exit 78, loud list of missing vars) → lock (`mkdir .state/<name>/lock`, pid inside; live pid ⇒ exit 75, dead pid ⇒ reap) → bash-native watchdog timeout (SIGTERM, SIGKILL after grace; exit 124) → blocks under the try/catch contract → `last-run.json` `{started, started_epoch, finished, exit, duration}` written on every path (trap) → the failing block's exit passes through.
 
 ## Verbs
 

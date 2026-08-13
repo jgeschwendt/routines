@@ -1,0 +1,484 @@
+#!/bin/bash
+# routine — executable markdown on rails. Design: docs/PLAN.md.
+set -u
+
+# ─── environment ──────────────────────────────────────────────────────────────
+
+SELF_DIR=$(cd "$(dirname "$0")" && pwd)
+SELF="$SELF_DIR/$(basename "$0")"
+
+abspath() { # $1=path
+  case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$PWD/$1" ;; esac
+}
+
+ROUTINE_REPO=$(abspath "${ROUTINE_REPO:-$(cd "$SELF_DIR/.." && pwd)}")
+ROUTINE_DIR=$(abspath "${ROUTINE_DIR:-$ROUTINE_REPO/routines}")
+ROUTINE_STATE=$(abspath "${ROUTINE_STATE:-$ROUTINE_REPO/.state}")
+ROUTINE_AGENTS_DIR=$(abspath "${ROUTINE_AGENTS_DIR:-${HOME:-/tmp}/Library/LaunchAgents}")
+ROUTINE_LAUNCHCTL="${ROUTINE_LAUNCHCTL:-launchctl}"
+ROUTINE_CLAUDE="${ROUTINE_CLAUDE:-claude}"
+export ROUTINE_REPO ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
+export ROUTINE_LAUNCHCTL ROUTINE_CLAUDE
+
+if date -u -r 0 +%Y >/dev/null 2>&1; then DATE_FLAVOR=bsd; else DATE_FLAVOR=gnu; fi
+
+now() { printf '%s\n' "${ROUTINE_NOW:-$(date +%s)}"; }
+
+epoch_fmt() { # $1=epoch $2=strftime format — always UTC
+  if [ "$DATE_FLAVOR" = bsd ]; then date -u -r "$1" +"$2"; else date -u -d "@$1" +"$2"; fi
+}
+
+die() { # $1=exit code, rest=message
+  local code="$1"; shift
+  printf 'routine: %s\n' "$*" >&2
+  exit "$code"
+}
+
+usage() {
+  cat <<'EOF'
+routine — executable markdown on rails
+
+  routine run <name>     run one routine document
+  routine run --due      run every due routine (silent when none are)
+  routine status         schedule × due? × last run, one row per routine
+  routine install        install the launchd tick agent (com.routines.due)
+  routine uninstall      remove it
+  routine sync-ci        (re)write .github/workflows/routines.yml
+  routine help           this text
+
+exit: 64 usage/unknown routine · 75 lock held · 78 requires missing ·
+      124 timeout · else the failing block's code
+
+env: ROUTINE_REPO ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
+     ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW
+EOF
+}
+
+# ─── document parsing ─────────────────────────────────────────────────────────
+
+fm_get() { # $1=doc $2=key — flat key: value from the leading --- fence pair
+  awk -v want="$2" '
+    NR == 1 { if ($0 != "---") exit; inside = 1; next }
+    inside && $0 == "---" { exit }
+    inside {
+      i = index($0, ":"); if (i == 0) next
+      k = substr($0, 1, i - 1); v = substr($0, i + 1)
+      sub(/[ \t]+#.*$/, "", v)
+      gsub(/^[ \t]+|[ \t]+$/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", v)
+      if (k == want) { print v; exit }
+    }
+  ' "$1"
+}
+
+extract_blocks() { # $1=doc $2=outdir — writes NNN.sh per block, prints the count
+  awk -v dir="$2" '
+    inb {
+      if ($0 ~ /^```/) { if (cur != "") close(cur); cur = ""; inb = 0; next }
+      if (cur != "") print $0 >> cur
+      next
+    }
+    /^```/ {
+      tag = $0; sub(/^```[ \t]*/, "", tag); sub(/[ \t]+$/, "", tag)
+      inb = 1; cur = ""
+      if (tag == "sh" || tag == "bash") {
+        n++; cur = sprintf("%s/%03d.sh", dir, n); printf "" > cur
+      }
+    }
+    END { print n + 0 }
+  ' "$1"
+}
+
+json_get() { # $1=file $2=key — reads the single-line last-run.json
+  [ -f "$1" ] || return 1
+  sed -n 's/.*"'"$2"'":"\{0,1\}\([^",}]*\)"\{0,1\}.*/\1/p' "$1"
+}
+
+# ─── cron ─────────────────────────────────────────────────────────────────────
+
+inset() { # $1=set $2=value
+  case " $1 " in *" $2 "*) return 0 ;; esac
+  return 1
+}
+
+expand() { # $1=field $2=lo $3=hi — prints the expanded value set
+  local fld="$1" lo="$2" hi="$3" out="" part step s e i old="$IFS"
+  set -f; IFS=','; set -- $fld; IFS="$old"; set +f
+  for part in "$@"; do
+    step=1
+    case "$part" in */*) step="${part##*/}"; part="${part%%/*}" ;; esac
+    case "$step" in ""|*[!0-9]*) return 1 ;; esac
+    [ "$((10#$step))" -ge 1 ] || return 1
+    case "$part" in
+      '*') s="$lo"; e="$hi" ;;
+      *-*) s="${part%%-*}"; e="${part#*-}" ;;
+      *) s="$part"; e="$part"; if [ "$((10#$step))" -gt 1 ]; then e="$hi"; fi ;;
+    esac
+    case "$s" in ""|*[!0-9]*) return 1 ;; esac
+    case "$e" in ""|*[!0-9]*) return 1 ;; esac
+    s=$((10#$s)); e=$((10#$e)); step=$((10#$step))
+    [ "$s" -ge "$lo" ] && [ "$e" -le "$hi" ] && [ "$s" -le "$e" ] || return 1
+    i="$s"
+    while [ "$i" -le "$e" ]; do out="$out $i"; i=$((i + step)); done
+  done
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out"
+}
+
+next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly after
+  local start="$1" f_min f_hour f_dom f_mon f_dow mins hours doms mons dows
+  local day0 d=0 de mm dd ww ok h m t
+  set -f; set -- $2; set +f
+  [ $# -eq 5 ] || return 1
+  f_min="$1" f_hour="$2" f_dom="$3" f_mon="$4" f_dow="$5"
+  mins=$(expand "$f_min" 0 59) || return 1
+  hours=$(expand "$f_hour" 0 23) || return 1
+  doms=$(expand "$f_dom" 1 31) || return 1
+  mons=$(expand "$f_mon" 1 12) || return 1
+  dows=$(expand "$f_dow" 0 7) || return 1
+  case " $dows " in *" 7 "*) dows="$dows 0" ;; esac
+  day0=$((start - start % 86400))
+  while [ "$d" -le 366 ]; do
+    de=$((day0 + d * 86400)); d=$((d + 1))
+    set -- $(epoch_fmt "$de" '%m %d %w')
+    mm=$((10#$1)); dd=$((10#$2)); ww=$((10#$3))
+    inset "$mons" "$mm" || continue
+    ok=0
+    if [ "$f_dom" != '*' ] && [ "$f_dow" != '*' ]; then
+      inset "$doms" "$dd" && ok=1
+      inset "$dows" "$ww" && ok=1
+    elif [ "$f_dom" != '*' ]; then inset "$doms" "$dd" && ok=1
+    elif [ "$f_dow" != '*' ]; then inset "$dows" "$ww" && ok=1
+    else ok=1
+    fi
+    [ "$ok" -eq 1 ] || continue
+    h=0
+    while [ "$h" -le 23 ]; do
+      if inset "$hours" "$h"; then
+        m=0
+        while [ "$m" -le 59 ]; do
+          if inset "$mins" "$m"; then
+            t=$((de + h * 3600 + m * 60))
+            if [ "$t" -gt "$start" ]; then printf '%s\n' "$t"; return 0; fi
+          fi
+          m=$((m + 1))
+        done
+      fi
+      h=$((h + 1))
+    done
+  done
+  return 1
+}
+
+is_due() { # $1=name — true when the schedule's next fire has passed
+  local doc="$ROUTINE_DIR/$1.md" sched se nxt
+  sched=$(fm_get "$doc" schedule)
+  [ -n "$sched" ] || return 1
+  se=$(json_get "$ROUTINE_STATE/$1/last-run.json" started_epoch) || return 0
+  case "$se" in ""|*[!0-9]*) return 0 ;; esac
+  nxt=$(next_fire_after "$se" "$sched") || return 1
+  [ "$nxt" -le "$(now)" ]
+}
+
+# ─── run ──────────────────────────────────────────────────────────────────────
+
+dash() { # $1=count
+  local n="$1" s=""
+  while [ "$n" -gt 0 ]; do s="${s}─"; n=$((n - 1)); done
+  printf '%s' "$s"
+}
+
+divider() { # $1=ascii label — 80 columns
+  printf '%s %s %s\n' "$(dash 8)" "$1" "$(dash $((70 - ${#1})))"
+}
+
+on_exit() {
+  local rc=$? fin
+  if [ -n "${WD_PID:-}" ]; then kill "$WD_PID" 2>/dev/null; fi
+  if [ "${OWN_LOCK:-0}" = 1 ]; then rm -rf "$LOCK_DIR"; fi
+  if [ "${WRITE_LAST:-0}" = 1 ]; then
+    mkdir -p "$STATE_DIR"
+    fin=$(now)
+    printf '{"started":"%s","started_epoch":%s,"finished":"%s","exit":%s,"duration":%s}\n' \
+      "$STARTED_ISO" "$STARTED_EPOCH" "$(epoch_fmt "$fin" '%Y-%m-%dT%H:%M:%SZ')" \
+      "$rc" "$((fin - STARTED_EPOCH))" > "$STATE_DIR/last-run.json"
+  fi
+  if [ -n "${RUN_TMP:-}" ]; then rm -rf "$RUN_TMP"; fi
+  exit "$rc"
+}
+
+acquire_lock() {
+  local p
+  mkdir -p "$STATE_DIR"
+  if mkdir "$LOCK_DIR" 2>/dev/null; then printf '%s\n' $$ > "$LOCK_DIR/pid"; return 0; fi
+  p=$(cat "$LOCK_DIR/pid" 2>/dev/null)
+  if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then LOCK_PID="$p"; return 1; fi
+  rm -rf "$LOCK_DIR"
+  if mkdir "$LOCK_DIR" 2>/dev/null; then printf '%s\n' $$ > "$LOCK_DIR/pid"; return 0; fi
+  LOCK_PID="${p:-unknown}"; return 1
+}
+
+kill_tree() { # $1=signal $2=pid — the pid leads its own process group (set -m)
+  kill -"$1" -"$2" 2>/dev/null || kill -"$1" "$2" 2>/dev/null
+}
+
+exec_block() { # $1=index $2=capture file
+  ROUTINE_NAME="$RNAME" ROUTINE_STATE_DIR="$STATE_DIR" \
+    /bin/bash -e "$BLK_DIR/$(printf '%03d' "$1").sh" > "$2" 2>&1 &
+  local p=$!
+  printf '%s\n' "$p" > "$RUN_TMP/child.pid"
+  wait "$p" 2>/dev/null
+}
+
+catch_block() { # $1=index $2=capture file $3=block exit code
+  local prompt cout p rc
+  if [ "$ON_ERROR" = fail ]; then return "$3"; fi
+  if ! command -v "$ROUTINE_CLAUDE" >/dev/null 2>&1; then
+    printf 'catch degraded: claude unavailable\n'
+    return "$3"
+  fi
+  divider "block $1 · catch"
+  prompt="You are running unattended inside routine '$RNAME', invoked by bin/routine.
+Block $1 of the document below exited $3.
+
+=== routine document: $DOC ===
+$(cat "$DOC")
+=== end document ===
+
+=== last 200 lines of block $1 output ===
+$(tail -n 200 "$2")
+=== end output ===
+
+Diagnose the failure and repair state only. Do NOT continue the routine and do
+not run the remaining blocks — the runner retries block $1 once after you exit."
+  cout="$RUN_TMP/catch-$1.out"
+  "$ROUTINE_CLAUDE" --model opus --permission-mode=auto --no-session-persistence \
+    -p "$prompt" > "$cout" 2>&1 &
+  p=$!
+  printf '%s\n' "$p" > "$RUN_TMP/child.pid"
+  wait "$p" 2>/dev/null
+  cat "$cout"
+  divider "block $1 · retry"
+  exec_block "$1" "$2"; rc=$?
+  cat "$2"
+  return "$rc"
+}
+
+run_sequence() {
+  trap - EXIT INT TERM
+  set -m                        # each block leads its own group — killable whole
+  local i=1 code out
+  while [ "$i" -le "$NBLOCKS" ]; do
+    out="$RUN_TMP/blk-$i.out"
+    divider "block $i"
+    exec_block "$i" "$out"; code=$?
+    cat "$out"
+    divider "block $i · exit $code"
+    if [ -f "$RUN_TMP/timedout" ]; then exit 124; fi
+    if [ "$code" -ne 0 ]; then
+      catch_block "$i" "$out" "$code"; code=$?
+      divider "block $i · caught exit $code"
+      if [ -f "$RUN_TMP/timedout" ]; then exit 124; fi
+      if [ "$code" -ne 0 ]; then exit "$code"; fi
+    fi
+    i=$((i + 1))
+  done
+  exit 0
+}
+
+watchdog() { # $1=deadline epoch $2=sequence pid
+  trap - EXIT INT TERM
+  local n=0 p
+  while :; do
+    if [ -f "$RUN_TMP/done" ]; then exit 0; fi
+    if [ "$(date +%s)" -ge "$1" ]; then break; fi
+    sleep 1
+  done
+  : > "$RUN_TMP/timedout"
+  p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
+  [ -n "$p" ] || exit 0
+  kill_tree TERM "$p"
+  while [ "$n" -lt 10 ]; do
+    kill -0 "$p" 2>/dev/null || exit 0
+    sleep 1; n=$((n + 1))
+  done
+  kill_tree KILL "$p"
+  sleep 1
+  kill -KILL "$2" 2>/dev/null
+}
+
+cmd_run() { # $1=name
+  local missing="" v val deadline rc
+  RNAME="$1"
+  case "$RNAME" in ""|*[!a-z0-9-]*) die 64 "invalid routine name: $RNAME" ;; esac
+  DOC="$ROUTINE_DIR/$RNAME.md"
+  [ -f "$DOC" ] || die 64 "no routine $RNAME"
+
+  TIMEOUT=$(fm_get "$DOC" timeout)
+  case "$TIMEOUT" in ""|*[!0-9]*) TIMEOUT=600 ;; esac
+  ON_ERROR=$(fm_get "$DOC" on_error)
+  [ "$ON_ERROR" = fail ] || ON_ERROR=claude
+  STATE_DIR="$ROUTINE_STATE/$RNAME"
+  LOCK_DIR="$STATE_DIR/lock"
+  STARTED_EPOCH=$(now)
+  STARTED_ISO=$(epoch_fmt "$STARTED_EPOCH" '%Y-%m-%dT%H:%M:%SZ')
+  WRITE_LAST=1; OWN_LOCK=0; WD_PID=""; RUN_TMP=""
+  trap on_exit EXIT; trap 'exit 130' INT; trap 'exit 143' TERM
+
+  for v in $(fm_get "$DOC" requires); do
+    case "$v" in *[!A-Za-z0-9_]*) missing="$missing $v"; continue ;; esac
+    eval "val=\${$v:-}"
+    [ -n "$val" ] || missing="$missing $v"
+  done
+  if [ -n "$missing" ]; then
+    printf 'routine: %s missing required env:%s\n' "$RNAME" "$missing" >&2
+    exit 78
+  fi
+
+  if ! acquire_lock; then
+    WRITE_LAST=0
+    printf 'routine: %s already running (pid %s)\n' "$RNAME" "$LOCK_PID" >&2
+    exit 75
+  fi
+  OWN_LOCK=1
+
+  mkdir -p "$STATE_DIR/logs"
+  LOG="$STATE_DIR/logs/$(epoch_fmt "$STARTED_EPOCH" '%Y%m%dT%H%M%SZ').log"
+  exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
+
+  RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX")
+  BLK_DIR="$RUN_TMP/blocks"; mkdir -p "$BLK_DIR"
+  NBLOCKS=$(extract_blocks "$DOC" "$BLK_DIR")
+  [ "$NBLOCKS" -gt 0 ] || die 64 "no sh or bash blocks in $DOC"
+  cd "$ROUTINE_REPO" || die 64 "no repo $ROUTINE_REPO"
+
+  divider "routine $RNAME · $STARTED_ISO"
+  deadline=$(($(date +%s) + TIMEOUT))
+  run_sequence & SEQ_PID=$!
+  watchdog "$deadline" "$SEQ_PID" >/dev/null 2>&1 & WD_PID=$!
+  wait "$SEQ_PID"; rc=$?
+  : > "$RUN_TMP/done"
+  kill "$WD_PID" 2>/dev/null; WD_PID=""
+  if [ -f "$RUN_TMP/timedout" ]; then rc=124; fi
+  divider "routine $RNAME · exit $rc"
+  exit "$rc"
+}
+
+cmd_due() {
+  local f name rc=0
+  for f in "$ROUTINE_DIR"/*.md; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .md)
+    case "$name" in *[!a-z0-9-]*) continue ;; esac
+    is_due "$name" || continue
+    "$SELF" run "$name" || rc=1
+  done
+  exit "$rc"
+}
+
+cell() { # $1=text $2=width — pads by display width (bash printf pads by bytes)
+  local pad="" n v="$1"
+  v="${v//—/-}"
+  n=$(( $2 - ${#v} ))
+  while [ "$n" -gt 0 ]; do pad="$pad "; n=$((n - 1)); done
+  printf '%s%s' "$1" "$pad"
+}
+
+cmd_status() {
+  local f name sched due last ex fin dur
+  printf '%s%s%s%s%s%s\n' "$(cell NAME 21)" "$(cell SCHEDULE 17)" "$(cell DUE 5)" \
+    "$(cell EXIT 6)" "$(cell FINISHED 22)" SECS
+  for f in "$ROUTINE_DIR"/*.md; do
+    [ -e "$f" ] || continue
+    name=$(basename "$f" .md)
+    sched=$(fm_get "$f" schedule)
+    if [ -z "$sched" ]; then due="n/a"; sched="—"
+    elif is_due "$name"; then due="due"
+    else due="—"
+    fi
+    last="$ROUTINE_STATE/$name/last-run.json"
+    ex=$(json_get "$last" exit); fin=$(json_get "$last" finished)
+    dur=$(json_get "$last" duration)
+    printf '%s%s%s%s%s%s\n' "$(cell "$name" 21)" "$(cell "$sched" 17)" \
+      "$(cell "$due" 5)" "$(cell "${ex:-—}" 6)" "$(cell "${fin:-—}" 22)" "${dur:-—}"
+  done
+}
+
+# ─── schedulers ───────────────────────────────────────────────────────────────
+
+cmd_install() {
+  local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
+  mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_STATE"
+  cat > "$plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.routines.due</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>cd '$ROUTINE_REPO' &amp;&amp; bin/routine run --due</string>
+  </array>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>$ROUTINE_STATE/due.log</string>
+  <key>StandardErrorPath</key><string>$ROUTINE_STATE/due.log</string>
+</dict>
+</plist>
+EOF
+  "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/com.routines.due" >/dev/null 2>&1
+  "$ROUTINE_LAUNCHCTL" bootstrap "gui/$(id -u)" "$plist" || die 1 "launchctl bootstrap failed"
+  printf 'installed %s\n' "$plist"
+}
+
+cmd_uninstall() {
+  local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
+  "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/com.routines.due" >/dev/null 2>&1
+  rm -f "$plist"
+  printf 'removed %s\n' "$plist"
+}
+
+cmd_sync_ci() {
+  local wf="$ROUTINE_REPO/.github/workflows/routines.yml"
+  mkdir -p "$ROUTINE_REPO/.github/workflows"
+  cat > "$wf" <<'EOF'
+name: routines
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  due:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: .state
+          key: routines-state-${{ github.run_id }}
+          restore-keys: routines-state-
+      - run: bin/routine run --due
+EOF
+  printf 'wrote %s\n' "$wf"
+}
+
+# ─── dispatch ─────────────────────────────────────────────────────────────────
+
+case "${1:-}" in
+  ""|help|-h|--help) usage; exit 0 ;;
+  run)
+    case "${2:-}" in
+      "") usage >&2; exit 64 ;;
+      --due) cmd_due ;;
+      *) cmd_run "$2" ;;
+    esac ;;
+  status) cmd_status ;;
+  install) cmd_install ;;
+  uninstall) cmd_uninstall ;;
+  sync-ci) cmd_sync_ci ;;
+  *) printf 'routine: unknown command %s\n' "$1" >&2; usage >&2; exit 64 ;;
+esac
