@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en" class="ui">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>routines — design</title>
+<!-- ui.css is vendored byte-synced from jgeschwendt/ui (ui.css @ 4f1d9db) — sync, never edit here -->
+<link rel="stylesheet" href="ui.css" />
+<link rel="stylesheet" href="plan.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23476349'/%3E%3Cg transform='translate(2.4 2.4) scale(0.0437)' fill='white'%3E%3Cpath d='M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16H211.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,1,1,16,0Z'/%3E%3C/g%3E%3C/svg%3E" />
+</head>
+<body data-page="design">
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+<!-- Phosphor Icons (regular), MIT (c) 2023 Phosphor Icons — via jgeschwendt/ui icons/ -->
+<symbol id="ph-arrow-clockwise" viewBox="0 0 256 256" fill="currentColor"><path d="M240,56v48a8,8,0,0,1-8,8H184a8,8,0,0,1,0-16H211.4L184.81,71.64l-.25-.24a80,80,0,1,0-1.67,114.78,8,8,0,0,1,11,11.63A95.44,95.44,0,0,1,128,224h-1.32A96,96,0,1,1,195.75,60L224,85.8V56a8,8,0,1,1,16,0Z"/></symbol>
+<symbol id="ph-circle-half" viewBox="0 0 256 256" fill="currentColor"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm8,16.37a86.4,86.4,0,0,1,16,3V212.67a86.4,86.4,0,0,1-16,3Zm32,9.26a87.81,87.81,0,0,1,16,10.54V195.83a87.81,87.81,0,0,1-16,10.54ZM40,128a88.11,88.11,0,0,1,80-87.63V215.63A88.11,88.11,0,0,1,40,128Zm160,50.54V77.46a87.82,87.82,0,0,1,0,101.08Z"/></symbol>
+<symbol id="ph-moon" viewBox="0 0 256 256" fill="currentColor"><path d="M233.54,142.23a8,8,0,0,0-8-2,88.08,88.08,0,0,1-109.8-109.8,8,8,0,0,0-10-10,104.84,104.84,0,0,0-52.91,37A104,104,0,0,0,136,224a103.09,103.09,0,0,0,62.52-20.88,104.84,104.84,0,0,0,37-52.91A8,8,0,0,0,233.54,142.23ZM188.9,190.34A88,88,0,0,1,65.66,67.11a89,89,0,0,1,31.4-26A106,106,0,0,0,96,56,104.11,104.11,0,0,0,200,160a106,106,0,0,0,14.92-1.06A89,89,0,0,1,188.9,190.34Z"/></symbol>
+<symbol id="ph-sun" viewBox="0 0 256 256" fill="currentColor"><path d="M120,40V16a8,8,0,0,1,16,0V40a8,8,0,0,1-16,0Zm72,88a64,64,0,1,1-64-64A64.07,64.07,0,0,1,192,128Zm-16,0a48,48,0,1,0-48,48A48.05,48.05,0,0,0,176,128ZM58.34,69.66A8,8,0,0,0,69.66,58.34l-16-16A8,8,0,0,0,42.34,53.66Zm0,116.68-16,16a8,8,0,0,0,11.32,11.32l16-16a8,8,0,0,0-11.32-11.32ZM192,72a8,8,0,0,0,5.66-2.34l16-16a8,8,0,0,0-11.32-11.32l-16,16A8,8,0,0,0,192,72Zm5.66,114.34a8,8,0,0,0-11.32,11.32l16,16a8,8,0,0,0,11.32-11.32ZM48,128a8,8,0,0,0-8-8H16a8,8,0,0,0,0,16H40A8,8,0,0,0,48,128Zm80,80a8,8,0,0,0-8,8v24a8,8,0,0,0,16,0V216A8,8,0,0,0,128,208Zm112-88H216a8,8,0,0,0,0,16h24a8,8,0,0,0,0-16Z"/></symbol>
+</svg>
+
+<header class="appbar">
+  <h1 class="appbar-title">
+    <svg class="icon" aria-hidden="true"><use href="#ph-arrow-clockwise" /></svg>
+    routines <small>· design</small>
+  </h1>
+  <span class="spacer"></span>
+  <div class="segmented" role="group" aria-label="theme">
+    <button type="button" data-theme-set="light" aria-pressed="false" title="light">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#ph-sun" /></svg>light
+    </button>
+    <button type="button" data-theme-set="auto" aria-pressed="true" title="follow the system">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#ph-circle-half" /></svg>auto
+    </button>
+    <button type="button" data-theme-set="dark" aria-pressed="false" title="dark">
+      <svg class="icon icon-sm" aria-hidden="true"><use href="#ph-moon" /></svg>dark
+    </button>
+  </div>
+</header>
+
+<div class="strip strip-accent">
+  <span class="strip-tag">design</span>
+  <span class="strip-msg">this page mirrors <code class="code">docs/PLAN.md</code>; the runner's contract is <code class="code">bin/routine</code>.</span>
+</div>
+
+<main class="plan-shell" data-container>
+
+<header class="stack">
+  <p class="eyebrow">executable markdown on rails</p>
+  <p class="lead">A routine is a single markdown document — frontmatter for schedule,
+    prose for judgment, fenced <code class="code">sh</code> blocks for mechanics.
+    <code class="code">bin/routine</code> runs the blocks deterministically; when one
+    fails, the document itself becomes the prompt: claude receives the error in full
+    context, repairs state, and the runner retries the block once. Every scheduler —
+    launchd locally, a CI cron, a human at a shell — is a dumb tick that ends at the
+    same <code class="code">routine run</code>.</p>
+  <figure class="snippet-figure">
+<pre class="snippet"><b>try</b>   { blocks, in order }          <i># zero-LLM happy path — cheap, fast, CI-safe</i>
+<b>catch</b> { claude("handle $error") }   <i># the doc's prose is the handler's context</i></pre>
+    <figcaption>The whole control flow. Everything below is detail on these two lines.</figcaption>
+  </figure>
+  <nav class="row plan-toc" aria-label="sections">
+    <a class="pill" href="#document">the document</a>
+    <a class="pill" href="#try-catch">try / catch</a>
+    <a class="pill" href="#due-ness">due-ness</a>
+    <a class="pill" href="#ticks">dumb ticks</a>
+    <a class="pill" href="#plate">the plate</a>
+    <a class="pill" href="#verbs">verbs</a>
+    <a class="pill" href="#contracts">exit codes · contracts</a>
+  </nav>
+</header>
+
+<section class="plan-section" id="document" data-component="document">
+  <header>
+    <h2 class="h2">The document — <code class="code">routines/&lt;name&gt;.md</code></h2>
+    <p class="plan-note">One file per routine. Frontmatter is flat
+      <code class="code">key: value</code>, parsed with sed — no yq, no yaml library.
+      Only <code class="code">sh</code> / <code class="code">bash</code> fences execute,
+      sequentially, each under <code class="code">bash -e</code>; other fences are
+      material for the prose.</p>
+  </header>
+  <figure class="snippet-figure">
+<pre class="snippet">---
+<b>schedule</b>: 30 7 * * 1-5     <i># 5-field cron, evaluated in UTC; omit ⇒ on-demand only</i>
+<b>timeout</b>: 600               <i># seconds for the whole routine</i>
+<b>requires</b>: GITHUB_TOKEN     <i># env vars that must be non-empty</i>
+<b>on_error</b>: claude           <i># claude (default) | fail</i>
+---
+
+# Morning brief
+
+Prose is not decoration — it is the context the error-handler inherits:
+intent, traps, judgment calls. Write it for the agent that arrives when
+a block below has just failed.
+
+```sh
+gh api notifications --paginate &gt; "$ROUTINE_STATE_DIR/inbox.json"
+```
+
+```sh
+claude -p "summarize inbox.json …"   <i># a block may itself call claude — an agent step on rails</i>
+```</pre>
+    <figcaption>The schedule, the judgment and the mechanics in one artifact — script and prompt stop drifting apart.</figcaption>
+  </figure>
+</section>
+
+<section class="plan-section" id="try-catch" data-component="try-catch">
+  <header>
+    <h2 class="h2">try / catch — the failure contract</h2>
+    <p class="plan-note">The happy path never calls a model. The document is the
+      handler's context precisely because it was written before anything broke.</p>
+  </header>
+  <div class="stations stations-detail">
+    <div class="panel" data-station="try">
+      <div class="panel-head">① try</div>
+      <div class="panel-body">
+        <ul role="list">
+          <li>blocks run in order; each block's output is appended to the run log under a block delimiter</li>
+          <li>each block's exit code is the truth — nothing interprets it</li>
+        </ul>
+      </div>
+    </div>
+    <div class="panel" data-station="catch">
+      <div class="panel-head">② catch — <code class="code">on_error: claude</code></div>
+      <div class="panel-body">
+        <ul role="list">
+          <li>the runner invokes <code class="code">claude --model opus --permission-mode=auto --no-session-persistence -p</code> with the full document, the failing block, and its captured output, cwd = repo</li>
+          <li>instruction: running unattended; diagnose and repair state; do not continue the routine yourself</li>
+        </ul>
+      </div>
+    </div>
+    <div class="panel" data-station="retry">
+      <div class="panel-head">③ retry</div>
+      <div class="panel-body">
+        <ul role="list">
+          <li>the runner re-executes the failing block once — pass ⇒ continue to the next block; fail ⇒ the routine exits with that block's code</li>
+          <li>one repair attempt per block, no loops</li>
+        </ul>
+      </div>
+    </div>
+    <div class="panel" data-station="degrade">
+      <div class="panel-head">④ degrade</div>
+      <div class="panel-body">
+        <ul role="list">
+          <li>no claude binary or auth (bare CI) ⇒ behaves as <code class="code">on_error: fail</code>, with the reason logged</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <ul class="stack" role="list">
+    <li data-invariant="deterministic-verdict"><strong>The agent never steers control flow</strong> — the deterministic retry is the verdict, never the agent's exit code.</li>
+  </ul>
+</section>
+
+<section class="plan-section" id="due-ness" data-component="due-ness">
+  <header>
+    <h2 class="h2">Due-ness — derived, never matched</h2>
+    <p class="plan-note">A routine is due when
+      <code class="code">next-fire-after(last started run, schedule) ≤ now</code>; a
+      missing <code class="code">last-run.json</code> means due. Cron evaluates in UTC —
+      one clock for launchd, CI, and the shell.</p>
+  </header>
+  <div class="table-wrap">
+    <table data-table>
+      <thead><tr><th>one evaluator buys</th><th>why</th></tr></thead>
+      <tbody>
+        <tr data-buys="ci"><td>CI correctness under delayed or skipped ticks</td><td>compare against the last run, not "does now match the expr"</td></tr>
+        <tr data-buys="catch-up"><td>launchd catch-up after sleep</td><td>free — the same comparison, no wake hook</td></tr>
+        <tr data-buys="entry"><td><code class="code">routine run --due</code> as the universal entry</td><td>every scheduler is a dumb tick</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="plan-note plan-coda"><code class="code">next-fire-after</code>
+    is a minute-scan forward from the last run (horizon 366 days) — dumb, correct,
+    sub-second.</p>
+</section>
+
+<section class="plan-section" id="ticks" data-component="ticks">
+  <header>
+    <h2 class="h2">Schedulers are dumb ticks</h2>
+    <p class="plan-note">Neither scheduler knows a routine's schedule. Both wake up,
+      ask the one evaluator what is due, and exit.</p>
+  </header>
+  <div class="stations">
+    <div class="panel" data-station="launchd">
+      <div class="panel-head">launchd — <code class="code">com.routines.due</code></div>
+      <div class="panel-body">
+        <ul role="list">
+          <li><code class="code">routine install</code> renders one agent; <code class="code">routine uninstall</code> boots it out</li>
+          <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running <code class="code">bin/routine run --due</code> at the repo root</li>
+          <li><code class="code">RunAtLoad</code> doubles as login and wake catch-up</li>
+        </ul>
+      </div>
+    </div>
+    <div class="panel" data-station="ci">
+      <div class="panel-head">CI — one static workflow</div>
+      <div class="panel-body">
+        <ul role="list">
+          <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yml</code></li>
+          <li>cron every 15 min + <code class="code">workflow_dispatch</code>; restore <code class="code">.state/</code> from <code class="code">actions/cache</code>, <code class="code">run --due</code>, save cache</li>
+          <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  <figure class="snippet-figure">
+<pre class="snippet"><b>routine run</b>  frontmatter → <b>requires</b> gate (exit 78, loud list of missing vars)
+             → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid inside; live pid ⇒ 75, dead ⇒ reap)
+             → <b>watchdog</b> (bash-native; SIGTERM, SIGKILL after grace; exit 124)
+             → <b>blocks</b> under the try/catch contract
+             → <b>last-run.json</b> {started, started_epoch, finished, exit, duration}, written on every path (trap)
+             → the failing block's exit passes through</pre>
+    <figcaption>The shared wrapper — every verb that runs a routine runs it through this.</figcaption>
+  </figure>
+</section>
+
+<section class="plan-section" id="plate" data-component="plate">
+  <header>
+    <h2 class="h2">The plate</h2>
+    <p class="plan-note">One execution path, end to end: the tick, the gate, the lock,
+      the blocks, and the single catch that repairs and retries.</p>
+  </header>
+  <figure class="plate">
+    <img src="PLAN.png" alt="One execution path through the runner — scheduler tick, requires gate, lock, blocks under try/catch, the claude repair and the single retry, and the last-run record." />
+    <figcaption>one execution path — <code class="code">docs/PLAN.png</code>, regenerated by <code class="code">docs/plate.py</code></figcaption>
+  </figure>
+</section>
+
+<section class="plan-section" id="verbs" data-component="verbs">
+  <header>
+    <h2 class="h2">Verbs</h2>
+    <p class="plan-note">Six verbs — the whole surface. Every one of them ends at the
+      same runner.</p>
+  </header>
+  <div class="table-wrap">
+    <table data-table>
+      <thead><tr><th>verb</th><th>duty</th></tr></thead>
+      <tbody>
+        <tr data-verb="run"><td class="table-mono">run &lt;name&gt;</td><td>run one document through the wrapper — gate, lock, timeout, try/catch</td></tr>
+        <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — run every due routine; silent when none are</td></tr>
+        <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due?, last exit, duration</td></tr>
+        <tr data-verb="install"><td class="table-mono">install</td><td>render and load the single launchd tick agent</td></tr>
+        <tr data-verb="uninstall"><td class="table-mono">uninstall</td><td>boot the agent out and remove its plist</td></tr>
+        <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">.github/workflows/routines.yml</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="plan-section" id="contracts" data-component="contracts">
+  <header>
+    <h2 class="h2">Exit codes and contracts</h2>
+  </header>
+  <div class="table-wrap">
+    <table data-table>
+      <thead><tr><th>code</th><th>meaning</th></tr></thead>
+      <tbody>
+        <tr data-exit="64"><td class="table-mono">64</td><td>unknown routine, or usage</td></tr>
+        <tr data-exit="75"><td class="table-mono">75</td><td>lock held by a live run</td></tr>
+        <tr data-exit="78"><td class="table-mono">78</td><td><code class="code">requires</code> missing</td></tr>
+        <tr data-exit="124"><td class="table-mono">124</td><td>timeout — the watchdog fired</td></tr>
+        <tr data-exit="else"><td class="table-mono">else</td><td>the failing block's own code, passed through</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="stack" role="list">
+    <li data-contract="idempotent"><strong>Blocks are idempotent</strong> — catch-retry, cache eviction, and tick overlap can all double-fire; the lock serializes, idempotency absorbs.</li>
+    <li data-contract="bash-3-2"><strong>bash 3.2-safe, zero-dep</strong> — <code class="code">bin/routine</code> is one script with no jq, yq, or GNU timeout; claude is needed only when a catch fires or a block calls it.</li>
+    <li data-contract="state"><strong><code class="code">.state/</code> is never committed</strong> — CI persists it through <code class="code">actions/cache</code> only.</li>
+  </ul>
+</section>
+
+<nav class="row link-row" aria-label="links">
+  <a class="pill" href="https://github.com/jgeschwendt/routines">repo · jgeschwendt/routines</a>
+  <a class="pill" href="https://github.com/jgeschwendt/routines/blob/main/docs/PLAN.md">docs/PLAN.md</a>
+  <span class="plan-note">the repo's structure is a stele graph — <code class="code">AGENTS.md</code> at the root, one per container.</span>
+</nav>
+
+</main>
+
+<script>
+/* The theme contract, verbatim from jgeschwendt/ui docs.js — same localStorage
+   key, so a theme chosen on the ui pages is the theme this one opens in. */
+const THEME_KEY = "ui-theme";
+function applyTheme(mode) {
+  const root = document.documentElement;
+  if (mode === "auto") {
+    root.removeAttribute("data-theme");
+    localStorage.removeItem(THEME_KEY);
+  } else {
+    root.dataset.theme = mode;
+    localStorage.setItem(THEME_KEY, mode);
+  }
+  for (const b of document.querySelectorAll("[data-theme-set]")) {
+    b.setAttribute("aria-pressed", String(b.dataset.themeSet === mode));
+  }
+}
+for (const b of document.querySelectorAll("[data-theme-set]")) {
+  b.addEventListener("click", () => applyTheme(b.dataset.themeSet));
+}
+applyTheme(localStorage.getItem(THEME_KEY) || "auto");
+</script>
+</body>
+</html>
