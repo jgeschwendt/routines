@@ -1,0 +1,5 @@
+[pre-push.commands.stele]
+run = "stele check && stele emit --check"
+
+[pre-push.commands.test]
+run = "/bin/bash test/routine.test.sh"
