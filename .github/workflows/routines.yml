@@ -8,11 +8,14 @@ on:
 jobs:
   due:
     runs-on: ubuntu-latest
+    env:
+      ROUTINE_HOME: ${{ github.workspace }}/routines
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
-          path: .state
+          path: routines/.state
           key: routines-state-${{ github.run_id }}
           restore-keys: routines-state-
+      - run: '[ -x bin/routine ] || (mkdir -p bin && curl -fsSL https://raw.githubusercontent.com/jgeschwendt/routines/main/bin/routine -o bin/routine && chmod +x bin/routine)'
       - run: bin/routine run --due

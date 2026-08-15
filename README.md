@@ -15,9 +15,25 @@ try   { blocks, in order }          # cheap, fast, CI-safe
 catch { claude("handle $error") }   # the doc's prose is the handler's context
 ```
 
+## Where routines live
+
+Documents and run state live in a **routines home**, not in this repo — the repo
+is the tool. `$ROUTINE_HOME` defaults to `~/.routines`: documents are `*.md` at
+its root, state lands in its `.state/`, and every block runs with cwd there.
+
+```
+~/.routines/morning-brief.md         # a routine
+~/.routines/.state/morning-brief/    # lock/, last-run.json, logs/<ts>.log
+```
+
+In CI the convention is a repo's own `routines/` directory —
+`routine sync-ci` writes a workflow that sets
+`ROUTINE_HOME: ${{ github.workspace }}/routines`, caches `routines/.state`, and
+fetches `bin/routine` when the repo does not carry one.
+
 ## The document
 
-`routines/<name>.md`, name `[a-z0-9-]+`:
+`$ROUTINE_HOME/<name>.md`, name `[a-z0-9-]+`:
 
 ````markdown
 ---
@@ -39,7 +55,7 @@ gh api notifications --paginate > "$ROUTINE_STATE_DIR/inbox.json"
 ````
 
 Only ` ```sh ` and ` ```bash ` fences execute, sequentially, each as its own
-`bash -e` child with cwd at the repo root and `ROUTINE_NAME` /
+`bash -e` child with cwd at the routines home and `ROUTINE_NAME` /
 `ROUTINE_STATE_DIR` exported. Other fences are material for the prose. Blocks
 must be idempotent — a catch-retry, a cache eviction, or an overlapping tick can
 each double-fire; the lock serializes, idempotency absorbs.
@@ -52,7 +68,7 @@ routine run --due      run every due routine — silent when none are
 routine status         schedule × due? × last run, one row per document
 routine install        install the launchd tick agent (com.routines.due)
 routine uninstall      remove it
-routine sync-ci        (re)write .github/workflows/routines.yml
+routine sync-ci        (re)write ./.github/workflows/routines.yml here
 routine help           usage
 ```
 
@@ -69,19 +85,20 @@ catches up instead of skipping.
 
 ```sh
 bin/routine install    # launchd: StartInterval 60 + RunAtLoad, running run --due
-bin/routine sync-ci    # GitHub Actions: */15 cron + workflow_dispatch, .state cached
+bin/routine sync-ci    # GitHub Actions: */15 cron + workflow_dispatch, state cached
 ```
 
-Run state lives in `.state/<name>/` — `lock/`, `last-run.json`, `logs/<ts>.log`
-— and is never committed; CI persists it through `actions/cache` only.
+Run state lives in `$ROUTINE_HOME/.state/<name>/` — `lock/`, `last-run.json`,
+`logs/<ts>.log` — and is never committed; CI persists it through `actions/cache`
+only.
 
 ## Environment
 
 | variable | default |
 | --- | --- |
-| `ROUTINE_REPO` | resolved from the script path |
-| `ROUTINE_DIR` | `$ROUTINE_REPO/routines` |
-| `ROUTINE_STATE` | `$ROUTINE_REPO/.state` |
+| `ROUTINE_HOME` | `$HOME/.routines` |
+| `ROUTINE_DIR` | `$ROUTINE_HOME` |
+| `ROUTINE_STATE` | `$ROUTINE_HOME/.state` |
 | `ROUTINE_AGENTS_DIR` | `$HOME/Library/LaunchAgents` |
 | `ROUTINE_LAUNCHCTL` | `launchctl` |
 | `ROUTINE_CLAUDE` | `claude` |

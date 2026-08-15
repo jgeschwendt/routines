@@ -48,6 +48,10 @@ assert_file() { # $1=desc $2=path
   if [ -f "$2" ]; then ok "$1"; else nok "$1" "no such file: $2"; fi
 }
 
+assert_dir() { # $1=desc $2=path
+  if [ -d "$2" ]; then ok "$1"; else nok "$1" "no such directory: $2"; fi
+}
+
 assert_no_file() { # $1=desc $2=path
   if [ -e "$2" ]; then nok "$1" "exists: $2"; else ok "$1"; fi
 }
@@ -78,7 +82,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-RREPO="$SANDBOX/repo"                  # ROUTINE_REPO — a repo skeleton, never the real tree
+RHOME="$SANDBOX/home"                  # ROUTINE_HOME — a routines home, never the real one
+RCWD="$SANDBOX/cwd"                    # every invocation's cwd — sync-ci writes here
 RDIR="$SANDBOX/routines"               # ROUTINE_DIR — reassigned per due-fixture group
 RSTATE="$SANDBOX/state"
 RAGENTS="$SANDBOX/agents"
@@ -91,7 +96,7 @@ CLAUDE_PROMPT="$SANDBOX/claude.prompt"
 CLAUDE_CALLED="$SANDBOX/claude.called"
 REPAIR_MARKER="$SANDBOX/repaired.marker"
 
-mkdir -p "$RREPO/bin" "$RDIR" "$RSTATE" "$SANDBOX/bin"
+mkdir -p "$RHOME" "$RCWD" "$RDIR" "$RSTATE" "$SANDBOX/bin"
 
 mkfix() { # $1=path — body on stdin
   mkdir -p "$(dirname "$1")"
@@ -139,10 +144,26 @@ O="$SANDBOX/stdout"; E="$SANDBOX/stderr"
 runr() { # verb + args
   (
     unset ROUTINE_TEST_REQ_A ROUTINE_TEST_REQ_B
-    export ROUTINE_REPO="$RREPO" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE"
+    export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE"
     export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
     if [ -n "$RNOW" ]; then export ROUTINE_NOW="$RNOW"; else unset ROUTINE_NOW; fi
     for kv in $EXPORTS; do export "$kv"; done
+    cd "$RCWD" || exit 1
+    exec "$RUNNER" "$@"
+  ) > "$O" 2> "$E"
+  RC=$?
+  OUT=$(cat "$O"); ERR=$(cat "$E")
+}
+
+# The bare-home path: only ROUTINE_HOME is set, so ROUTINE_DIR and ROUTINE_STATE
+# must derive from it rather than from an override.
+runr_home() { # $1=home, then verb + args
+  local home="$1"; shift
+  (
+    unset ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW
+    export ROUTINE_HOME="$home"
+    export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
+    cd "$RCWD" || exit 1
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
@@ -317,6 +338,21 @@ printf 'SENTINEL-OUTPUT-9271\n'
 \`\`\`
 EOF
 
+# derived-defaults fixture — a routines home with no ROUTINE_DIR/ROUTINE_STATE
+# override, so the document must be found at the home's root.
+DHOME="$SANDBOX/home-default"
+mkfix "$DHOME/derived.md" <<EOF
+---
+timeout: 30
+---
+
+# Derived
+
+\`\`\`sh
+pwd > "$SANDBOX/derived-pwd.txt"
+\`\`\`
+EOF
+
 # due-ness fixtures — one routine per directory so `run --due` has a single
 # candidate and its silence is unambiguous.
 mkfix "$SANDBOX/r-hourly/hourly.md" <<EOF
@@ -409,7 +445,8 @@ runr run blocks
 assert_eq "all blocks pass ⇒ exit 0" 0 "$RC"
 assert_eq "sh and bash blocks run in document order" "one
 two" "$(cat "$SANDBOX/order.txt" 2>/dev/null)"
-assert_eq "blocks run with cwd = repo" "$RREPO" "$(cat "$SANDBOX/pwd.txt" 2>/dev/null)"
+assert_eq "blocks run with cwd = the routines home" "$RHOME" \
+  "$(cat "$SANDBOX/pwd.txt" 2>/dev/null)"
 assert_eq "ROUTINE_NAME is exported to blocks" "blocks" "$(cat "$SANDBOX/name.txt" 2>/dev/null)"
 assert_eq "ROUTINE_STATE_DIR is exported to blocks" "$RSTATE/blocks" \
   "$(cat "$SANDBOX/statedir.txt" 2>/dev/null)"
@@ -437,6 +474,29 @@ assert_file "satisfied requires reaches the block" "$SANDBOX/requires-ran.marker
 
 runr run deftimeout
 assert_eq "absent timeout key defaults large (2s block survives)" 0 "$RC"
+
+# ─── routines home ────────────────────────────────────────────────────────────
+
+runr_home "$DHOME" run derived
+assert_eq "ROUTINE_HOME alone locates \$home/<name>.md" 0 "$RC"
+assert_eq "ROUTINE_HOME alone sets the block's cwd" "$DHOME" \
+  "$(cat "$SANDBOX/derived-pwd.txt" 2>/dev/null)"
+assert_file "ROUTINE_STATE derives to \$ROUTINE_HOME/.state" \
+  "$DHOME/.state/derived/last-run.json"
+
+runr_home "$DHOME" status
+assert_contains "status reads \$ROUTINE_HOME/*.md" "$OUT" "derived"
+
+# the cd guard: the document resolves (ROUTINE_DIR is overridden) but the home
+# it would run in does not exist.
+(
+  export ROUTINE_HOME="$SANDBOX/no-such-home" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE"
+  export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
+  cd "$RCWD" || exit 1
+  exec "$RUNNER" run deftimeout
+) > "$O" 2> "$E"
+RC=$?
+assert_eq "a missing routines home exits 64" 64 "$RC"
 
 # ─── state ────────────────────────────────────────────────────────────────────
 
@@ -636,12 +696,19 @@ assert_contains "plist sets StartInterval 60" "$PL" "<key>StartInterval</key><in
 assert_contains "plist sets RunAtLoad" "$PL" "<key>RunAtLoad</key><true/>"
 assert_contains "plist runs /bin/bash" "$PL" "/bin/bash"
 assert_contains "plist uses a login shell" "$PL" "-lc"
-assert_contains "plist carries the repo path" "$PL" "$RREPO"
+assert_contains "plist carries the runner's absolute path" "$PL" "$RUNNER"
 assert_contains "plist runs the due tick" "$PL" "run --due"
+assert_missing "plist never cds into a repo — the runner cds itself" "$PL" "&amp;&amp;"
 LC=$(cat "$LCTL_LOG" 2>/dev/null)
 assert_contains "install boots the old agent out" "$LC" "bootout gui/$UID_NOW/com.routines.due"
 assert_contains "install bootstraps the agent" "$LC" "bootstrap gui/$UID_NOW"
 assert_eq "bootout precedes bootstrap" 1 "$(grep -n bootout "$LCTL_LOG" | head -1 | cut -d: -f1)"
+
+FRESH_HOME="$SANDBOX/fresh-home"
+runr_home "$FRESH_HOME" install
+assert_eq "install into an absent home exits 0" 0 "$RC"
+assert_dir "install creates the routines home" "$FRESH_HOME"
+assert_dir "install creates the derived state dir" "$FRESH_HOME/.state"
 
 : > "$LCTL_LOG"
 runr uninstall
@@ -652,21 +719,27 @@ assert_contains "uninstall boots the agent out" "$(cat "$LCTL_LOG" 2>/dev/null)"
 
 # ─── sync-ci ──────────────────────────────────────────────────────────────────
 
-# ROUTINE_REPO is the sandbox skeleton, so the workflow lands there — the real
-# tree must gain nothing from a test run. A live install may already own
-# $SRC_REPO/.state, so assert against the snapshot, not bare existence.
+# sync-ci writes into the invoking repo — every run here has cwd = $RCWD, so the
+# workflow lands in the sandbox and the real tree gains nothing. A live install
+# may already own $SRC_REPO/.state, so assert against the snapshot, not bare
+# existence.
 SRC_STATE_PRE=0; [ -e "$SRC_REPO/.state" ] && SRC_STATE_PRE=1
-WF="$RREPO/.github/workflows/routines.yml"
+WF="$RCWD/.github/workflows/routines.yml"
 runr sync-ci
 assert_eq "sync-ci exits 0" 0 "$RC"
-assert_file "sync-ci writes the workflow" "$WF"
+assert_file "sync-ci writes the workflow into the invoking repo" "$WF"
 WFC=$(cat "$WF" 2>/dev/null)
 assert_contains "workflow ticks every 15 minutes" "$WFC" "cron: '*/15 * * * *'"
 assert_contains "workflow is manually dispatchable" "$WFC" "workflow_dispatch"
+assert_contains "workflow points ROUTINE_HOME at the repo's routines dir" "$WFC" \
+  'ROUTINE_HOME: ${{ github.workspace }}/routines'
 assert_contains "workflow caches state" "$WFC" "actions/cache"
-assert_contains "workflow caches the .state path" "$WFC" "path: .state"
+assert_contains "workflow caches the derived state path" "$WFC" "path: routines/.state"
 assert_contains "workflow restores the newest state key" "$WFC" "restore-keys"
+assert_contains "workflow fetches the runner when the repo has none" "$WFC" \
+  "[ -x bin/routine ] || (mkdir -p bin && curl -fsSL"
 assert_contains "workflow ends at the due tick" "$WFC" "bin/routine run --due"
+assert_no_file "sync-ci targets its cwd, never the routines home" "$RHOME/.github"
 if [ "$SRC_STATE_PRE" = 0 ]; then
   assert_no_file "sync-ci never writes into the source tree under test" \
     "$SRC_REPO/.state"

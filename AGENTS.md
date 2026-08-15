@@ -2,7 +2,7 @@
 
 ```stele
 kind: system
-purpose: Executable markdown routines — bin/routine runs a document's fenced sh blocks under schedule, lock, and timeout; claude repairs failures; launchd and CI are dumb ticks ending at run --due.
+purpose: Executable markdown routines in $ROUTINE_HOME (default ~/.routines) — bin/routine runs a doc's sh blocks under schedule, lock, timeout; claude repairs failures; launchd and CI tick into run --due.
 commands:
   test: /bin/bash test/routine.test.sh
 ```
@@ -15,11 +15,11 @@ commands:
 
 ## Map
 
-| node     | kind      | purpose                                                                                                                                                       | unfold                                                 |
-| -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| bin      | container | The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run.                            | `stele unfold bin` · or read `bin/AGENTS.md`           |
-| routines | container | The routine documents — frontmatter (schedule, timeout, requires, on_error), prose written as the error-handler's context, fenced sh blocks as the mechanics. | `stele unfold routines` · or read `routines/AGENTS.md` |
-| test     | container | Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about six seconds.                                  | `stele unfold test` · or read `test/AGENTS.md`         |
+| node     | kind      | purpose                                                                                                                                                                                                 | unfold                                                 |
+| -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| bin      | container | The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run.                                                                      | `stele unfold bin` · or read `bin/AGENTS.md`           |
+| routines | container | This repo's own routines — the CI convention, where a repo's routines/ dir is its ROUTINE_HOME. A document is frontmatter, prose as the error-handler's context, and fenced sh blocks as the mechanics. | `stele unfold routines` · or read `routines/AGENTS.md` |
+| test     | container | Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about six seconds.                                                                            | `stele unfold test` · or read `test/AGENTS.md`         |
 
 ## Indexes
 

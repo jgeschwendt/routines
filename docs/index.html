@@ -71,8 +71,12 @@
 
 <section class="plan-section" id="document" data-component="document">
   <header>
-    <h2 class="h2">The document — <code class="code">routines/&lt;name&gt;.md</code></h2>
-    <p class="plan-note">One file per routine. Frontmatter is flat
+    <h2 class="h2">The document — <code class="code">$ROUTINE_HOME/&lt;name&gt;.md</code></h2>
+    <p class="plan-note">Documents and run state live in a <b>routines home</b> —
+      <code class="code">$ROUTINE_HOME</code>, default <code class="code">~/.routines</code>,
+      with state under its <code class="code">.state/</code>; this repo is only the tool,
+      so personal routines never enter it and the runner can move without breaking launchd.
+      One file per routine. Frontmatter is flat
       <code class="code">key: value</code>, parsed with sed — no yq, no yaml library.
       Only <code class="code">sh</code> / <code class="code">bash</code> fences execute,
       sequentially, each under <code class="code">bash -e</code>; other fences are
@@ -123,7 +127,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">② catch — <code class="code">on_error: claude</code></div>
       <div class="panel-body">
         <ul role="list">
-          <li>the runner invokes <code class="code">claude --model opus --permission-mode=auto --no-session-persistence -p</code> with the full document, the failing block, and its captured output, cwd = repo</li>
+          <li>the runner invokes <code class="code">claude --model opus --permission-mode=auto --no-session-persistence -p</code> with the full document, the failing block, and its captured output, cwd = the routines home</li>
           <li>instruction: running unattended; diagnose and repair state; do not continue the routine yourself</li>
         </ul>
       </div>
@@ -186,7 +190,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-body">
         <ul role="list">
           <li><code class="code">routine install</code> renders one agent; <code class="code">routine uninstall</code> boots it out</li>
-          <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running <code class="code">bin/routine run --due</code> at the repo root</li>
+          <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running the runner's absolute path with <code class="code">run --due</code> — no <code class="code">cd</code>, the runner enters the routines home itself</li>
           <li><code class="code">RunAtLoad</code> doubles as login and wake catch-up</li>
         </ul>
       </div>
@@ -195,8 +199,8 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">CI — one static workflow</div>
       <div class="panel-body">
         <ul role="list">
-          <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yml</code></li>
-          <li>cron every 15 min + <code class="code">workflow_dispatch</code>; restore <code class="code">.state/</code> from <code class="code">actions/cache</code>, <code class="code">run --due</code>, save cache</li>
+          <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yml</code> into the repo it is invoked in</li>
+          <li>cron every 15 min + <code class="code">workflow_dispatch</code>; <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, fetch <code class="code">bin/routine</code> if absent, <code class="code">run --due</code>, save cache</li>
           <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
         </ul>
       </div>
@@ -206,6 +210,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
 <pre class="snippet"><b>routine run</b>  frontmatter → <b>requires</b> gate (exit 78, loud list of missing vars)
              → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid inside; live pid ⇒ 75, dead ⇒ reap)
              → <b>watchdog</b> (bash-native; SIGTERM, SIGKILL after grace; exit 124)
+             → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
              → <b>blocks</b> under the try/catch contract
              → <b>last-run.json</b> {started, started_epoch, finished, exit, duration}, written on every path (trap)
              → the failing block's exit passes through</pre>
@@ -240,7 +245,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
         <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due?, last exit, duration</td></tr>
         <tr data-verb="install"><td class="table-mono">install</td><td>render and load the single launchd tick agent</td></tr>
         <tr data-verb="uninstall"><td class="table-mono">uninstall</td><td>boot the agent out and remove its plist</td></tr>
-        <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">.github/workflows/routines.yml</code></td></tr>
+        <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">./.github/workflows/routines.yml</code> in the invoking repo</td></tr>
       </tbody>
     </table>
   </div>
@@ -265,7 +270,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
   <ul class="stack" role="list">
     <li data-contract="idempotent"><strong>Blocks are idempotent</strong> — catch-retry, cache eviction, and tick overlap can all double-fire; the lock serializes, idempotency absorbs.</li>
     <li data-contract="bash-3-2"><strong>bash 3.2-safe, zero-dep</strong> — <code class="code">bin/routine</code> is one script with no jq, yq, or GNU timeout; claude is needed only when a catch fires or a block calls it.</li>
-    <li data-contract="state"><strong><code class="code">.state/</code> is never committed</strong> — CI persists it through <code class="code">actions/cache</code> only.</li>
+    <li data-contract="state"><strong><code class="code">$ROUTINE_HOME/.state/</code> is never committed</strong> — CI persists <code class="code">routines/.state</code> through <code class="code">actions/cache</code> only.</li>
   </ul>
 </section>
 

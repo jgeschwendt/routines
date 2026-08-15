@@ -49,7 +49,7 @@
       },
       "id": "/",
       "kind": "system",
-      "purpose": "Executable markdown routines — bin/routine runs a document's fenced sh blocks under schedule, lock, and timeout; claude repairs failures; launchd and CI are dumb ticks ending at run --due."
+      "purpose": "Executable markdown routines in $ROUTINE_HOME (default ~/.routines) — bin/routine runs a doc's sh blocks under schedule, lock, timeout; claude repairs failures; launchd and CI tick into run --due."
     },
     "bin": {
       "budget": null,
@@ -63,7 +63,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "ae01840da904d5dd078e4a6246f85deb744f011e"
+            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
           }
         },
         {
@@ -75,7 +75,7 @@
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "ae01840da904d5dd078e4a6246f85deb744f011e"
+            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
           }
         },
         {
@@ -87,7 +87,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "ae01840da904d5dd078e4a6246f85deb744f011e"
+            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
           }
         },
         {
@@ -99,7 +99,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "ae01840da904d5dd078e4a6246f85deb744f011e"
+            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
           }
         },
         {
@@ -111,7 +111,7 @@
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "ae01840da904d5dd078e4a6246f85deb744f011e"
+            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
           }
         }
       ],
@@ -141,7 +141,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "ae01840da904d5dd078e4a6246f85deb744f011e"
+            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
           }
         }
       ],
@@ -157,7 +157,7 @@
       },
       "id": "routines",
       "kind": "container",
-      "purpose": "The routine documents — frontmatter (schedule, timeout, requires, on_error), prose written as the error-handler's context, fenced sh blocks as the mechanics."
+      "purpose": "This repo's own routines — the CI convention, where a repo's routines/ dir is its ROUTINE_HOME. A document is frontmatter, prose as the error-handler's context, and fenced sh blocks as the mechanics."
     },
     "test": {
       "budget": null,

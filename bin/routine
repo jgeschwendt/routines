@@ -14,13 +14,13 @@ abspath() { # $1=path
   case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$PWD/$1" ;; esac
 }
 
-ROUTINE_REPO=$(abspath "${ROUTINE_REPO:-$(cd "$SELF_DIR/.." && pwd)}")
-ROUTINE_DIR=$(abspath "${ROUTINE_DIR:-$ROUTINE_REPO/routines}")
-ROUTINE_STATE=$(abspath "${ROUTINE_STATE:-$ROUTINE_REPO/.state}")
+ROUTINE_HOME=$(abspath "${ROUTINE_HOME:-${HOME:-/tmp}/.routines}")
+ROUTINE_DIR=$(abspath "${ROUTINE_DIR:-$ROUTINE_HOME}")
+ROUTINE_STATE=$(abspath "${ROUTINE_STATE:-$ROUTINE_HOME/.state}")
 ROUTINE_AGENTS_DIR=$(abspath "${ROUTINE_AGENTS_DIR:-${HOME:-/tmp}/Library/LaunchAgents}")
 ROUTINE_LAUNCHCTL="${ROUTINE_LAUNCHCTL:-launchctl}"
 ROUTINE_CLAUDE="${ROUTINE_CLAUDE:-claude}"
-export ROUTINE_REPO ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
+export ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
 export ROUTINE_LAUNCHCTL ROUTINE_CLAUDE
 
 if date -u -r 0 +%Y >/dev/null 2>&1; then DATE_FLAVOR=bsd; else DATE_FLAVOR=gnu; fi
@@ -46,13 +46,13 @@ routine — executable markdown on rails
   routine status         schedule × due? × last run, one row per routine
   routine install        install the launchd tick agent (com.routines.due)
   routine uninstall      remove it
-  routine sync-ci        (re)write .github/workflows/routines.yml
+  routine sync-ci        (re)write ./.github/workflows/routines.yml here
   routine help           this text
 
 exit: 64 usage/unknown routine · 75 lock held · 78 requires missing ·
       124 timeout · else the failing block's code
 
-env: ROUTINE_REPO ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
+env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
      ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW
 EOF
 }
@@ -355,7 +355,7 @@ cmd_run() { # $1=name
   BLK_DIR="$RUN_TMP/blocks"; mkdir -p "$BLK_DIR"
   NBLOCKS=$(extract_blocks "$DOC" "$BLK_DIR")
   [ "$NBLOCKS" -gt 0 ] || die 64 "no sh or bash blocks in $DOC"
-  cd "$ROUTINE_REPO" || die 64 "no repo $ROUTINE_REPO"
+  cd "$ROUTINE_HOME" || die 64 "no routines home $ROUTINE_HOME"
 
   divider "routine $RNAME · $STARTED_ISO"
   deadline=$(($(date +%s) + TIMEOUT))
@@ -415,7 +415,7 @@ cmd_status() {
 
 cmd_install() {
   local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
-  mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_STATE"
+  mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_HOME" "$ROUTINE_STATE"
   cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -426,7 +426,7 @@ cmd_install() {
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>cd '$ROUTINE_REPO' &amp;&amp; bin/routine run --due</string>
+    <string>exec '$SELF' run --due</string>
   </array>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>
@@ -449,8 +449,8 @@ cmd_uninstall() {
 }
 
 cmd_sync_ci() {
-  local wf="$ROUTINE_REPO/.github/workflows/routines.yml"
-  mkdir -p "$ROUTINE_REPO/.github/workflows"
+  local wf="$PWD/.github/workflows/routines.yml"
+  mkdir -p "$PWD/.github/workflows"
   cat > "$wf" <<'EOF'
 name: routines
 
@@ -462,13 +462,16 @@ on:
 jobs:
   due:
     runs-on: ubuntu-latest
+    env:
+      ROUTINE_HOME: ${{ github.workspace }}/routines
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache@v4
         with:
-          path: .state
+          path: routines/.state
           key: routines-state-${{ github.run_id }}
           restore-keys: routines-state-
+      - run: '[ -x bin/routine ] || (mkdir -p bin && curl -fsSL https://raw.githubusercontent.com/jgeschwendt/routines/main/bin/routine -o bin/routine && chmod +x bin/routine)'
       - run: bin/routine run --due
 EOF
   printf 'wrote %s\n' "$wf"
