@@ -616,6 +616,13 @@ assert_eq "status exits 0" 0 "$RC"
 assert_contains "status lists each routine" "$OUT" "locked"
 assert_contains "status joins the schedule" "$OUT" "0 * * * *"
 
+printf 'not a routine\n' > "$RDIR/AGENTS.md"
+runr status
+assert_missing "status skips non-routine names (AGENTS.md)" "$OUT" "AGENTS"
+runr run --due
+assert_eq "run --due skips non-routine names" 0 "$RC"
+rm "$RDIR/AGENTS.md"
+
 # ─── install / uninstall ──────────────────────────────────────────────────────
 
 PLIST="$RAGENTS/com.routines.due.plist"
@@ -646,7 +653,9 @@ assert_contains "uninstall boots the agent out" "$(cat "$LCTL_LOG" 2>/dev/null)"
 # ─── sync-ci ──────────────────────────────────────────────────────────────────
 
 # ROUTINE_REPO is the sandbox skeleton, so the workflow lands there — the real
-# tree must gain nothing from a test run.
+# tree must gain nothing from a test run. A live install may already own
+# $SRC_REPO/.state, so assert against the snapshot, not bare existence.
+SRC_STATE_PRE=0; [ -e "$SRC_REPO/.state" ] && SRC_STATE_PRE=1
 WF="$RREPO/.github/workflows/routines.yml"
 runr sync-ci
 assert_eq "sync-ci exits 0" 0 "$RC"
@@ -658,8 +667,13 @@ assert_contains "workflow caches state" "$WFC" "actions/cache"
 assert_contains "workflow caches the .state path" "$WFC" "path: .state"
 assert_contains "workflow restores the newest state key" "$WFC" "restore-keys"
 assert_contains "workflow ends at the due tick" "$WFC" "bin/routine run --due"
-assert_no_file "sync-ci never writes into the source tree under test" \
-  "$SRC_REPO/.state"
+if [ "$SRC_STATE_PRE" = 0 ]; then
+  assert_no_file "sync-ci never writes into the source tree under test" \
+    "$SRC_REPO/.state"
+else
+  assert_eq "sync-ci never writes into the source tree under test (pre-existing .state)" \
+    1 "$SRC_STATE_PRE"
+fi
 
 # ─── summary ──────────────────────────────────────────────────────────────────
 

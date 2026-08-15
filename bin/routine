@@ -5,6 +5,8 @@ set -u
 
 # ─── environment ──────────────────────────────────────────────────────────────
 
+LC_ALL=C; export LC_ALL   # glob ranges are collation-free — [!a-z0-9-] must reject uppercase
+
 SELF_DIR=$(cd "$(dirname "$0")" && pwd)
 SELF="$SELF_DIR/$(basename "$0")"
 
@@ -395,6 +397,7 @@ cmd_status() {
   for f in "$ROUTINE_DIR"/*.md; do
     [ -e "$f" ] || continue
     name=$(basename "$f" .md)
+    case "$name" in *[!a-z0-9-]*) continue ;; esac
     sched=$(fm_get "$f" schedule)
     if [ -z "$sched" ]; then due="n/a"; sched="—"
     elif is_due "$name"; then due="due"
