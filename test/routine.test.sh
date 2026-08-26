@@ -698,6 +698,9 @@ assert_contains "plist runs /bin/bash" "$PL" "/bin/bash"
 assert_contains "plist uses a login shell" "$PL" "-lc"
 assert_contains "plist carries the runner's absolute path" "$PL" "$RUNNER"
 assert_contains "plist runs the due tick" "$PL" "run --due"
+assert_contains "plist stamps a PATH — the tick inherits none" "$PL" "<key>PATH</key>"
+assert_contains "plist PATH carries ~/.local/bin (claude, mise, sandman, stele)" \
+  "$PL" "$HOME/.local/bin:"
 assert_missing "plist never cds into a repo — the runner cds itself" "$PL" "&amp;&amp;"
 LC=$(cat "$LCTL_LOG" 2>/dev/null)
 assert_contains "install boots the old agent out" "$LC" "bootout gui/$UID_NOW/com.routines.due"

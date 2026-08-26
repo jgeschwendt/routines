@@ -416,6 +416,10 @@ cmd_status() {
 cmd_install() {
   local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
   mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_HOME" "$ROUTINE_STATE"
+  # launchd hands a bare PATH and `bash -l` reads ~/.bash_profile, never the zsh
+  # profile — so ~/.local/bin (claude, mise, sandman, stele) is absent under the
+  # tick and present by hand. That asymmetry silently degrades every on_error
+  # catch to `claude unavailable`; stamp the PATH the tick must run with.
   cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -428,6 +432,10 @@ cmd_install() {
     <string>-lc</string>
     <string>exec '$SELF' run --due</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
