@@ -8,22 +8,22 @@
     },
     "catch-retry": {
       "file": "bin/routine",
-      "line": 237,
+      "line": 305,
       "node": "bin"
     },
     "due-derivation": {
       "file": "bin/routine",
-      "line": 130,
+      "line": 185,
       "node": "bin"
     },
     "due-tick": {
       "file": "bin/routine",
-      "line": 372,
+      "line": 475,
       "node": "bin"
     },
     "last-run-contract": {
       "file": "bin/routine",
-      "line": 198,
+      "line": 258,
       "node": "bin"
     }
   },
@@ -63,7 +63,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
+            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
           }
         },
         {
@@ -71,11 +71,11 @@
           "enforced_by": null,
           "id": "catch-retry",
           "kind": "invariant",
-          "resolved": "bin/routine:237",
+          "resolved": "bin/routine:305",
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
+            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
           }
         },
         {
@@ -83,11 +83,11 @@
           "enforced_by": null,
           "id": "due-derivation",
           "kind": "invariant",
-          "resolved": "bin/routine:130",
+          "resolved": "bin/routine:185",
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
+            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
           }
         },
         {
@@ -95,11 +95,11 @@
           "enforced_by": null,
           "id": "due-tick",
           "kind": "invariant",
-          "resolved": "bin/routine:372",
+          "resolved": "bin/routine:475",
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
+            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
           }
         },
         {
@@ -107,11 +107,11 @@
           "enforced_by": null,
           "id": "last-run-contract",
           "kind": "invariant",
-          "resolved": "bin/routine:198",
+          "resolved": "bin/routine:258",
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
+            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
           }
         }
       ],
@@ -141,7 +141,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "5d0e33d89845c63134d668b569e8a20a398af14c"
+            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
           }
         }
       ],

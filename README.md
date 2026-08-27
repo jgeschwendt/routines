@@ -23,7 +23,8 @@ its root, state lands in its `.state/`, and every block runs with cwd there.
 
 ```
 ~/.routines/morning-brief.md         # a routine
-~/.routines/.state/morning-brief/    # lock/, last-run.json, logs/<ts>.log
+~/.routines/.state/morning-brief/    # lock/, last-run.json, runs.jsonl, logs/<ts>-<pid>.log
+~/.routines/.state/tick.log          # the sweep's own journal — one line per tick
 ```
 
 In CI the convention is a repo's own `routines/` directory —
@@ -89,8 +90,13 @@ bin/routine sync-ci    # GitHub Actions: */15 cron + workflow_dispatch, state ca
 ```
 
 Run state lives in `$ROUTINE_HOME/.state/<name>/` — `lock/`, `last-run.json`,
-`logs/<ts>.log` — and is never committed; CI persists it through `actions/cache`
-only.
+`runs.jsonl` (the append-only history), `logs/<ts>-<pid>.log`, plus
+`lock-blocked.log` and a `degraded` marker when either fires — and is never
+committed; CI persists it through `actions/cache` only. The sweep's own journal
+is `$ROUTINE_HOME/.state/tick.log`: one line per tick naming what was enumerated,
+what is due, and each dispatch. Every one of these is self-bounding; `due.log`
+(the launchd tick's stdout) rotates by copy-truncate into `due.log.1`, and a
+routine's logs are pruned at 14 days.
 
 ## Environment
 

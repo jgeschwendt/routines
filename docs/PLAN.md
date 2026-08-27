@@ -13,7 +13,8 @@ The documents live in a **routines home** — `$ROUTINE_HOME`, default `~/.routi
 
 ```
 ~/.routines/<name>.md            # the routine: frontmatter + prose + ```sh blocks
-~/.routines/.state/<name>/       # lock/, last-run.json, logs/<ts>.log
+~/.routines/.state/<name>/       # lock/, last-run.json, runs.jsonl, logs/<ts>-<pid>.log
+~/.routines/.state/tick.log      # the sweep's journal — one line per tick
 
 bin/routine                      # the only runner — bash 3.2-safe, zero-dep
 routines/                        # this repo's own routines — the CI convention
@@ -80,7 +81,7 @@ A routine is due when `next-fire-after(last started run, schedule) ≤ now`; a m
 
 ## `routine run` — the shared wrapper
 
-frontmatter → `requires` gate (exit 78, loud list of missing vars) → lock (`mkdir .state/<name>/lock`, pid inside; live pid ⇒ exit 75, dead pid ⇒ reap) → bash-native watchdog timeout (SIGTERM, SIGKILL after grace; exit 124) → `cd $ROUTINE_HOME` (blocks and the catch both run there; a missing home is exit 64) → blocks under the try/catch contract → `last-run.json` `{started, started_epoch, finished, exit, duration}` written on every path (trap) → the failing block's exit passes through.
+frontmatter → `requires` gate (exit 78, loud list of missing vars) → lock (`mkdir .state/<name>/lock`, pid inside; live pid ⇒ exit 75, dead pid ⇒ reap) → bash-native watchdog timeout (SIGTERM, SIGKILL after grace; exit 124) → `cd $ROUTINE_HOME` (blocks and the catch both run there; a missing home is exit 64) → blocks under the try/catch contract → `last-run.json` `{started, started_epoch, finished, exit, duration, degraded}` written on every path (trap) and appended to `runs.jsonl` → the failing block's exit passes through.
 
 ## Verbs
 

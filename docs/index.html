@@ -212,7 +212,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
              → <b>watchdog</b> (bash-native; SIGTERM, SIGKILL after grace; exit 124)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
              → <b>blocks</b> under the try/catch contract
-             → <b>last-run.json</b> {started, started_epoch, finished, exit, duration}, written on every path (trap)
+             → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap) and appended to runs.jsonl
              → the failing block's exit passes through</pre>
     <figcaption>The shared wrapper — every verb that runs a routine runs it through this.</figcaption>
   </figure>
