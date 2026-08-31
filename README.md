@@ -111,3 +111,12 @@ routine's logs are pruned at 14 days.
 | `ROUTINE_NOW` | `date +%s` — freezes the runner's clock, making due-ness testable |
 
 Design and rejected alternatives: [docs/PLAN.md](docs/PLAN.md).
+
+## License
+
+Copyright Joshua Geschwendt. Licensed under the
+[PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0)
+— full text in [LICENSE.md](LICENSE.md). Commercial use requires a separate
+license from the author.
+
+External contributions are not accepted.
