@@ -1,5 +1,5 @@
 /* plan.css — this page's shell only. Components and tokens are ui.css's
-   (vendored, byte-synced from jgeschwendt/ui — see AGENTS.md). */
+   (vendored from jgeschwendt/ui; provenance note in index.html's head). */
 
 .plan-shell {
   margin: 0 auto;
