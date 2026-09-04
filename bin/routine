@@ -20,8 +20,9 @@ ROUTINE_STATE=$(abspath "${ROUTINE_STATE:-$ROUTINE_HOME/.state}")
 ROUTINE_AGENTS_DIR=$(abspath "${ROUTINE_AGENTS_DIR:-${HOME:-/tmp}/Library/LaunchAgents}")
 ROUTINE_LAUNCHCTL="${ROUTINE_LAUNCHCTL:-launchctl}"
 ROUTINE_CLAUDE="${ROUTINE_CLAUDE:-claude}"
+ROUTINE_PMSET="${ROUTINE_PMSET:-pmset}"
 export ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
-export ROUTINE_LAUNCHCTL ROUTINE_CLAUDE
+export ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_PMSET
 
 if date -u -r 0 +%Y >/dev/null 2>&1; then DATE_FLAVOR=bsd; else DATE_FLAVOR=gnu; fi
 
@@ -53,7 +54,7 @@ exit: 64 usage/unknown routine · 75 lock held · 78 requires missing ·
       124 timeout · else the failing block's code
 
 env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
-     ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW
+     ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_PMSET
 EOF
 }
 
@@ -472,6 +473,20 @@ cmd_run() { # $1=name
   exit "$rc"
 }
 
+# A Power Nap dark wake lasts seconds: a routine dispatched into one has its
+# network call frozen when the wake ends, and the wall-clock watchdog kills it on
+# the next wake — cascading every routine queued behind it into 124. caffeinate
+# cannot hold it open (IOPMLib.h: the idle-sleep assertion "has no effect if the
+# system is in Dark Wake"), so the tick defers and derived due-ness carries over.
+# stele:landmark dark-wake-gate
+dark_wake() { # true only when macOS reports a wake without Graphics — a Power Nap dark wake
+  local caps
+  caps=$("$ROUTINE_PMSET" -g systemstate 2>/dev/null | grep '^Current System Capabilities are:') || return 1
+  [ -n "$caps" ] || return 1
+  case "$caps" in *Graphics*) return 1 ;; esac
+  return 0
+}
+
 # stele:landmark due-tick
 cmd_due() {
   local f name rc=0 drc docs=0 due="" next="" nxt ddisp="-" ndisp="-"
@@ -495,6 +510,10 @@ cmd_due() {
   if [ -n "$due" ]; then ddisp="${due// /,}"; fi
   if [ -n "$next" ]; then ndisp="${next// /,}"; fi
   tick_log "tick docs=$docs due=$ddisp next=$ndisp"
+  if [ -n "$due" ] && dark_wake; then
+    tick_log "defer dark-wake due=$ddisp"
+    exit 0
+  fi
   for name in $due; do
     tick_log "dispatch $name"
     "$SELF" run "$name"; drc=$?

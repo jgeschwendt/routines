@@ -12,6 +12,8 @@ invariants:
     anchor: lm:catch-retry
   - claim: run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract
     anchor: lm:due-tick
+  - claim: run --due never dispatches during a macOS dark wake — the tick logs defer dark-wake and exits 0, and derived due-ness carries the routines to the next real wake
+    anchor: lm:dark-wake-gate
 hazards:
   - claim: macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script
     anchor: lm:bash-3-2

@@ -89,6 +89,8 @@ RSTATE="$SANDBOX/state"
 RAGENTS="$SANDBOX/agents"
 LCTL="$SANDBOX/bin/launchctl"
 CLAUDE="$SANDBOX/bin/claude"
+PMSET="$SANDBOX/bin/pmset"             # ROUTINE_PMSET — a full wake, so no test ever defers
+PMSET_DARK="$SANDBOX/bin/pmset-dark"   # the same probe reporting a Power Nap dark wake
 LCTL_LOG="$SANDBOX/launchctl.log"
 CLAUDE_ARGV="$SANDBOX/claude.argv"     # one arg per line
 CLAUDE_FLAGS="$SANDBOX/claude.flags"   # argv minus the -p value, space-joined
@@ -111,6 +113,22 @@ printf '%s\n' "\$*" >> "$LCTL_LOG"
 exit 0
 EOF
 chmod +x "$LCTL"
+
+# `pmset -g systemstate` — a full wake lists Graphics, a dark wake never does.
+# The real probe is never called: every invocation path exports ROUTINE_PMSET.
+cat > "$PMSET" <<'EOF'
+#!/bin/bash
+printf 'Current System Capabilities are: CPU Graphics Audio Network \n'
+printf 'Current Power State: 4\n'
+EOF
+chmod +x "$PMSET"
+
+cat > "$PMSET_DARK" <<'EOF'
+#!/bin/bash
+printf 'Current System Capabilities are: CPU Network \n'
+printf 'Current Power State: 4\n'
+EOF
+chmod +x "$PMSET_DARK"
 
 write_claude_stub() { # $1=mode: record | repair
   cat > "$CLAUDE" <<EOF
@@ -146,6 +164,7 @@ runr() { # verb + args
     unset ROUTINE_TEST_REQ_A ROUTINE_TEST_REQ_B
     export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE"
     export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
+    export ROUTINE_PMSET="$PMSET"
     if [ -n "$RNOW" ]; then export ROUTINE_NOW="$RNOW"; else unset ROUTINE_NOW; fi
     for kv in $EXPORTS; do export "$kv"; done
     cd "$RCWD" || exit 1
@@ -163,6 +182,7 @@ runr_home() { # $1=home, then verb + args
     unset ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW
     export ROUTINE_HOME="$home"
     export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
+    export ROUTINE_PMSET="$PMSET"
     cd "$RCWD" || exit 1
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
@@ -391,6 +411,18 @@ printf 'x\n' >> "$SANDBOX/weekday.runs"
 \`\`\`
 EOF
 
+mkfix "$SANDBOX/r-dark/dark.md" <<EOF
+---
+schedule: 0 * * * *
+---
+
+# Dark
+
+\`\`\`sh
+printf 'x\n' >> "$SANDBOX/dark.runs"
+\`\`\`
+EOF
+
 # never-due: no schedule key, and a frontmatter fence that does not lead the file.
 mkfix "$SANDBOX/r-never/noschedule.md" <<EOF
 ---
@@ -492,6 +524,7 @@ assert_contains "status reads \$ROUTINE_HOME/*.md" "$OUT" "derived"
 (
   export ROUTINE_HOME="$SANDBOX/no-such-home" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE"
   export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
+  export ROUTINE_PMSET="$PMSET"
   cd "$RCWD" || exit 1
   exec "$RUNNER" run deftimeout
 ) > "$O" 2> "$E"
@@ -608,6 +641,7 @@ T_FRI_DUE=1786692660         # Fri 2026-08-14T07:31:00Z
 T_SAT=1786795200             # Sat 2026-08-15T12:00:00Z
 T_SUN=1786881600             # Sun 2026-08-16T12:00:00Z
 T_MON=1786951860             # Mon 2026-08-17T07:31:00Z
+T_DARK_NEXT=1786705260       # Fri 2026-08-14T11:01:00Z — an hour past T_HOURLY_DUE
 
 RDIR="$SANDBOX/r-never"
 RNOW="$T_HOURLY_DUE"
@@ -665,6 +699,35 @@ assert_eq "Sunday is gated by the 1-5 range" 2 "$(nlines "$SANDBOX/weekday.runs"
 RNOW="$T_MON"
 runr run --due
 assert_eq "Monday 07:31Z reopens the range — due" 3 "$(nlines "$SANDBOX/weekday.runs")"
+
+# ─── dark wake ────────────────────────────────────────────────────────────────
+
+# A capabilities line without Graphics is a Power Nap dark wake: the tick defers
+# rather than dispatching into a window that ends in seconds. Due-ness is derived,
+# so the same routine is still due on the next probe.
+RDIR="$SANDBOX/r-dark"
+RNOW="$T_HOURLY_DUE"
+EXPORTS="ROUTINE_PMSET=$PMSET_DARK"
+runr run --due
+EXPORTS=""
+assert_eq "a dark wake defers ⇒ exit 0" 0 "$RC"
+assert_eq "a deferred tick is silent on stdout" "" "$OUT"
+assert_eq "a deferred tick is silent on stderr" "" "$ERR"
+assert_eq "a dark wake dispatches nothing" 0 "$(nlines "$SANDBOX/dark.runs")"
+assert_no_file "a deferred routine writes no last-run.json" "$(lastrun dark)"
+assert_no_file "a deferred routine writes no logs" "$RSTATE/dark/logs"
+assert_grep "the deferral names what stayed due" "$RSTATE/tick.log" \
+  "defer dark-wake due=dark"
+
+runr run --due
+assert_eq "a full wake dispatches the still-due routine" 1 "$(nlines "$SANDBOX/dark.runs")"
+
+# fail open: an unprobeable pmset is never read as a dark wake.
+RNOW="$T_DARK_NEXT"
+EXPORTS="ROUTINE_PMSET=/nonexistent/pmset"
+runr run --due
+EXPORTS=""
+assert_eq "an absent pmset fails open and dispatches" 2 "$(nlines "$SANDBOX/dark.runs")"
 
 RNOW=""
 RDIR="$SANDBOX/routines"

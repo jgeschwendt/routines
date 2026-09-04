@@ -8,22 +8,27 @@
     },
     "catch-retry": {
       "file": "bin/routine",
-      "line": 305,
+      "line": 306,
+      "node": "bin"
+    },
+    "dark-wake-gate": {
+      "file": "bin/routine",
+      "line": 481,
       "node": "bin"
     },
     "due-derivation": {
       "file": "bin/routine",
-      "line": 185,
+      "line": 186,
       "node": "bin"
     },
     "due-tick": {
       "file": "bin/routine",
-      "line": 475,
+      "line": 490,
       "node": "bin"
     },
     "last-run-contract": {
       "file": "bin/routine",
-      "line": 258,
+      "line": 259,
       "node": "bin"
     }
   },
@@ -63,7 +68,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
           }
         },
         {
@@ -71,11 +76,23 @@
           "enforced_by": null,
           "id": "catch-retry",
           "kind": "invariant",
-          "resolved": "bin/routine:305",
+          "resolved": "bin/routine:306",
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
+          }
+        },
+        {
+          "anchor": "lm:dark-wake-gate",
+          "enforced_by": null,
+          "id": "dark-wake-gate",
+          "kind": "invariant",
+          "resolved": "bin/routine:481",
+          "text": "run --due never dispatches during a macOS dark wake — the tick logs defer dark-wake and exits 0, and derived due-ness carries the routines to the next real wake",
+          "verified": {
+            "digest": null,
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
           }
         },
         {
@@ -83,11 +100,11 @@
           "enforced_by": null,
           "id": "due-derivation",
           "kind": "invariant",
-          "resolved": "bin/routine:185",
+          "resolved": "bin/routine:186",
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
           }
         },
         {
@@ -95,11 +112,11 @@
           "enforced_by": null,
           "id": "due-tick",
           "kind": "invariant",
-          "resolved": "bin/routine:475",
+          "resolved": "bin/routine:490",
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
           }
         },
         {
@@ -107,11 +124,11 @@
           "enforced_by": null,
           "id": "last-run-contract",
           "kind": "invariant",
-          "resolved": "bin/routine:258",
+          "resolved": "bin/routine:259",
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
           }
         }
       ],
@@ -141,7 +158,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "f4a2e981e9789783618a0fea70654b73983b0847"
+            "sha": "894808cf288e537699657810620a5c22f191c46e"
           }
         }
       ],

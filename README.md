@@ -84,6 +84,14 @@ A routine is due when `next-fire-after(last started run, schedule) ≤ now`; no
 matched against the current minute, so a delayed CI tick or a sleeping laptop
 catches up instead of skipping.
 
+The launchd tick also fires during macOS dark wakes — Power Nap maintenance
+wakes a few seconds long. A routine started in one has its network call frozen
+the moment the wake ends, and the wall-clock watchdog kills it on the next wake,
+so `run --due` defers dispatch whenever `pmset -g systemstate` reports no
+`Graphics` capability: it logs `defer dark-wake` to `tick.log` and exits, and the
+routines simply stay due for the next real wake. `ROUTINE_PMSET` overrides the
+probe — the escape hatch for tests and non-macOS hosts, where it fails open.
+
 ```sh
 bin/routine install    # launchd: StartInterval 60 + RunAtLoad, running run --due
 bin/routine sync-ci    # GitHub Actions: */15 cron + workflow_dispatch, state cached
@@ -109,6 +117,7 @@ routine's logs are pruned at 14 days.
 | `ROUTINE_LAUNCHCTL` | `launchctl` |
 | `ROUTINE_CLAUDE` | `claude` |
 | `ROUTINE_NOW` | `date +%s` — freezes the runner's clock, making due-ness testable |
+| `ROUTINE_PMSET` | `pmset` — the dark-wake probe; unreachable or unparseable fails open |
 
 Design and rejected alternatives: [docs/PLAN.md](docs/PLAN.md).
 
