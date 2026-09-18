@@ -1,6 +1,6 @@
 #!/bin/bash
 # routine — executable markdown on rails. Design: docs/PLAN.md.
-# stele:landmark bash-3-2
+# ※ bash-3-2
 set -u
 
 # ─── environment ──────────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ expand() { # $1=field $2=lo $3=hi — prints the expanded value set
   printf '%s\n' "$out"
 }
 
-# stele:landmark due-derivation
+# ※ due-derivation
 next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly after
   local start="$1" f_min f_hour f_dom f_mon f_dow mins hours doms mons dows
   local day0 d=0 de mm dd ww ok h m t
@@ -256,7 +256,7 @@ divider() { # $1=ascii label — 80 columns
   printf '%s %s %s\n' "$(dash 8)" "$1" "$(dash $((70 - ${#1})))"
 }
 
-# stele:landmark last-run-contract
+# ※ last-run-contract
 on_exit() {
   local rc=$? fin deg line
   if [ -n "${WD_PID:-}" ]; then kill "$WD_PID" 2>/dev/null; fi
@@ -303,7 +303,7 @@ exec_block() { # $1=index $2=capture file
   wait "$p" 2>/dev/null
 }
 
-# stele:landmark catch-retry
+# ※ catch-retry
 catch_block() { # $1=index $2=capture file $3=block exit code
   local prompt cout p rc crc t0
   if [ "$ON_ERROR" = fail ]; then return "$3"; fi
@@ -478,7 +478,7 @@ cmd_run() { # $1=name
 # the next wake — cascading every routine queued behind it into 124. caffeinate
 # cannot hold it open (IOPMLib.h: the idle-sleep assertion "has no effect if the
 # system is in Dark Wake"), so the tick defers and derived due-ness carries over.
-# stele:landmark dark-wake-gate
+# ※ dark-wake-gate
 dark_wake() { # true only when macOS reports a wake without Graphics — a Power Nap dark wake
   local caps
   caps=$("$ROUTINE_PMSET" -g systemstate 2>/dev/null | grep '^Current System Capabilities are:') || return 1
@@ -487,7 +487,7 @@ dark_wake() { # true only when macOS reports a wake without Graphics — a Power
   return 0
 }
 
-# stele:landmark due-tick
+# ※ due-tick
 cmd_due() {
   local f name rc=0 drc docs=0 due="" next="" nxt ddisp="-" ndisp="-"
   # stdout is the contract's silence; the sweep narrates into tick.log instead

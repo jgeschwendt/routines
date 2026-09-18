@@ -7,5 +7,5 @@ commands:
   test: /bin/bash test/routine.test.sh
 ```
 
-<!-- stele:begin router -->
-<!-- stele:end -->
+<!-- @stele -->
+<!-- @end -->

@@ -8,5 +8,5 @@ invariants:
     anchor: routines/heartbeat.md#heartbeat
 ```
 
-<!-- stele:begin router -->
-<!-- stele:end -->
+<!-- @stele -->
+<!-- @end -->
