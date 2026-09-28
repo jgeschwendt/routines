@@ -96,6 +96,7 @@ CLAUDE_ARGV="$SANDBOX/claude.argv"     # one arg per line
 CLAUDE_FLAGS="$SANDBOX/claude.flags"   # argv minus the -p value, space-joined
 CLAUDE_PROMPT="$SANDBOX/claude.prompt"
 CLAUDE_CALLED="$SANDBOX/claude.called"
+CLAUDE_ENV="$SANDBOX/claude.env"       # the ROUTINE_* vars the catch agent sees
 REPAIR_MARKER="$SANDBOX/repaired.marker"
 
 mkdir -p "$RHOME" "$RCWD" "$RDIR" "$RSTATE" "$SANDBOX/bin"
@@ -135,6 +136,7 @@ write_claude_stub() { # $1=mode: record | repair
 #!/bin/bash
 : > "$CLAUDE_CALLED"
 : > "$CLAUDE_ARGV"
+printf 'name=%s\nstate_dir=%s\nhome=%s\n' "\${ROUTINE_NAME:-}" "\${ROUTINE_STATE_DIR:-}" "\${ROUTINE_HOME:-}" > "$CLAUDE_ENV"
 for a in "\$@"; do printf '%s\n' "\$a" >> "$CLAUDE_ARGV"; done
 flags=""; prompt=""
 while [ \$# -gt 0 ]; do
@@ -605,6 +607,13 @@ PROMPT=$(cat "$CLAUDE_PROMPT" 2>/dev/null)
 assert_contains "the prompt carries the document's prose" "$PROMPT" "PROSE-CANARY-4417"
 assert_contains "the prompt carries the frontmatter" "$PROMPT" "timeout: 30"
 assert_contains "the prompt carries the failing block's output" "$PROMPT" "SENTINEL-OUTPUT-9271"
+assert_contains "the prompt forbids a needs-input/failed last-message line" "$PROMPT" \
+  'Never start a line of your final message with `needs input:` or `failed:`'
+assert_contains "the prompt points at the doc's stable thread keys" "$PROMPT" '`ci:<repo>:<sha7>`'
+CENV=$(cat "$CLAUDE_ENV" 2>/dev/null)
+assert_contains "the catch agent sees ROUTINE_NAME" "$CENV" "name=repair-yes"
+assert_contains "the catch agent sees ROUTINE_STATE_DIR" "$CENV" "state_dir=$RSTATE/repair-yes"
+assert_contains "the catch agent sees ROUTINE_HOME" "$CENV" "home=$RHOME"
 assert_contains "claude records its full argv" "$(cat "$CLAUDE_ARGV" 2>/dev/null)" "--model"
 assert_eq "the repaired block is executed twice — one retry, no loop" 2 \
   "$(nlines "$SANDBOX/repair-yes.runs")"

@@ -58,7 +58,7 @@ claude -p "summarize inbox.json …"   # a block may itself call claude — an a
 ## try / catch — the failure contract
 
 - **try** — blocks run in order; each block's output is appended to the run log under a block delimiter; each block's exit code is the truth.
-- **catch** (`on_error: claude`) — the runner invokes `claude --model opus --permission-mode=auto --no-session-persistence -p` with the full document, the failing block, and its captured output, cwd = the routines home. Instruction: running unattended; diagnose and repair state; do not continue the routine yourself.
+- **catch** (`on_error: claude`) — the runner invokes `claude --model opus --permission-mode=auto --no-session-persistence -p` with the full document, the failing block, and its captured output, cwd = the routines home, env carrying `ROUTINE_NAME`, `ROUTINE_STATE_DIR` and `ROUTINE_HOME` as the blocks see them. Instruction: running unattended; diagnose and repair state; do not continue the routine yourself; never start a final-message line with `needs input:` or `failed:` — the Stop hook would open an unkeyed thread per run — but use the stable thread key the document names.
 - **retry** — the runner re-executes the failing block once. Pass ⇒ continue to the next block; fail ⇒ the routine exits with that block's code. One repair attempt per block, no loops.
 - **degrade** — no claude binary or auth (bare CI) ⇒ behaves as `on_error: fail`, with the reason logged.
 

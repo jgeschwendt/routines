@@ -303,6 +303,16 @@ exec_block() { # $1=index $2=capture file
   wait "$p" 2>/dev/null
 }
 
+# The Stop hook opens a thread from a `needs input:`/`failed:` line, keyed to the
+# catch's throwaway session — one unkeyed duplicate per run, nagging forever.
+CATCH_THREAD_RULE='Never start a line of your final message with `needs input:` or `failed:` —
+not even when quoting block output (indent or backtick such lines). A Stop hook
+opens a thread from such a line, keyed to this throwaway session, so every run
+would add an unkeyed duplicate that never closes. When the owner must act, open
+or reply to the thread under the stable key the document names (e.g.
+`ci:<repo>:<sha7>`, `home-inventory:<entry>`, `claude-breaker`), and state
+failures in plain prose.'
+
 # ※ catch-retry
 catch_block() { # $1=index $2=capture file $3=block exit code
   local prompt cout p rc crc t0
@@ -329,10 +339,15 @@ $(tail -n 200 "$2")
 === end output ===
 
 Diagnose the failure and repair state only. Do NOT continue the routine and do
-not run the remaining blocks — the runner retries block $1 once after you exit."
+not run the remaining blocks — the runner retries block $1 once after you exit.
+
+$CATCH_THREAD_RULE"
   cout="$RUN_TMP/catch-$1.out"
   t0=$(date +%s)
-  "$ROUTINE_CLAUDE" --model opus --permission-mode=auto --no-session-persistence \
+  # ROUTINE_HOME is already exported; the other two let the doc's
+  # $ROUTINE_STATE_DIR references resolve in the agent's commands
+  ROUTINE_NAME="$RNAME" ROUTINE_STATE_DIR="$STATE_DIR" \
+    "$ROUTINE_CLAUDE" --model opus --permission-mode=auto --no-session-persistence \
     -p "$prompt" > "$cout" 2>&1 &
   p=$!
   printf '%s\n' "$p" > "$RUN_TMP/child.pid"
