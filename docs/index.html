@@ -200,7 +200,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">CI — one static workflow</div>
       <div class="panel-body">
         <ul role="list">
-          <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yml</code> into the repo it is invoked in</li>
+          <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yaml</code> into the repo it is invoked in</li>
           <li>cron every 15 min + <code class="code">workflow_dispatch</code>; <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, fetch <code class="code">bin/routine</code> if absent, <code class="code">run --due</code>, save cache</li>
           <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
         </ul>
@@ -246,7 +246,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
         <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due?, last exit, duration</td></tr>
         <tr data-verb="install"><td class="table-mono">install</td><td>render and load the single launchd tick agent</td></tr>
         <tr data-verb="uninstall"><td class="table-mono">uninstall</td><td>boot the agent out and remove its plist</td></tr>
-        <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">./.github/workflows/routines.yml</code> in the invoking repo</td></tr>
+        <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">./.github/workflows/routines.yaml</code> in the invoking repo</td></tr>
       </tbody>
     </table>
   </div>

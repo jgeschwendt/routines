@@ -69,7 +69,7 @@ routine run --due      run every due routine — silent when none are
 routine status         schedule × due? × last run, one row per document
 routine install        install the launchd tick agent (com.routines.due)
 routine uninstall      remove it
-routine sync-ci        (re)write ./.github/workflows/routines.yml here
+routine sync-ci        (re)write ./.github/workflows/routines.yaml here
 routine help           usage
 ```
 

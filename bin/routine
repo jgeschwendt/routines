@@ -47,7 +47,7 @@ routine — executable markdown on rails
   routine status         schedule × due? × last run, one row per routine
   routine install        install the launchd tick agent (com.routines.due)
   routine uninstall      remove it
-  routine sync-ci        (re)write ./.github/workflows/routines.yml here
+  routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text
 
 exit: 64 usage/unknown routine · 75 lock held · 78 requires missing ·
@@ -621,8 +621,9 @@ cmd_uninstall() {
 }
 
 cmd_sync_ci() {
-  local wf="$PWD/.github/workflows/routines.yml"
+  local wf="$PWD/.github/workflows/routines.yaml"
   mkdir -p "$PWD/.github/workflows"
+  rm -f "$PWD/.github/workflows/routines.yml" # pre-.yaml name; leaving it would double-tick
   cat > "$wf" <<'EOF'
 name: routines
 

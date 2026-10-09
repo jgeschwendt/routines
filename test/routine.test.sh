@@ -799,8 +799,10 @@ assert_contains "uninstall boots the agent out" "$(cat "$LCTL_LOG" 2>/dev/null)"
 # may already own $SRC_REPO/.state, so assert against the snapshot, not bare
 # existence.
 SRC_STATE_PRE=0; [ -e "$SRC_REPO/.state" ] && SRC_STATE_PRE=1
-WF="$RCWD/.github/workflows/routines.yml"
+WF="$RCWD/.github/workflows/routines.yaml"
+mkdir -p "$RCWD/.github/workflows" && : > "$RCWD/.github/workflows/routines.yml"
 runr sync-ci
+assert_no_file "sync-ci removes the legacy routines.yml" "$RCWD/.github/workflows/routines.yml"
 assert_eq "sync-ci exits 0" 0 "$RC"
 assert_file "sync-ci writes the workflow into the invoking repo" "$WF"
 WFC=$(cat "$WF" 2>/dev/null)
