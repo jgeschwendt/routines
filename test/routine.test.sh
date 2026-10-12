@@ -413,6 +413,54 @@ printf 'x\n' >> "$SANDBOX/weekday.runs"
 \`\`\`
 EOF
 
+mkfix "$SANDBOX/r-star/star.md" <<EOF
+---
+schedule: 0 0 */2 * 1
+---
+
+\`\`\`sh
+printf 'x\n' >> "$SANDBOX/star.runs"
+\`\`\`
+EOF
+
+mkfix "$SANDBOX/r-leap/leap.md" <<EOF
+---
+schedule: 30 2 29 2 *
+---
+
+\`\`\`sh
+printf 'x\n' >> "$SANDBOX/leap.runs"
+\`\`\`
+EOF
+
+# CRLF line ends and a YAML-quoted schedule — the spelling an editor or a YAML habit hands over
+printf -- '---\r\nschedule: "0 * * * *"\r\n---\r\n\r\n```sh\r\nprintf x >> "%s/quoted.runs"\r\n```\r\n' \
+  "$SANDBOX" | mkfix "$SANDBOX/r-quoted/quoted.md"
+
+mkfix "$RDIR/fences.md" <<EOF
+# Fences
+
+~~~markdown
+\`\`\`sh
+printf 'example\n' >> "$SANDBOX/fences.txt"
+\`\`\`
+~~~
+
+  \`\`\`\`\` \`\`\`\`sh \`\`\`\`\`; an inline span, never an opener
+
+\`\`\`\`sh
+cat >> "$SANDBOX/fences.txt" <<'X'
+\`\`\`
+X
+\`\`\`\`
+
+1. item
+
+   \`\`\`bash
+   printf 'indented\n' >> "$SANDBOX/fences.txt"
+   \`\`\`
+EOF
+
 mkfix "$SANDBOX/r-dark/dark.md" <<EOF
 ---
 schedule: 0 * * * *
@@ -487,6 +535,10 @@ assert_eq "ROUTINE_STATE_DIR is exported to blocks" "$RSTATE/blocks" \
 assert_no_file "text fence is inert" "$SANDBOX/inert-text.marker"
 assert_no_file "untagged fence is inert" "$SANDBOX/inert-bare.marker"
 assert_no_file "python fence is inert" "$SANDBOX/inert-python.marker"
+
+runr run fences
+assert_eq "~~~ and \`\`\`\` fences hold a \`\`\` line; an indented fence runs dedented" '```
+indented' "$(cat "$SANDBOX/fences.txt" 2>/dev/null)"
 
 runr run errexit
 assert_eq "a failing command aborts its block (bash -e)" 1 "$RC"
@@ -709,6 +761,32 @@ RNOW="$T_MON"
 runr run --due
 assert_eq "Monday 07:31Z reopens the range — due" 3 "$(nlines "$SANDBOX/weekday.runs")"
 
+T_STAR_RUN=1791763200        # Mon 2026-10-12T00:00:00Z
+T_STAR_WED=1791936060        # Wed 2026-10-14T00:01:00Z — odd-free, not Monday
+T_STAR_MON=1792368060        # Mon 2026-10-19T00:01:00Z — Monday on an odd day
+RDIR="$SANDBOX/r-star"
+RNOW="$T_STAR_RUN"
+runr run --due
+RNOW="$T_STAR_WED"
+runr run --due
+assert_eq "'0 0 */2 * 1' — a */N day field ANDs (cronie), so Wed 14th is not due" 1 \
+  "$(nlines "$SANDBOX/star.runs")"
+RNOW="$T_STAR_MON"
+runr run --due
+assert_eq "'0 0 */2 * 1' — Mon 19th satisfies both, due" 2 "$(nlines "$SANDBOX/star.runs")"
+
+RDIR="$SANDBOX/r-leap"
+RNOW=1835404260              # Tue 2028-02-29T02:31:00Z
+runr run --due
+RNOW=1961712000              # Mon 2032-03-01T00:00:00Z
+runr run --due
+assert_eq "'30 2 29 2 *' fires again four years on" 2 "$(nlines "$SANDBOX/leap.runs")"
+
+RDIR="$SANDBOX/r-quoted"
+for RNOW in "$T_HOURLY_RUN" "$T_HOURLY_PLUS600" "$T_HOURLY_DUE"; do runr run --due; done
+assert_eq "a CRLF doc's quoted schedule is due on the hour, not before" 2 \
+  "$(wc -c < "$SANDBOX/quoted.runs" | tr -d ' ')"
+
 # ─── dark wake ────────────────────────────────────────────────────────────────
 
 # A capabilities line without Graphics is a Power Nap dark wake: the tick defers
@@ -779,11 +857,13 @@ assert_contains "install boots the old agent out" "$LC" "bootout gui/$UID_NOW/co
 assert_contains "install bootstraps the agent" "$LC" "bootstrap gui/$UID_NOW"
 assert_eq "bootout precedes bootstrap" 1 "$(grep -n bootout "$LCTL_LOG" | head -1 | cut -d: -f1)"
 
-FRESH_HOME="$SANDBOX/fresh-home"
+FRESH_HOME="$SANDBOX/fresh <&> 'home"
 runr_home "$FRESH_HOME" install
 assert_eq "install into an absent home exits 0" 0 "$RC"
 assert_dir "install creates the routines home" "$FRESH_HOME"
 assert_dir "install creates the derived state dir" "$FRESH_HOME/.state"
+assert_contains "plist stamps the custom home, XML-escaped — the tick runs against it" \
+  "$(cat "$PLIST" 2>/dev/null)" "<key>ROUTINE_HOME</key><string>$SANDBOX/fresh &lt;&amp;&gt; 'home</string>"
 
 : > "$LCTL_LOG"
 runr uninstall
@@ -816,6 +896,8 @@ assert_contains "workflow restores the newest state key" "$WFC" "restore-keys"
 assert_contains "workflow fetches the runner when the repo has none" "$WFC" \
   "[ -x bin/routine ] || (mkdir -p bin && curl -fsSL"
 assert_contains "workflow ends at the due tick" "$WFC" "bin/routine run --due"
+assert_contains "workflow saves state even when a routine fails" "$WFC" "actions/cache/save@v4
+        if: always()"
 assert_no_file "sync-ci targets its cwd, never the routines home" "$RHOME/.github"
 if [ "$SRC_STATE_PRE" = 0 ]; then
   assert_no_file "sync-ci never writes into the source tree under test" \

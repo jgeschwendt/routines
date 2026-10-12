@@ -51,8 +51,8 @@ claude -p "summarize inbox.json …"   # a block may itself call claude — an a
 ​```
 ```
 
-- Frontmatter is flat `key: value`, parsed with sed — no yq, no yaml library.
-- Only `sh` / `bash` fences execute, sequentially, each under `bash -e`; other fences are material for the prose.
+- Frontmatter is flat `key: value`, parsed with awk — no yq, no yaml library; one pair of surrounding quotes is stripped, CRLF tolerated.
+- Only `sh` / `bash` fences execute, sequentially, each under `bash -e`; other fences are material for the prose. Fences follow CommonMark (``` or ~~~, 3+ long, indent 0–3 stripped, closed only by the same character at least as long).
 - One file per routine; a block that needs an asset writes or references sibling paths.
 
 ## try / catch — the failure contract
@@ -72,12 +72,12 @@ A routine is due when `next-fire-after(last started run, schedule) ≤ now`; a m
 - launchd catch-up after sleep, for free.
 - `routine run --due` as the universal entry — every scheduler is a dumb tick.
 
-`next-fire-after` is a minute-scan forward from the last run (horizon 366 days) — dumb, correct, sub-second.
+`next-fire-after` is a minute-scan forward from the last run (horizon eight years, so Feb 29 recurs; dead months skip to their 28th) — dumb, correct, sub-second. Day-of-month and day-of-week follow cronie: OR when both are restricted, AND when either opens with `*` (`*/2` included).
 
 ## Schedulers are dumb ticks
 
-- **launchd** — `routine install` renders one agent, `com.routines.due`: `StartInterval` 60 + `RunAtLoad` true, running `/bin/bash -lc "exec <runner> run --due"` — no `cd`, since the runner cds into the routines home itself. RunAtLoad doubles as login/wake catch-up. `routine uninstall` boots it out.
-- **CI** — `routine sync-ci` writes one static workflow into the repo it is invoked in: cron every 15 min + `workflow_dispatch`, `ROUTINE_HOME` = that repo's `routines/` dir (the CI convention — a repo's routines live beside its code), restore `routines/.state` from actions/cache, fetch `bin/routine` if the repo does not carry one, `bin/routine run --due`, save cache. Cache eviction just makes everything due once; the idempotency contract absorbs it.
+- **launchd** — `routine install` renders one agent, `com.routines.due`: `StartInterval` 60 + `RunAtLoad` true, running `/bin/bash -lc "exec <runner> run --due"` with `PATH` and the `ROUTINE_HOME`/`ROUTINE_DIR`/`ROUTINE_STATE` anchors stamped (XML-escaped) — no `cd`, since the runner cds into the routines home itself. RunAtLoad doubles as login/wake catch-up. `routine uninstall` boots it out.
+- **CI** — `routine sync-ci` writes one static workflow into the repo it is invoked in: cron every 15 min + `workflow_dispatch`, `ROUTINE_HOME` = that repo's `routines/` dir (the CI convention — a repo's routines live beside its code), restore `routines/.state` from actions/cache, fetch `bin/routine` if the repo does not carry one, `bin/routine run --due`, save cache under `if: always()` — `actions/cache` saves only on success, so one red routine would roll back every other routine's state. Cache eviction just makes everything due once; the idempotency contract absorbs it.
 
 ## `routine run` — the shared wrapper
 

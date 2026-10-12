@@ -62,6 +62,7 @@ EOF
 
 fm_get() { # $1=doc $2=key — flat key: value from the leading --- fence pair
   awk -v want="$2" '
+    { sub(/\r$/, "") }
     NR == 1 { if ($0 != "---") exit; inside = 1; next }
     inside && $0 == "---" { exit }
     inside {
@@ -69,20 +70,35 @@ fm_get() { # $1=doc $2=key — flat key: value from the leading --- fence pair
       k = substr($0, 1, i - 1); v = substr($0, i + 1)
       sub(/[ \t]+#.*$/, "", v)
       gsub(/^[ \t]+|[ \t]+$/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", v)
+      # `*/15 * * * *` is a YAML alias unquoted, so a quoted value is the natural spelling
+      if (v ~ /^".*"$/ || v ~ /^\047.*\047$/) v = substr(v, 2, length(v) - 2)
       if (k == want) { print v; exit }
     }
   ' "$1"
 }
 
+# CommonMark fences: ``` or ~~~ runs of 3+, indented 0-3; only a run of the same
+# character at least as long closes, so a ~~~ or ```` fence can show a ```sh
+# example without running it. A backtick info string holding a backtick is prose
+# (home-inventory.md writes ````` ````sh ````` inline), never an opener.
 extract_blocks() { # $1=doc $2=outdir — writes NNN.sh per block, prints the count
   awk -v dir="$2" '
+    { sub(/\r$/, "") }
     inb {
-      if ($0 ~ /^```/) { if (cur != "") close(cur); cur = ""; inb = 0; next }
-      if (cur != "") print $0 >> cur
+      f = $0; sub(/^ ? ? ?/, "", f); sub(/[ \t]+$/, "", f)
+      if (f ~ /^(```+|~~~+)$/ && substr(f, 1, 1) == fch && length(f) >= flen) {
+        if (cur != "") close(cur); cur = ""; inb = 0; next
+      }
+      l = $0; for (i = 0; i < ind && substr(l, 1, 1) == " "; i++) l = substr(l, 2)
+      if (cur != "") print l >> cur
       next
     }
-    /^```/ {
-      tag = $0; sub(/^```[ \t]*/, "", tag); sub(/[ \t]+$/, "", tag)
+    /^ ? ? ?(```|~~~)/ {
+      ind = match($0, /[`~]/) - 1; f = substr($0, ind + 1); fch = substr(f, 1, 1)
+      flen = 0; while (substr(f, flen + 1, 1) == fch) flen++
+      tag = substr(f, flen + 1)
+      if (fch == "`" && index(tag, "`")) next
+      sub(/^[ \t]+/, "", tag); sub(/[ \t].*$/, "", tag)
       inb = 1; cur = ""
       if (tag == "sh" || tag == "bash") {
         n++; cur = sprintf("%s/%03d.sh", dir, n); printf "" > cur
@@ -186,7 +202,7 @@ expand() { # $1=field $2=lo $3=hi — prints the expanded value set
 # ※ due-derivation
 next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly after
   local start="$1" f_min f_hour f_dom f_mon f_dow mins hours doms mons dows
-  local day0 d=0 de mm dd ww ok h m t
+  local day0 d=0 both de mm dd ww ok h m t
   set -f; set -- $2; set +f
   [ $# -eq 5 ] || return 1
   f_min="$1" f_hour="$2" f_dom="$3" f_mon="$4" f_dow="$5"
@@ -196,21 +212,23 @@ next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly
   mons=$(expand "$f_mon" 1 12) || return 1
   dows=$(expand "$f_dow" 0 7) || return 1
   case " $dows " in *" 7 "*) dows="$dows 0" ;; esac
+  # cronie's DOM_STAR/DOW_STAR: a day field opening with * (*/2 too) ANDs with
+  # the other; only two restricted fields OR together
+  both=0
+  case "$f_dom" in '*'*) both=1 ;; esac
+  case "$f_dow" in '*'*) both=1 ;; esac
   day0=$((start - start % 86400))
-  while [ "$d" -le 366 ]; do
+  # eight years: Feb 29 recurs every four, and 2100 skips one
+  while [ "$d" -le 2922 ]; do
     de=$((day0 + d * 86400)); d=$((d + 1))
     set -- $(epoch_fmt "$de" '%m %d %w')
     mm=$((10#$1)); dd=$((10#$2)); ww=$((10#$3))
-    inset "$mons" "$mm" || continue
+    # a dead month jumps to its 28th, then walks — never past a next month's 1st
+    if ! inset "$mons" "$mm"; then [ "$dd" -lt 28 ] && d=$((d + 27 - dd)); continue; fi
     ok=0
-    if [ "$f_dom" != '*' ] && [ "$f_dow" != '*' ]; then
-      inset "$doms" "$dd" && ok=1
-      inset "$dows" "$ww" && ok=1
-    elif [ "$f_dom" != '*' ]; then inset "$doms" "$dd" && ok=1
-    elif [ "$f_dow" != '*' ]; then inset "$dows" "$ww" && ok=1
-    else ok=1
-    fi
-    [ "$ok" -eq 1 ] || continue
+    inset "$doms" "$dd" && ok=1
+    inset "$dows" "$ww" && ok=$((ok + 1))
+    [ "$ok" -gt "$both" ] || continue
     h=0
     while [ "$h" -le 23 ]; do
       if inset "$hours" "$h"; then
@@ -577,13 +595,16 @@ cmd_status() {
 
 # ─── schedulers ───────────────────────────────────────────────────────────────
 
+xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; } # $1=text for a plist <string>
+
 cmd_install() {
   local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
   mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_HOME" "$ROUTINE_STATE"
   # launchd hands a bare PATH and `bash -l` reads ~/.bash_profile, never the zsh
   # profile — so ~/.local/bin (claude, mise, sandman, stele) is absent under the
   # tick and present by hand. That asymmetry silently degrades every on_error
-  # catch to `claude unavailable`; stamp the PATH the tick must run with.
+  # catch to `claude unavailable`; stamp the PATH the tick must run with, and the
+  # anchors, or a custom ROUTINE_HOME install ticks the default ~/.routines.
   cat > "$plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -594,17 +615,20 @@ cmd_install() {
   <array>
     <string>/bin/bash</string>
     <string>-lc</string>
-    <string>exec '$SELF' run --due</string>
+    <string>$(xml "exec $(printf %q "$SELF") run --due")</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$(xml "$HOME")/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>ROUTINE_HOME</key><string>$(xml "$ROUTINE_HOME")</string>
+    <key>ROUTINE_DIR</key><string>$(xml "$ROUTINE_DIR")</string>
+    <key>ROUTINE_STATE</key><string>$(xml "$ROUTINE_STATE")</string>
   </dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key><string>$ROUTINE_STATE/due.log</string>
-  <key>StandardErrorPath</key><string>$ROUTINE_STATE/due.log</string>
+  <key>StandardOutPath</key><string>$(xml "$ROUTINE_STATE")/due.log</string>
+  <key>StandardErrorPath</key><string>$(xml "$ROUTINE_STATE")/due.log</string>
 </dict>
 </plist>
 EOF
@@ -639,13 +663,20 @@ jobs:
       ROUTINE_HOME: ${{ github.workspace }}/routines
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: routines/.state
           key: routines-state-${{ github.run_id }}
           restore-keys: routines-state-
       - run: '[ -x bin/routine ] || (mkdir -p bin && curl -fsSL https://raw.githubusercontent.com/jgeschwendt/routines/main/bin/routine -o bin/routine && chmod +x bin/routine)'
       - run: bin/routine run --due
+      # actions/cache saves only on success; one red routine would roll every
+      # other routine's state back and re-run it each tick
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: routines/.state
+          key: routines-state-${{ github.run_id }}
 EOF
   printf 'wrote %s\n' "$wf"
 }

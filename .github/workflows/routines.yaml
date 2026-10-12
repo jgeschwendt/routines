@@ -12,10 +12,17 @@ jobs:
       ROUTINE_HOME: ${{ github.workspace }}/routines
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: routines/.state
           key: routines-state-${{ github.run_id }}
           restore-keys: routines-state-
       - run: '[ -x bin/routine ] || (mkdir -p bin && curl -fsSL https://raw.githubusercontent.com/jgeschwendt/routines/main/bin/routine -o bin/routine && chmod +x bin/routine)'
       - run: bin/routine run --due
+      # actions/cache saves only on success; one red routine would roll every
+      # other routine's state back and re-run it each tick
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: routines/.state
+          key: routines-state-${{ github.run_id }}
