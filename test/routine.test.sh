@@ -723,8 +723,8 @@ mkfix "$RDIR/sig.md" <<EOF
 on_error: fail
 ---
 \`\`\`sh
-printf '%s\n' "\$\$" > "$SANDBOX/sig.pid"
-sleep 30
+sh -c 'trap "" TERM; echo \$\$ > "$SANDBOX/sig.pid"; exec sleep 30' &
+wait
 \`\`\`
 EOF
 for s in HUP:129 TERM:143; do
@@ -736,7 +736,7 @@ for s in HUP:129 TERM:143; do
   assert_eq "SIG${s%:*} exits ${s#*:}" "${s#*:}" "$(cat "$SANDBOX/sig.rc")"
   assert_contains "SIG${s%:*} records exit ${s#*:}" "$(cat "$(lastrun sig)")" "\"exit\":${s#*:}"
   assert_file "SIG${s%:*} keeps the degraded marker" "$RSTATE/sig/degraded"
-  assert_gone "SIG${s%:*} kills the running block" "$SANDBOX/sig.pid"
+  assert_gone "SIG${s%:*} kills the block's TERM-ignoring member" "$SANDBOX/sig.pid"
 done
 
 printf '#!/bin/bash\nsleep 30\n' > "$SANDBOX/bin/claude-slow"; chmod +x "$SANDBOX/bin/claude-slow"
@@ -932,7 +932,9 @@ assert_contains "status joins the schedule" "$OUT" "0 * * * *"
 printf 'not a routine\n' > "$RDIR/AGENTS.md"
 runr status
 assert_missing "status skips non-routine names (AGENTS.md)" "$OUT" "AGENTS"
+RNOW_WAS="$RNOW"; RNOW=1  # before every recorded run — an hour crossing makes nothing due
 runr run --due
+RNOW="$RNOW_WAS"
 assert_eq "run --due skips non-routine names" 0 "$RC"
 rm "$RDIR/AGENTS.md"
 
