@@ -24,7 +24,7 @@ docs/                            # this design + plate
 
 Personal routines never enter the public tool repo, and the repo can move — or be replaced by a `curl`'d copy of `bin/routine` — without breaking launchd, because the agent points at the runner, not at a checkout.
 
-`ROUTINE_HOME` is the only anchor: `ROUTINE_DIR` (documents) and `ROUTINE_STATE` (run state) derive from it and are overridable individually. `ROUTINE_AGENTS_DIR`, `ROUTINE_LAUNCHCTL`, `ROUTINE_CLAUDE`, and `ROUTINE_NOW` redirect launchd, claude, and the clock — the seams the test suite runs through.
+`ROUTINE_HOME` is the only anchor: `ROUTINE_DIR` (documents) and `ROUTINE_STATE` (run state) derive from it and are overridable individually; `install` pins all three into the launchd agent, so re-run it after moving any. `ROUTINE_AGENTS_DIR`, `ROUTINE_LAUNCHCTL`, `ROUTINE_CLAUDE`, and `ROUTINE_NOW` redirect launchd, claude, and the clock — the seams the test suite runs through.
 
 ## The routine document
 
@@ -102,7 +102,7 @@ routine sync-ci                 # (re)write ./.github/workflows/routines.yaml in
 - `bin/routine` is bash 3.2-safe (macOS `/bin/bash` is frozen at 3.2.57) with zero external dependencies — no jq, yq, or GNU timeout. claude is needed only when a catch fires or a block calls it.
 - `$ROUTINE_HOME/.state/` is never committed; CI persists `routines/.state` via actions/cache only.
 
-Scale: the runner is ~200 lines of bash plus two small generators (plist, workflow).
+Scale: the runner is ~700 lines of bash plus two small generators (plist, workflow).
 
 ## Migration (follow-on, not this build)
 

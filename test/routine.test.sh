@@ -998,7 +998,7 @@ assert_contains "workflow caches the derived state path" "$WFC" "path: routines/
 assert_contains "workflow restores the newest state key" "$WFC" "restore-keys"
 assert_contains "workflow fetches the runner when the repo has none" "$WFC" \
   "[ -x bin/routine ] || (mkdir -p bin && curl -fsSL"
-assert_contains "workflow ends at the due tick" "$WFC" "bin/routine run --due"
+assert_contains "workflow runs the due tick" "$WFC" "bin/routine run --due"
 assert_contains "workflow saves state even when a routine fails" "$WFC" "actions/cache/save@v4
         if: always()"
 assert_no_file "sync-ci targets its cwd, never the routines home" "$RHOME/.github"
