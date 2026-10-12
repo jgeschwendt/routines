@@ -55,7 +55,8 @@ gh api notifications --paginate > "$ROUTINE_STATE_DIR/inbox.json"
 ```
 ````
 
-Only ` ```sh ` and ` ```bash ` fences execute, sequentially, each as its own
+Only `sh` and `bash` fences execute — ` ``` ` or `~~~`, CommonMark rules, so a
+longer or `~~~` fence can show a ` ```sh ` example inert — sequentially, each as its own
 `bash -e` child with cwd at the routines home and `ROUTINE_NAME` /
 `ROUTINE_STATE_DIR` exported. Other fences are material for the prose. Blocks
 must be idempotent — a catch-retry, a cache eviction, or an overlapping tick can
