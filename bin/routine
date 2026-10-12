@@ -333,6 +333,8 @@ exec_block() { # $1=index $2=capture file
     /bin/bash -e "$BLK_DIR/$(printf '%03d' "$1").sh" > "$2" 2>&1 &
   local p=$!
   printf '%s\n' "$p" > "$RUN_TMP/child.pid"
+  # the watchdog marks timedout before it reads child.pid — one of the two sees the other
+  [ ! -f "$RUN_TMP/timedout" ] || kill_tree TERM "$p"
   wait "$p" 2>/dev/null
 }
 
@@ -384,6 +386,8 @@ $CATCH_THREAD_RULE"
     -p "$prompt" > "$cout" 2>&1 &
   p=$!
   printf '%s\n' "$p" > "$RUN_TMP/child.pid"
+  # the exec_block handshake — the agent past the deadline stops too
+  [ ! -f "$RUN_TMP/timedout" ] || kill_tree TERM "$p"
   wait "$p" 2>/dev/null; crc=$?
   cat "$cout"
   # the agent's code is diagnostic only — the retry below is still the verdict
@@ -435,7 +439,6 @@ watchdog() { # $1=deadline epoch $2=sequence pid
     exit 0
   fi
   printf 'watchdog: deadline reached, killing pid %s\n' "$p"
-  kill "$2" 2>/dev/null # the sequence first, or the next block starts unwatched
   kill_tree TERM "$p"
   while [ "$n" -lt 10 ]; do
     if ! { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null; then
