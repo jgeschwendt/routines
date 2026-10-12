@@ -688,6 +688,109 @@ DEGRADED_LOG="$RSTATE/repair-no/logs/$(ls "$RSTATE/repair-no/logs" 2>/dev/null |
 assert_grep "the degradation reason names claude in the log" "$DEGRADED_LOG" "claude"
 CLAUDE="$CLAUDE_REAL"
 
+# ─── run-path hazards ─────────────────────────────────────────────────────────
+
+bgr() { # $1=name — runr in the background; the runner's rc lands in $SANDBOX/$1.rc
+  ( O="$SANDBOX/$1.out"; E="$SANDBOX/$1.err"; runr run "$1"; printf '%s\n' "$RC" > "$SANDBOX/$1.rc" ) &
+}
+
+assert_gone() { # $1=desc $2=pid file — polls up to 3s for the pid to exit
+  local i=0 p
+  p=$(cat "$2")
+  while kill -0 "$p" 2>/dev/null; do
+    [ "$i" -lt 30 ] || { nok "$1" "pid $p survived"; return; }
+    sleep 0.1; i=$((i + 1))
+  done
+  ok "$1"
+}
+
+# A TERM-ignoring group member outlives its leader; the watchdog must poll the
+# group and escalate. Its 10s grace runs in the background under the cases below.
+mkfix "$RDIR/stubborn.md" <<EOF
+---
+timeout: 1
+on_error: fail
+---
+\`\`\`sh
+sh -c 'trap "" TERM; echo \$\$ > "$SANDBOX/stubborn.pid"; exec sleep 30' &
+wait
+\`\`\`
+EOF
+bgr stubborn; STUBBORN=$!
+
+mkfix "$RDIR/sig.md" <<EOF
+---
+on_error: fail
+---
+\`\`\`sh
+printf '%s\n' "\$\$" > "$SANDBOX/sig.pid"
+sleep 30
+\`\`\`
+EOF
+for s in HUP:129 TERM:143; do
+  rm -f "$SANDBOX/sig.pid"
+  mkdir -p "$RSTATE/sig"; : > "$RSTATE/sig/degraded"
+  bgr sig
+  wait_grep "$SANDBOX/sig.pid" ""
+  kill -"${s%:*}" "$(cat "$RSTATE/sig/lock/pid")"; wait $!
+  assert_eq "SIG${s%:*} exits ${s#*:}" "${s#*:}" "$(cat "$SANDBOX/sig.rc")"
+  assert_contains "SIG${s%:*} records exit ${s#*:}" "$(cat "$(lastrun sig)")" "\"exit\":${s#*:}"
+  assert_file "SIG${s%:*} keeps the degraded marker" "$RSTATE/sig/degraded"
+  assert_gone "SIG${s%:*} kills the running block" "$SANDBOX/sig.pid"
+done
+
+printf '#!/bin/bash\nsleep 30\n' > "$SANDBOX/bin/claude-slow"; chmod +x "$SANDBOX/bin/claude-slow"
+mkfix "$RDIR/catch-late.md" <<EOF
+---
+timeout: 1
+---
+\`\`\`sh
+[ ! -f "$SANDBOX/catch-late.first" ] || { : > "$SANDBOX/catch-late.retried"; exit 0; }
+: > "$SANDBOX/catch-late.first"; exit 3
+\`\`\`
+EOF
+EXPORTS="ROUTINE_CLAUDE=$SANDBOX/bin/claude-slow"
+runr run catch-late
+EXPORTS=""
+assert_eq "a deadline inside the catch exits 124" 124 "$RC"
+assert_no_file "a deadline inside the catch skips the retry" "$SANDBOX/catch-late.retried"
+
+mkfix "$RDIR/octal.md" <<'EOF'
+---
+timeout: 08
+on_error: fail
+---
+```sh
+true
+```
+EOF
+runr run octal
+assert_eq "a zero-padded timeout is decimal" 0 "$RC"
+
+# an empty pid is a holder between mkdir and its pid write
+mkdir -p "$RSTATE/locked/lock"
+runr run locked
+assert_eq "a fresh lock with no pid yet is held" 75 "$RC"
+touch -t 202001010000 "$RSTATE/locked/lock"
+runr run locked
+assert_eq "an old lock with no pid is reaped" 0 "$RC"
+
+sleep 5 & LOCK_HOLDER=$!
+mkdir -p "$RSTATE/requires/lock"
+printf '%s\n' "$LOCK_HOLDER" > "$RSTATE/requires/lock/pid"
+REQ_BEFORE=$(cat "$(lastrun requires)")
+runr run requires
+assert_eq "the requires gate waits for the lock" 75 "$RC"
+assert_eq "a 75 on requires leaves last-run.json to the holder" "$REQ_BEFORE" \
+  "$(cat "$(lastrun requires)")"
+kill "$LOCK_HOLDER" 2>/dev/null; wait "$LOCK_HOLDER" 2>/dev/null; LOCK_HOLDER=""
+runr run requires
+assert_contains "a 78 is recorded under the lock" "$(cat "$(lastrun requires)")" '"exit":78'
+
+wait "$STUBBORN"
+assert_eq "a TERM-ignoring block still times out 124" 124 "$(cat "$SANDBOX/stubborn.rc")"
+assert_gone "the watchdog escalates to KILL on the block's group" "$SANDBOX/stubborn.pid"
+
 # ─── due-ness ─────────────────────────────────────────────────────────────────
 
 # Epochs are hand-computed UTC constants; the runner floors and formats in UTC.

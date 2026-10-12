@@ -81,7 +81,7 @@ A routine is due when `next-fire-after(last started run, schedule) ≤ now`; a m
 
 ## `routine run` — the shared wrapper
 
-frontmatter → `requires` gate (exit 78, loud list of missing vars) → lock (`mkdir .state/<name>/lock`, pid inside; live pid ⇒ exit 75, dead pid ⇒ reap) → bash-native watchdog timeout (SIGTERM, SIGKILL after grace; exit 124) → `cd $ROUTINE_HOME` (blocks and the catch both run there; a missing home is exit 64) → blocks under the try/catch contract → `last-run.json` `{started, started_epoch, finished, exit, duration, degraded}` written on every path (trap) and appended to `runs.jsonl` → the failing block's exit passes through.
+frontmatter → lock (`mkdir .state/<name>/lock`, pid inside; live pid ⇒ exit 75, dead pid ⇒ reap, no pid ⇒ held for a minute) → `requires` gate (exit 78, loud list of missing vars — recorded only by the holder) → bash-native watchdog timeout (SIGTERM to the block's group, SIGKILL after grace; exit 124, and a catch that outlives the deadline skips its retry); HUP/INT/TERM (129/130/143) stop the block's group before the record and the lock release → `cd $ROUTINE_HOME` (blocks and the catch both run there; a missing home is exit 64) → blocks under the try/catch contract → `last-run.json` `{started, started_epoch, finished, exit, duration, degraded}` written on every path (trap) and appended to `runs.jsonl` → the failing block's exit passes through.
 
 ## Verbs
 
