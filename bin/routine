@@ -276,13 +276,19 @@ divider() { # $1=ascii label — 80 columns
 
 # ※ last-run-contract
 on_exit() {
-  local rc=$? fin deg line
+  local rc=$? fin deg line cp n
   if [ -n "${WD_PID:-}" ]; then kill "$WD_PID" 2>/dev/null; fi
-  # a signal lands mid-sequence — stop it, then the block's group, before the
-  # lock (and the record below) tells the next run the routine is idle
-  if [ -n "${SEQ_PID:-}" ]; then
-    kill "$SEQ_PID" 2>/dev/null
-    kill_tree TERM "$(cat "$RUN_TMP/child.pid" 2>/dev/null)"
+  # a signal lands mid-sequence or mid-escalation — stop the sequence, then the
+  # block's group (TERM, two seconds, KILL), before the lock and the record
+  # below tell the next run the routine is idle
+  if [ -n "${SEQ_PID:-}${WD_PID:-}" ]; then
+    if [ -n "${SEQ_PID:-}" ]; then kill "$SEQ_PID" 2>/dev/null; fi
+    cp=$(cat "$RUN_TMP/child.pid" 2>/dev/null); n=0
+    kill_tree TERM "$cp"
+    while [ -n "$cp" ] && [ "$n" -lt 20 ] && { kill -0 -"$cp" || kill -0 "$cp"; } 2>/dev/null; do
+      sleep 0.1; n=$((n + 1))
+    done
+    [ "$n" -lt 20 ] || kill_tree KILL "$cp"
   fi
   if [ "${WRITE_LAST:-0}" = 1 ]; then
     mkdir -p "$STATE_DIR"
@@ -429,6 +435,7 @@ watchdog() { # $1=deadline epoch $2=sequence pid
     exit 0
   fi
   printf 'watchdog: deadline reached, killing pid %s\n' "$p"
+  kill "$2" 2>/dev/null # the sequence first, or the next block starts unwatched
   kill_tree TERM "$p"
   while [ "$n" -lt 10 ]; do
     if ! { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null; then
