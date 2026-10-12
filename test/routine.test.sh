@@ -298,6 +298,7 @@ timeout: 2
 # Slow
 
 ```sh
+echo SLOW-OUTPUT
 sleep 30
 ```
 EOF
@@ -640,6 +641,8 @@ assert_no_file "the reaped lock is released" "$RSTATE/locked/lock"
 
 runr run slow
 assert_eq "a block past its timeout exits 124" 124 "$RC"
+assert_contains "a timed-out block's output still prints" "$OUT" "SLOW-OUTPUT"
+assert_contains "a timed-out block's exit divider still prints" "$OUT" "block 1 · exit 143"
 assert_contains "last-run.json is written on the timeout path" \
   "$(cat "$(lastrun slow)" 2>/dev/null)" '"exit":124'
 
