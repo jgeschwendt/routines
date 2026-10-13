@@ -9,9 +9,10 @@ commands:
 
 <!-- @stele -->
 
-## Hazards (1 active)
+## Hazards (2 active)
 
 - ⚠ `bin`: macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script (→ ※ bash-3-2)
+- ⚠ `bin`: no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP (→ ※ no-process-substitution)
 
 ## Map
 
