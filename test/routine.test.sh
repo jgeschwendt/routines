@@ -604,6 +604,7 @@ assert_eq "one log file per run" 1 "$LOGS"
 LOG="$RSTATE/blocks/logs/$(ls "$RSTATE/blocks/logs" 2>/dev/null | head -1)"
 assert_grep "log delimits block 1" "$LOG" "block 1"
 assert_grep "log delimits block 2" "$LOG" "block 2"
+assert_missing "the log tee opens no /dev/fd path — Seatbelt denies it" "$(cat "$RUNNER")" '> >('
 
 rm -f "$CLAUDE_CALLED"
 runr run failing

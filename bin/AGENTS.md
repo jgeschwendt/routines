@@ -17,6 +17,8 @@ invariants:
 hazards:
   - claim: macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script
     anchor: ※ bash-3-2
+  - claim: no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP
+    anchor: ※ no-process-substitution
 ```
 
 <!-- @stele -->

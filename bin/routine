@@ -508,9 +508,12 @@ cmd_run() { # $1=name
   # the stamp is second-resolution and a routine can be run twice inside one —
   # the pid is what keeps two runs from sharing a log file
   LOG="$STATE_DIR/logs/$(epoch_fmt "$STARTED_EPOCH" '%Y%m%dT%H%M%SZ')-$$.log"
-  exec > >(tee -a "$LOG") 2> >(tee -a "$LOG" >&2)
-
   RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX")
+  # ※ no-process-substitution
+  # fifos, not >(tee): Seatbelt denies the /dev/fd paths process substitution opens
+  mkfifo "$RUN_TMP/out" "$RUN_TMP/err"
+  tee -a "$LOG" < "$RUN_TMP/out" & tee -a "$LOG" < "$RUN_TMP/err" >&2 &
+  exec > "$RUN_TMP/out" 2> "$RUN_TMP/err"
   BLK_DIR="$RUN_TMP/blocks"; mkdir -p "$BLK_DIR"
   NBLOCKS=$(extract_blocks "$DOC" "$BLK_DIR")
   [ "$NBLOCKS" -gt 0 ] || die 64 "no sh or bash blocks in $DOC"
