@@ -256,7 +256,8 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       the blocks, and the single catch that repairs and retries.</p>
   </header>
   <figure class="figure">
-    <img src="figures/execution-path.png" alt="One execution path through the runner as a transit map — launchd tick, CI cron and a shell converge on run --due and run &lt;name&gt;; then frontmatter, lock, requires gate, timeout, blocks, last-run.json, exit code and status; the catch loop from blocks through claude to a single retry, and a dashed bypass to the exit code when still failing." />
+    <img class="figure-light" src="figures/execution-path.png" alt="One execution path through the runner as a transit map — launchd tick, CI cron and a shell converge on run --due and run &lt;name&gt;; then frontmatter, lock, requires gate, timeout, blocks, last-run.json, exit code and status; the catch loop from blocks through claude to a single retry, and a dashed bypass to the exit code when still failing." />
+    <img class="figure-dark" src="figures/execution-path-dark.png" alt="" aria-hidden="true" loading="lazy" />
     <figcaption>One execution path, end to end. Source: Claude Design canvas <a href="https://claude.ai/artifact/1qqnmDFdxxBfamSEhUYr1X">routines figures</a>, board execution-path.</figcaption>
   </figure>
 </section>
