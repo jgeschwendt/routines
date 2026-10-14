@@ -2,6 +2,9 @@
 # Render every Claude Design artboard under docs/figures/project/ to its PNG at 2×,
 # the same pixels the canvas exports — agent-browser, headless. Run from anywhere: mise run figures.
 # support.js is the canvas's artifact-type/dc-runtime.js; the .dc.html files load it by relative path.
+# The board is drawn once, in the gigantic design system's LIGHT token values; the -dark.png is
+# rendered from a temp copy rewritten light→dark by darken.py against project/ds/gigantic/tokens.json
+# (read back from the canvas). darken.py prints any hex that is not a light token value.
 set -e
 P=$(cd "$(dirname "$0")" && pwd)
 shoot() { # <source .dc.html> <height> <out.png> — retried: a browser relaunching
@@ -18,5 +21,10 @@ shoot() { # <source .dc.html> <height> <out.png> — retried: a browser relaunch
 }
 h() { python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["boards"][sys.argv[2]]["h"])' "$1" "$2"; }
 S=$P/project
-shoot "$S/Main.dc.html" "$(h "$S/canvas.json" Main.dc.html)" "$P/execution-path.png"
+H=$(h "$S/canvas.json" Main.dc.html)
+shoot "$S/Main.dc.html" "$H" "$P/execution-path.png"
+D=$(mktemp -d); trap 'rm -rf "$D"' EXIT
+cp "$S/Main.dc.html" "$S/support.js" "$D/"
+python3 -I "$P/darken.py" "$S/ds/gigantic/tokens.json" "$D/Main.dc.html"
+shoot "$D/Main.dc.html" "$H" "$P/execution-path-dark.png"
 agent-browser close >/dev/null
