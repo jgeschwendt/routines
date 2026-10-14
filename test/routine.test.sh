@@ -1,5 +1,5 @@
 #!/bin/bash
-# routine.test.sh — contract suite for bin/routine (docs/PLAN.md).
+# routine.test.sh — contract suite for bin/routine (docs/index.html).
 # Hermetic: one mktemp -d sandbox, every runner path redirected by env override,
 # claude/launchctl replaced by stubs. Never touches $HOME, the network, or the
 # repo tree. bash 3.2-safe (rules/bash.md) — runs under macOS /bin/bash and CI.

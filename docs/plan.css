@@ -54,33 +54,6 @@ figcaption {
   grid-template-columns: 1fr;
 }
 
-/* the plate is drawn on cream; it keeps its own light card in every theme so it
-   never lands as a mismatched slab on a dark page */
-figure.plate {
-  background: #faf7f2;
-  border: 1px solid var(--ui-border);
-  border-radius: 0.75rem;
-  margin-top: 1rem;
-  padding: 0.75rem;
-}
-
-figure.plate img {
-  border-radius: 0.375rem;
-  width: 100%;
-}
-
-figure.plate figcaption {
-  color: #6b6559;
-  margin: 0.625rem 0.25rem 0.125rem;
-}
-
-/* the caption sits on the plate's cream, not the page's — its chips follow */
-figure.plate figcaption .code {
-  background: #f0ece3;
-  border-color: #ddd7ca;
-  color: #4c4639;
-}
-
 ul.exits {
   color: var(--ui-fg-muted);
   display: grid;
