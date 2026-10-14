@@ -120,7 +120,7 @@ routine's logs are pruned at 14 days.
 | `ROUTINE_NOW` | `date +%s` — freezes the runner's clock, making due-ness testable |
 | `ROUTINE_PMSET` | `pmset` — the dark-wake probe; unreachable or unparseable fails open |
 
-Design and rejected alternatives: [docs/PLAN.md](docs/PLAN.md).
+Design, its figures and rejected alternatives: [docs/index.html](docs/index.html).
 
 ## License
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# routine — executable markdown on rails. Design: docs/PLAN.md.
+# routine — executable markdown on rails. Design: docs/index.html.
 # ※ bash-3-2
 set -u
 
