@@ -563,7 +563,7 @@ cmd_run() { # $1=name
 
 # A Power Nap dark wake lasts seconds: a routine dispatched into one has its
 # network call frozen when the wake ends, and the wall-clock watchdog kills it on
-# the next wake — cascading every routine queued behind it into 124. caffeinate
+# the next wake — every routine the tick dispatched ends 124. caffeinate
 # cannot hold it open (IOPMLib.h: the idle-sleep assertion "has no effect if the
 # system is in Dark Wake"), so the tick defers and derived due-ness carries over.
 # ※ dark-wake-gate
@@ -577,13 +577,15 @@ dark_wake() { # true only when macOS reports a wake without Graphics — a Power
 
 due_stop() { # $1=exit code — a background child ignores INT, so every signal forwards as TERM
   trap '' HUP INT TERM
-  if [ -n "${DUE_CHILD:-}" ]; then kill -TERM "$DUE_CHILD" 2>/dev/null; wait "$DUE_CHILD"; fi
+  # jobs -p, never the pid list: it holds a child forked a moment before its pid
+  # was recorded, and drops reaped ones whose pids the host may have reused
+  kill -TERM $(jobs -p) 2>/dev/null; wait
   exit "$1"
 }
 
 # ※ due-tick
 cmd_due() {
-  local f name rc=0 drc docs=0 due="" next="" nxt ddisp="-" ndisp="-"
+  local f name p rc=0 drc docs=0 due="" next="" nxt ddisp="-" ndisp="-"
   # stdout is the contract's silence; the sweep narrates into tick.log instead
   rotate_due_log
   for f in "$ROUTINE_DIR"/*.md; do
@@ -607,18 +609,22 @@ cmd_due() {
   # launchd stops the job with a TERM to this shell alone, then KILLs its group: the
   # routine must hear it first, so its on_exit reaps its blocks and writes the record
   trap 'due_stop 129' HUP; trap 'due_stop 130' INT; trap 'due_stop 143' TERM
+  if [ -n "$due" ] && dark_wake; then
+    tick_log "defer dark-wake due=$ddisp"
+    exit 0
+  fi
+  # every due routine at once: launchd starts no second tick while this one waits,
+  # so a serial sweep would blind the */5 routines behind one long run; each
+  # routine's own lock still serializes it against a hand run ※ parallel-due
+  DUE_PIDS=""
   for name in $due; do
-    # the host can sleep under a long routine and wake dark: probe before each one
-    if dark_wake; then
-      tick_log "defer dark-wake due=$ddisp"
-      exit "$rc"
-    fi
-    ddisp="${ddisp#"$name"}"; ddisp="${ddisp#,}"
     tick_log "dispatch $name"
-    "$SELF" run "$name" & DUE_CHILD=$!
-    wait "$DUE_CHILD"; drc=$?; DUE_CHILD=""
+    "$SELF" run "$name" & DUE_PIDS="$DUE_PIDS $name:$!"
+  done
+  for p in $DUE_PIDS; do
+    wait "${p#*:}"; drc=$?
     [ "$drc" -eq 0 ] || rc=1
-    tick_log "dispatched $name exit=$drc"
+    tick_log "dispatched ${p%:*} exit=$drc"
   done
   exit "$rc"
 }

@@ -1120,39 +1120,29 @@ assert_missing "status lists no flag-named document" "$OUT" "--due"
 assert_missing "a schedule whose next fire is years out is valid (Wed Feb 1 2034)" "$OUT" "0 9 */31 2 3     bad"
 
 # launchd stops the tick with a TERM to the tick alone: the routine must still reap and record
-mkfix "$SANDBOX/r-term/term.md" <<EOF
----
-schedule: "* * * * *"
-on_error: fail
----
-\`\`\`sh
-echo \$\$ > "$SANDBOX/term.pid"; sleep 30
-\`\`\`
-EOF
+for n in terma termb; do
+  printf -- '---\nschedule: "* * * * *"\non_error: fail\n---\n```sh\necho $$ > "%s/%s.pid"; sleep 30\n```\n' \
+    "$SANDBOX" "$n" | mkfix "$SANDBOX/r-term/$n.md"
+done
 ( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$SANDBOX/r-term" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET"
   exec "$RUNNER" run --due ) >/dev/null 2>&1 & DUEP=$!
-wait_grep "$SANDBOX/term.pid" ""
+wait_grep "$SANDBOX/terma.pid" ""; wait_grep "$SANDBOX/termb.pid" ""
 kill -TERM "$DUEP"; wait "$DUEP"
-assert_contains "a TERM to the tick reaches the routine, which records 143" "$(cat "$(lastrun term)" 2>/dev/null)" '"exit":143'
-assert_gone "and kills its block" "$SANDBOX/term.pid"
-
-# the host sleeps under the first routine and wakes dark: the second must wait
-cat > "$SANDBOX/bin/pmset-dims" <<EOF
-#!/bin/bash
-[ -f "$SANDBOX/dims.seen" ] && exec "$PMSET_DARK"
-: > "$SANDBOX/dims.seen"; exec "$PMSET"
-EOF
-chmod +x "$SANDBOX/bin/pmset-dims"
-for n in dwa dwb; do
-  printf -- '---\nschedule: "0 * * * *"\n---\n```sh\n: > "%s/%s.marker"\n```\n' "$SANDBOX" "$n" | mkfix "$SANDBOX/r-dims/$n.md"
+for n in terma termb; do
+  assert_contains "a TERM to the tick reaches $n, which records 143" "$(cat "$(lastrun "$n")" 2>/dev/null)" '"exit":143'
+  assert_gone "and kills $n's block" "$SANDBOX/$n.pid"
 done
-RDIR="$SANDBOX/r-dims"
-EXPORTS="ROUTINE_PMSET=$SANDBOX/bin/pmset-dims"
+
+# every due routine runs at once: each waits for the other's marker, so a serial
+# sweep times the first out and fails it
+for n in ova:ovb ovb:ova; do
+  printf -- '---\nschedule: "0 * * * *"\non_error: fail\n---\n```sh\n: > "%s/%s.on"; i=0\nwhile [ ! -f "%s/%s.on" ] && [ $i -lt 30 ]; do sleep 0.1; i=$((i + 1)); done\n[ -f "%s/%s.on" ]\n```\n' \
+    "$SANDBOX" "${n%:*}" "$SANDBOX" "${n#*:}" "$SANDBOX" "${n#*:}" | mkfix "$SANDBOX/r-overlap/${n%:*}.md"
+done
+RDIR="$SANDBOX/r-overlap"
 runr run --due
-EXPORTS=""
-assert_file "the first due routine runs in the full wake" "$SANDBOX/dwa.marker"
-assert_no_file "a dark wake between dispatches defers the rest" "$SANDBOX/dwb.marker"
-assert_grep "the deferral names only what is left" "$RSTATE/tick.log" "defer dark-wake due=dwb"
+assert_eq "two due routines overlap ⇒ both succeed" 0 "$RC"
+assert_grep "the tick records each dispatch's exit" "$RSTATE/tick.log" "dispatched ovb exit=0"
 RNOW=""
 RDIR="$SANDBOX/routines"
 
