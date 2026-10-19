@@ -8,32 +8,32 @@
     },
     "catch-retry": {
       "file": "bin/routine",
-      "line": 351,
+      "line": 374,
       "node": "bin"
     },
     "dark-wake-gate": {
       "file": "bin/routine",
-      "line": 540,
+      "line": 569,
       "node": "bin"
     },
     "due-derivation": {
       "file": "bin/routine",
-      "line": 202,
+      "line": 212,
       "node": "bin"
     },
     "due-tick": {
       "file": "bin/routine",
-      "line": 549,
+      "line": 584,
       "node": "bin"
     },
     "last-run-contract": {
       "file": "bin/routine",
-      "line": 277,
+      "line": 288,
       "node": "bin"
     },
     "no-process-substitution": {
       "file": "bin/routine",
-      "line": 512,
+      "line": 538,
       "node": "bin"
     }
   },
@@ -73,7 +73,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         },
         {
@@ -81,11 +81,11 @@
           "enforced_by": null,
           "id": "catch-retry",
           "kind": "invariant",
-          "resolved": "bin/routine:351",
+          "resolved": "bin/routine:374",
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         },
         {
@@ -93,11 +93,11 @@
           "enforced_by": null,
           "id": "dark-wake-gate",
           "kind": "invariant",
-          "resolved": "bin/routine:540",
-          "text": "run --due never dispatches during a macOS dark wake — the tick logs defer dark-wake and exits 0, and derived due-ness carries the routines to the next real wake",
+          "resolved": "bin/routine:569",
+          "text": "run --due never dispatches during a macOS dark wake — the tick probes before every dispatch, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         },
         {
@@ -105,11 +105,11 @@
           "enforced_by": null,
           "id": "due-derivation",
           "kind": "invariant",
-          "resolved": "bin/routine:202",
+          "resolved": "bin/routine:212",
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         },
         {
@@ -117,11 +117,11 @@
           "enforced_by": null,
           "id": "due-tick",
           "kind": "invariant",
-          "resolved": "bin/routine:549",
+          "resolved": "bin/routine:584",
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         },
         {
@@ -129,11 +129,11 @@
           "enforced_by": null,
           "id": "last-run-contract",
           "kind": "invariant",
-          "resolved": "bin/routine:277",
+          "resolved": "bin/routine:288",
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         },
         {
@@ -141,11 +141,11 @@
           "enforced_by": null,
           "id": "no-process-substitution",
           "kind": "hazard",
-          "resolved": "bin/routine:512",
+          "resolved": "bin/routine:538",
           "text": "no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         }
       ],
@@ -175,7 +175,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "35cb82c677a6feec6be289099730be8ce26afc00"
+            "sha": "df1b31f432347b537ce720baad262763957edfcc"
           }
         }
       ],

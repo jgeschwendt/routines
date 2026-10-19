@@ -5,6 +5,11 @@ on:
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
+# runners share no lock: two overlapping ticks would both fire and one save would drop the other's state
+concurrency:
+  group: routines
+  cancel-in-progress: false
+
 jobs:
   due:
     runs-on: ubuntu-latest

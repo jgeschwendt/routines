@@ -105,7 +105,7 @@
       sequentially, each under <code class="code">bash -e</code>; other fences are
       material for the prose. Fences follow CommonMark (<code class="code">```</code> or
       <code class="code">~~~</code>, 3+ long, indent 0–3 stripped, closed only by the same
-      character at least as long). A block that needs an asset writes or references
+      character at least as long); a fence inside an HTML comment is disabled. A block that needs an asset writes or references
       sibling paths.</p>
   </header>
   <figure class="snippet-figure">
@@ -229,7 +229,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-body">
         <ul role="list">
           <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yaml</code> into the repo it is invoked in</li>
-          <li>cron every 15 min + <code class="code">workflow_dispatch</code>; <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, fetch <code class="code">bin/routine</code> if absent, <code class="code">run --due</code>, save cache</li>
+          <li>cron every 15 min + <code class="code">workflow_dispatch</code>, one tick at a time (a <code class="code">concurrency</code> group: runners share no lock); <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, fetch <code class="code">bin/routine</code> if absent, <code class="code">run --due</code>, save cache</li>
           <li>the save runs under <code class="code">if: always()</code> — <code class="code">actions/cache</code> saves only on success, so one red routine would roll back every other routine's state</li>
           <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
         </ul>
@@ -237,13 +237,13 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     </div>
   </div>
   <figure class="snippet-figure">
-<pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid inside; live pid ⇒ 75, dead ⇒ reap, no pid ⇒ held for a minute)
+<pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead or reused ⇒ reap, no pid ⇒ held for a minute)
              → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
              → <b>watchdog</b> (bash-native; SIGTERM to the block's group, SIGKILL after grace; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
-             → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release
+             → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release; run --due forwards its own as TERM to the routine it runs
              → <b>blocks</b> under the try/catch contract
-             → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap) and appended to runs.jsonl
+             → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap), renamed into place, and appended to runs.jsonl
              → the failing block's exit passes through</pre>
     <figcaption>The shared wrapper — every verb that runs a routine runs it through this.</figcaption>
   </figure>
@@ -274,7 +274,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <tbody>
         <tr data-verb="run"><td class="table-mono">run &lt;name&gt;</td><td>run one document through the wrapper — gate, lock, timeout, try/catch</td></tr>
         <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — run every due routine; silent when none are</td></tr>
-        <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due?, last exit, duration</td></tr>
+        <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due? (<code class="code">bad</code> for a schedule the parser rejects, which never fires), last exit, duration</td></tr>
         <tr data-verb="install"><td class="table-mono">install</td><td>render and load the single launchd tick agent</td></tr>
         <tr data-verb="uninstall"><td class="table-mono">uninstall</td><td>boot the agent out and remove its plist</td></tr>
         <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">./.github/workflows/routines.yaml</code> in the invoking repo</td></tr>
@@ -304,7 +304,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <li data-contract="bash-3-2"><strong>bash 3.2-safe, zero-dep</strong> — <code class="code">bin/routine</code> is one script with no jq, yq, or GNU timeout; claude is needed only when a catch fires or a block calls it.</li>
     <li data-contract="state"><strong><code class="code">$ROUTINE_HOME/.state/</code> is never committed</strong> — CI persists <code class="code">routines/.state</code> through <code class="code">actions/cache</code> only.</li>
   </ul>
-  <p class="docs-note plan-coda">Scale: the runner is ~700 lines of bash plus two small generators (plist, workflow).</p>
+  <p class="docs-note plan-coda">Scale: the runner is ~770 lines of bash plus two small generators (plist, workflow).</p>
 </section>
 
 <section class="docs-section" id="migration" data-component="migration">
@@ -316,6 +316,18 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       prose procedure paired with a mechanics script is already this shape — the standing
       proof of the format.</p>
   </header>
+</section>
+
+<section class="docs-section" id="next-steps" data-component="next">
+  <header>
+    <h2 class="h2">Next</h2>
+  </header>
+  <ol class="stack" id="next">
+    <li><strong>Serial dispatch starves the five-minute routines</strong> — one long routine holds the tick, and launchd starts no other, so every <code class="code">*/5</code> routine misses its fires for the whole run (github-monitor's 618 s on 2026-10-19 skipped two). Changing it is the owner's call: proposal <code class="code">proposal:jgeschwendt/routines:parallel-due</code>.</li>
+    <li><strong>An installed but unauthenticated claude</strong> runs the catch, fails, and the block is retried anyway; it should degrade like a missing binary, as step ④ promises.</li>
+    <li><strong>The stale-lock reap is check-then-act</strong> — a hand run and the tick reaping the same dead lock can both win. launchd serializes ticks, so only a hand run can race one.</li>
+    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
+  </ol>
 </section>
 
 <section class="docs-section" id="rejected" data-component="rejected">
