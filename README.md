@@ -67,7 +67,7 @@ each double-fire; the lock serializes, idempotency absorbs.
 ```
 routine run <name>     run one document
 routine run --due      run every due routine — silent when none are
-routine status         schedule × due? × last run, one row per document
+routine status         schedule × due? × last run, one row per document (due? reads bad for a schedule it cannot parse)
 routine install        install the launchd tick agent (com.routines.due)
 routine uninstall      remove it
 routine sync-ci        (re)write ./.github/workflows/routines.yaml here
@@ -88,8 +88,9 @@ catches up instead of skipping.
 The launchd tick also fires during macOS dark wakes — Power Nap maintenance
 wakes a few seconds long. A routine started in one has its network call frozen
 the moment the wake ends, and the wall-clock watchdog kills it on the next wake,
-so `run --due` defers dispatch whenever `pmset -g systemstate` reports no
-`Graphics` capability: it logs `defer dark-wake` to `tick.log` and exits, and the
+so `run --due` probes `pmset -g systemstate` before every dispatch — the host can
+sleep under a long routine — and defers whenever it reports no `Graphics`
+capability: it logs `defer dark-wake` and what stayed due to `tick.log` and exits, and the
 routines simply stay due for the next real wake. `ROUTINE_PMSET` overrides the
 probe — the escape hatch for tests and non-macOS hosts, where it fails open.
 

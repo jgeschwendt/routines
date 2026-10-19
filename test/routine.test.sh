@@ -1007,6 +1007,9 @@ assert_contains "workflow fetches the runner when the repo has none" "$WFC" \
 assert_contains "workflow runs the due tick" "$WFC" "bin/routine run --due"
 assert_contains "workflow saves state even when a routine fails" "$WFC" "actions/cache/save@v4
         if: always()"
+assert_contains "workflow ticks never overlap — runners share no lock" "$WFC" "concurrency:
+  group: routines
+  cancel-in-progress: false"
 assert_no_file "sync-ci targets its cwd, never the routines home" "$RHOME/.github"
 if [ "$SRC_STATE_PRE" = 0 ]; then
   assert_no_file "sync-ci never writes into the source tree under test" \
@@ -1015,6 +1018,126 @@ else
   assert_eq "sync-ci never writes into the source tree under test (pre-existing .state)" \
     1 "$SRC_STATE_PRE"
 fi
+
+# ─── edge inputs ──────────────────────────────────────────────────────────────
+
+mkfix "$RDIR/comment.md" <<EOF
+<!-- a one-line comment ends where it opens -->
+<!--
+\`\`\`sh
+: > "$SANDBOX/commented.marker"
+\`\`\`
+-->
+\`\`\`sh
+: > "$SANDBOX/uncommented.marker"
+\`\`\`
+EOF
+runr run comment
+assert_no_file "a fence inside an HTML comment never runs" "$SANDBOX/commented.marker"
+assert_file "a fence after the comment closes runs" "$SANDBOX/uncommented.marker"
+
+printf -- '---\ntimeout: 0\non_error: fail\n---\n```sh\ntrue\n```\n' | mkfix "$RDIR/zero.md"
+runr run zero
+assert_eq "timeout: 0 falls back to the default, never an instant 124" 0 "$RC"
+
+printf -- '---\nrequires: ROUTINE_TEST_REQ_A 2FA\non_error: fail\n---\n```sh\ntrue\n```\n' | mkfix "$RDIR/digit.md"
+EXPORTS="ROUTINE_TEST_REQ_A=1"
+runr run digit
+EXPORTS=""
+assert_eq "a requires name opening with a digit is missing, never the last var's value" 78 "$RC"
+
+head -c 2000000 /dev/zero | tr '\0' x > "$SANDBOX/big.txt"
+printf -- '---\non_error: fail\n---\n```sh\ncat "%s"\n```\n' "$SANDBOX/big.txt" | mkfix "$RDIR/big.md"
+runr run big
+BIGLOG="$RSTATE/big/logs/$(ls "$RSTATE/big/logs" | tail -1)"
+assert_grep "a runaway block's log copy is cut, and says so" "$BIGLOG" "951424 bytes cut"
+assert_eq "the cut keeps the last MiB" 1 "$(( $(wc -c < "$BIGLOG") < 1100000 ))"
+
+# a live pid whose start time is not the holder's is a reused pid, not the holder
+sleep 5 & LOCK_HOLDER=$!
+mkdir -p "$RSTATE/locked/lock"
+printf '%s\n' "$LOCK_HOLDER" > "$RSTATE/locked/lock/pid"
+printf 'Thu Jan  1 00:00:00 1970\n' > "$RSTATE/locked/lock/started"
+runr run locked
+assert_eq "a lock whose pid was reused is reaped" 0 "$RC"
+kill "$LOCK_HOLDER" 2>/dev/null; wait "$LOCK_HOLDER" 2>/dev/null; LOCK_HOLDER=""
+
+mkfix "$RDIR/pipe.md" <<EOF
+\`\`\`sh
+printf 'a\nb\n'; sleep 1
+\`\`\`
+\`\`\`sh
+: > "$SANDBOX/pipe.marker"
+\`\`\`
+EOF
+( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET"
+  exec "$RUNNER" run pipe ) 2>/dev/null | head -1 > /dev/null
+wait_grep "$(lastrun pipe)" '"exit":0'
+assert_file "a reader that leaves early stops no block" "$SANDBOX/pipe.marker"
+assert_contains "and the record stays JSON" "$(cat "$(lastrun pipe)")" '"exit":0'
+
+rm -f "$SANDBOX/sig.pid"
+bgr sig
+wait_grep "$SANDBOX/sig.pid" ""
+kill -TERM "$(cat "$RSTATE/sig/lock/pid")"; sleep 0.5; kill -TERM "$(cat "$RSTATE/sig/lock/pid")" 2>/dev/null; wait $!
+assert_gone "a second signal does not cut the KILL escalation short" "$SANDBOX/sig.pid"
+assert_no_file "nor leave the lock behind" "$RSTATE/sig/lock"
+
+# ─── host events ──────────────────────────────────────────────────────────────
+
+RNOW="$T_HOURLY_DUE"
+mkfix "$SANDBOX/r-bad/at.md" <<EOF
+---
+schedule: "@daily"
+---
+\`\`\`sh
+: > "$SANDBOX/at.marker"
+\`\`\`
+EOF
+printf -- '---\nschedule: "* * * * *"\n---\n```sh\ntrue\n```\n' | mkfix "$SANDBOX/r-bad/--due.md"
+RDIR="$SANDBOX/r-bad"
+runr run --due
+assert_no_file "a schedule the parser rejects never fires, not even once" "$SANDBOX/at.marker"
+assert_grep "a document named like a flag is skipped, never dispatched as one" "$RSTATE/tick.log" "skip --due.md"
+runr status
+assert_contains "status flags the rejected schedule" "$OUT" "bad"
+
+# launchd stops the tick with a TERM to the tick alone: the routine must still reap and record
+mkfix "$SANDBOX/r-term/term.md" <<EOF
+---
+schedule: "* * * * *"
+on_error: fail
+---
+\`\`\`sh
+echo \$\$ > "$SANDBOX/term.pid"; sleep 30
+\`\`\`
+EOF
+( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$SANDBOX/r-term" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET"
+  exec "$RUNNER" run --due ) >/dev/null 2>&1 & DUEP=$!
+wait_grep "$SANDBOX/term.pid" ""
+kill -TERM "$DUEP"; wait "$DUEP"
+assert_contains "a TERM to the tick reaches the routine, which records 143" "$(cat "$(lastrun term)" 2>/dev/null)" '"exit":143'
+assert_gone "and kills its block" "$SANDBOX/term.pid"
+
+# the host sleeps under the first routine and wakes dark: the second must wait
+cat > "$SANDBOX/bin/pmset-dims" <<EOF
+#!/bin/bash
+[ -f "$SANDBOX/dims.seen" ] && exec "$PMSET_DARK"
+: > "$SANDBOX/dims.seen"; exec "$PMSET"
+EOF
+chmod +x "$SANDBOX/bin/pmset-dims"
+for n in dwa dwb; do
+  printf -- '---\nschedule: "0 * * * *"\n---\n```sh\n: > "%s/%s.marker"\n```\n' "$SANDBOX" "$n" | mkfix "$SANDBOX/r-dims/$n.md"
+done
+RDIR="$SANDBOX/r-dims"
+EXPORTS="ROUTINE_PMSET=$SANDBOX/bin/pmset-dims"
+runr run --due
+EXPORTS=""
+assert_file "the first due routine runs in the full wake" "$SANDBOX/dwa.marker"
+assert_no_file "a dark wake between dispatches defers the rest" "$SANDBOX/dwb.marker"
+assert_grep "the deferral names only what is left" "$RSTATE/tick.log" "defer dark-wake due=dwb"
+RNOW=""
+RDIR="$SANDBOX/routines"
 
 # ─── summary ──────────────────────────────────────────────────────────────────
 
