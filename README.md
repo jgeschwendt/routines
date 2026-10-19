@@ -34,7 +34,7 @@ fetches `bin/routine` when the repo does not carry one.
 
 ## The document
 
-`$ROUTINE_HOME/<name>.md`, name `[a-z0-9-]+`:
+`$ROUTINE_HOME/<name>.md`, name `[a-z0-9][a-z0-9-]*`:
 
 ````markdown
 ---

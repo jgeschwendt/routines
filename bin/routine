@@ -95,7 +95,7 @@ extract_blocks() { # $1=doc $2=outdir — writes NNN.sh per block, prints the co
     }
     # an HTML comment is an HTML block, never a code block: a fence inside one is disabled
     inc { if (index($0, "-->")) inc = 0; next }
-    /^ ? ? ?<!--/ { inc = !index(substr($0, index($0, "<!--") + 4), "-->"); next }
+    /^ ? ? ?<!--/ { inc = !index(substr($0, index($0, "<!--") + 2), "-->"); next }
     /^ ? ? ?(```|~~~)/ {
       ind = match($0, /[`~]/) - 1; f = substr($0, ind + 1); fch = substr(f, 1, 1)
       flen = 0; while (substr(f, flen + 1, 1) == fch) flen++
@@ -263,7 +263,7 @@ next_fire_of() { # $1=name — the next fire epoch; 0 when never run, non-zero w
   [ -n "$sched" ] || return 1
   se=$(json_get "$ROUTINE_STATE/$1/last-run.json" started_epoch) || se=""
   # a schedule this parser rejects (@daily, MON-FRI) must never fire, not fire once
-  case "$se" in ""|*[!0-9]*) next_fire_after 0 "$sched" >/dev/null || return 1; printf '0\n'; return 0 ;; esac
+  case "$se" in ""|*[!0-9]*) next_fire_after "$(now)" "$sched" >/dev/null || return 1; printf '0\n'; return 0 ;; esac
   next_fire_after "$se" "$sched"
 }
 
@@ -323,7 +323,7 @@ on_exit() {
   exit "$rc"
 }
 
-started_at() { ps -o lstart= -p "$1" 2>/dev/null || :; } # $1=pid — its start time, the pid's identity
+started_at() { TZ=UTC0 ps -o lstart= -p "$1" 2>/dev/null || :; } # $1=pid — its start time, the pid's identity (UTC: the zone must not differ by caller)
 
 take_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null && started_at $$ > "$LOCK_DIR/started" && printf '%s\n' $$ > "$LOCK_DIR/pid"
@@ -639,13 +639,13 @@ cmd_status() {
     [ -e "$f" ] || continue
     name=$(basename "$f" .md)
     case "$name" in
-      *[!a-z0-9-]*)
+      -*|*[!a-z0-9-]*)
         printf 'routine: skip %s: name not a slug\n' "$(basename "$f")" >&2
         continue ;;
     esac
     sched=$(fm_get "$f" schedule)
     if [ -z "$sched" ]; then due="n/a"; sched="—"
-    elif ! next_fire_after 0 "$sched" >/dev/null; then due="bad"
+    elif ! next_fire_after "$(now)" "$sched" >/dev/null; then due="bad"
     elif is_due "$name"; then due="due"
     else due="—"
     fi

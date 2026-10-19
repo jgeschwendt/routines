@@ -1022,12 +1022,14 @@ fi
 # ─── edge inputs ──────────────────────────────────────────────────────────────
 
 mkfix "$RDIR/comment.md" <<EOF
+<!--->
 <!-- a one-line comment ends where it opens -->
 <!--
 \`\`\`sh
 : > "$SANDBOX/commented.marker"
 \`\`\`
 -->
+<!-->
 \`\`\`sh
 : > "$SANDBOX/uncommented.marker"
 \`\`\`
@@ -1053,14 +1055,26 @@ BIGLOG="$RSTATE/big/logs/$(ls "$RSTATE/big/logs" | tail -1)"
 assert_grep "a runaway block's log copy is cut, and says so" "$BIGLOG" "951424 bytes cut"
 assert_eq "the cut keeps the last MiB" 1 "$(( $(wc -c < "$BIGLOG") < 1100000 ))"
 
-# a live pid whose start time is not the holder's is a reused pid, not the holder
+# a live pid whose start time is not the holder's is a reused pid, not the holder;
+# where ps cannot run (a Seatbelt that denies setuid binaries) the lock stays held
 sleep 5 & LOCK_HOLDER=$!
 mkdir -p "$RSTATE/locked/lock"
 printf '%s\n' "$LOCK_HOLDER" > "$RSTATE/locked/lock/pid"
+TZ=UTC0 ps -o lstart= -p "$LOCK_HOLDER" > "$RSTATE/locked/lock/started" 2>/dev/null
+EXPORTS="TZ=America/Chicago"
+runr run locked
+EXPORTS=""
+assert_eq "the holder's start time reads the same from any caller's zone" 75 "$RC"
+PS_OK=0; [ -s "$RSTATE/locked/lock/started" ] && PS_OK=1
 printf 'Thu Jan  1 00:00:00 1970\n' > "$RSTATE/locked/lock/started"
 runr run locked
-assert_eq "a lock whose pid was reused is reaped" 0 "$RC"
+if [ "$PS_OK" = 1 ]; then
+  assert_eq "a lock whose pid was reused is reaped" 0 "$RC"
+else
+  assert_eq "a lock whose pid's start time cannot be read stays held" 75 "$RC"
+fi
 kill "$LOCK_HOLDER" 2>/dev/null; wait "$LOCK_HOLDER" 2>/dev/null; LOCK_HOLDER=""
+rm -rf "$RSTATE/locked/lock"
 
 mkfix "$RDIR/pipe.md" <<EOF
 \`\`\`sh
@@ -1099,8 +1113,11 @@ RDIR="$SANDBOX/r-bad"
 runr run --due
 assert_no_file "a schedule the parser rejects never fires, not even once" "$SANDBOX/at.marker"
 assert_grep "a document named like a flag is skipped, never dispatched as one" "$RSTATE/tick.log" "skip --due.md"
+printf -- '---\nschedule: "0 9 */31 2 3"\n---\n```sh\ntrue\n```\n' | mkfix "$SANDBOX/r-bad/feb.md"
 runr status
-assert_contains "status flags the rejected schedule" "$OUT" "bad"
+assert_contains "status flags the rejected schedule" "$OUT" "@daily           bad"
+assert_missing "status lists no flag-named document" "$OUT" "--due"
+assert_missing "a schedule whose next fire is years out is valid (Wed Feb 1 2034)" "$OUT" "0 9 */31 2 3     bad"
 
 # launchd stops the tick with a TERM to the tick alone: the routine must still reap and record
 mkfix "$SANDBOX/r-term/term.md" <<EOF
