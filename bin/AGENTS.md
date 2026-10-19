@@ -12,7 +12,9 @@ invariants:
     anchor: ※ catch-retry
   - claim: run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract
     anchor: ※ due-tick
-  - claim: run --due never dispatches during a macOS dark wake — the tick probes before every dispatch, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake
+  - claim: run --due dispatches every due routine at once and waits for all — launchd starts no second tick while one runs, so a serial sweep would blind the */5 routines behind one long run; a signal to the tick reaches every routine as TERM
+    anchor: ※ parallel-due
+  - claim: run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake
     anchor: ※ dark-wake-gate
 hazards:
   - claim: macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script

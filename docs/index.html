@@ -241,7 +241,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
              → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
              → <b>watchdog</b> (bash-native; SIGTERM to the block's group, SIGKILL after grace; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
-             → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release; run --due forwards its own as TERM to the routine it runs
+             → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release; run --due forwards its own as TERM to every routine it runs
              → <b>blocks</b> under the try/catch contract
              → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap), renamed into place, and appended to runs.jsonl
              → the failing block's exit passes through</pre>
@@ -273,7 +273,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <thead><tr><th>verb</th><th>duty</th></tr></thead>
       <tbody>
         <tr data-verb="run"><td class="table-mono">run &lt;name&gt;</td><td>run one document through the wrapper — gate, lock, timeout, try/catch</td></tr>
-        <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — run every due routine; silent when none are</td></tr>
+        <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — run every due routine at once and wait for all; silent when none are</td></tr>
         <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due? (<code class="code">bad</code> for a schedule the parser rejects, which never fires), last exit, duration</td></tr>
         <tr data-verb="install"><td class="table-mono">install</td><td>render and load the single launchd tick agent</td></tr>
         <tr data-verb="uninstall"><td class="table-mono">uninstall</td><td>boot the agent out and remove its plist</td></tr>
@@ -323,7 +323,6 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <h2 class="h2">Next</h2>
   </header>
   <ol class="stack" id="next">
-    <li><strong>Serial dispatch starves the five-minute routines</strong> — one long routine holds the tick, and launchd starts no other, so every <code class="code">*/5</code> routine misses its fires for the whole run (github-monitor's 618 s on 2026-10-19 skipped two). Changing it is the owner's call: proposal <code class="code">proposal:jgeschwendt/routines:parallel-due</code>.</li>
     <li><strong>An installed but unauthenticated claude</strong> runs the catch, fails, and the block is retried anyway; it should degrade like a missing binary, as step ④ promises.</li>
     <li><strong>The stale-lock reap is check-then-act</strong> — a hand run and the tick reaping the same dead lock can both win. launchd serializes ticks, so only a hand run can race one.</li>
     <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
