@@ -7,6 +7,7 @@
 # (read back from the canvas). darken.py prints any hex that is not a light token value.
 set -e
 P=$(cd "$(dirname "$0")" && pwd)
+D=$(mktemp -d); trap 'agent-browser close >/dev/null 2>&1; rm -rf "$D"' EXIT   # a failed shoot must not strand the browser
 shoot() { # <source .dc.html> <height> <out.png> — retried: a browser relaunching
   # right after the last run's close can fail to connect or drop the viewport,
   # so every step may fail and the size is checked
@@ -23,8 +24,6 @@ h() { python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["boards
 S=$P/project
 H=$(h "$S/canvas.json" Main.dc.html)
 shoot "$S/Main.dc.html" "$H" "$P/execution-path.png"
-D=$(mktemp -d); trap 'rm -rf "$D"' EXIT
 cp "$S/Main.dc.html" "$S/support.js" "$D/"
 python3 -I "$P/darken.py" "$S/ds/gigantic/tokens.json" "$D/Main.dc.html"
 shoot "$D/Main.dc.html" "$H" "$P/execution-path-dark.png"
-agent-browser close >/dev/null
