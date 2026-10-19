@@ -1008,8 +1008,8 @@ assert_contains "workflow runs the due tick" "$WFC" "bin/routine run --due"
 assert_contains "workflow saves state even when a routine fails" "$WFC" "actions/cache/save@v4
         if: always()"
 assert_contains "workflow ticks never overlap — runners share no lock" "$WFC" "concurrency:
-  group: routines
-  cancel-in-progress: false"
+  cancel-in-progress: false
+  group: routines"
 assert_no_file "sync-ci targets its cwd, never the routines home" "$RHOME/.github"
 if [ "$SRC_STATE_PRE" = 0 ]; then
   assert_no_file "sync-ci never writes into the source tree under test" \
