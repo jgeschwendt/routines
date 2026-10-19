@@ -134,6 +134,7 @@ chmod +x "$PMSET_DARK"
 write_claude_stub() { # $1=mode: record | repair
   cat > "$CLAUDE" <<EOF
 #!/bin/bash
+[ "\$1" != auth ] || { [ ! -f "$SANDBOX/claude.loggedout" ]; exit \$?; }
 : > "$CLAUDE_CALLED"
 : > "$CLAUDE_ARGV"
 printf 'name=%s\nstate_dir=%s\nhome=%s\n' "\${ROUTINE_NAME:-}" "\${ROUTINE_STATE_DIR:-}" "\${ROUTINE_HOME:-}" > "$CLAUDE_ENV"
@@ -692,6 +693,18 @@ DEGRADED_LOG="$RSTATE/repair-no/logs/$(ls "$RSTATE/repair-no/logs" 2>/dev/null |
 assert_grep "the degradation reason names claude in the log" "$DEGRADED_LOG" "claude"
 CLAUDE="$CLAUDE_REAL"
 
+# an installed claude with no credentials fails every catch — degrade, never retry
+: > "$SANDBOX/claude.loggedout"
+rm -f "$RSTATE/repair-no/degraded"
+runr run repair-no
+rm "$SANDBOX/claude.loggedout"
+assert_eq "a logged-out claude degrades to fail" 7 "$RC"
+assert_no_file "and never runs the catch" "$CLAUDE_CALLED"
+assert_eq "nor retries" 4 "$(nlines "$SANDBOX/repair-no.runs")"
+assert_grep "the log says claude is not logged in" \
+  "$RSTATE/repair-no/logs/$(ls "$RSTATE/repair-no/logs" | tail -1)" "claude not logged in"
+assert_file "the degraded marker is stamped" "$RSTATE/repair-no/degraded"
+
 # ─── run-path hazards ─────────────────────────────────────────────────────────
 
 bgr() { # $1=name — runr in the background; the runner's rc lands in $SANDBOX/$1.rc
@@ -754,9 +767,12 @@ timeout: 1
 \`\`\`
 EOF
 EXPORTS="ROUTINE_CLAUDE=$SANDBOX/bin/claude-slow"
+T0=$(date +%s)
 runr run catch-late
 EXPORTS=""
 assert_eq "a deadline inside the catch exits 124" 124 "$RC"
+# claude-slow hangs auth status too — the probe runs under the watchdog, not past it
+assert_eq "a hung auth probe ends at the deadline, not after it" 1 "$(( $(date +%s) - T0 < 10 ))"
 assert_no_file "a deadline inside the catch skips the retry" "$SANDBOX/catch-late.retried"
 
 mkfix "$RDIR/octal.md" <<'EOF'

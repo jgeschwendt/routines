@@ -351,14 +351,20 @@ kill_tree() { # $1=signal $2=pid — the pid leads its own process group (set -m
   kill -"$1" -"$2" 2>/dev/null || kill -"$1" "$2" 2>/dev/null
 }
 
-exec_block() { # $1=index $2=capture file
-  ROUTINE_NAME="$RNAME" ROUTINE_STATE_DIR="$STATE_DIR" \
-    /bin/bash -e "$BLK_DIR/$(printf '%03d' "$1").sh" > "$2" 2>&1 &
-  local p=$!
+supervise() { # $1=output file, then the command — every child runs where the watchdog can reach it
+  local out="$1" p; shift
+  # ROUTINE_HOME is already exported; these two let a block's or the agent's
+  # $ROUTINE_STATE_DIR references resolve
+  ROUTINE_NAME="$RNAME" ROUTINE_STATE_DIR="$STATE_DIR" "$@" > "$out" 2>&1 &
+  p=$!
   printf '%s\n' "$p" > "$RUN_TMP/child.pid"
   # the watchdog marks timedout before it reads child.pid — one of the two sees the other
   [ ! -f "$RUN_TMP/timedout" ] || kill_tree TERM "$p"
   wait "$p" 2>/dev/null
+}
+
+exec_block() { # $1=index $2=capture file
+  supervise "$2" /bin/bash -e "$BLK_DIR/$(printf '%03d' "$1").sh"
 }
 
 # The Stop hook opens a thread from a `needs input:`/`failed:` line, keyed to the
@@ -373,10 +379,15 @@ failures in plain prose.'
 
 # ※ catch-retry
 catch_block() { # $1=index $2=capture file $3=block exit code
-  local prompt cout p rc crc t0
+  local prompt cout rc crc t0 why=""
   if [ "$ON_ERROR" = fail ]; then return "$3"; fi
-  if ! command -v "$ROUTINE_CLAUDE" >/dev/null 2>&1; then
-    printf 'catch degraded: claude unavailable\n'
+  # auth status exits 1 with no credentials at all — it never verifies them, so a
+  # bad or expired one passes
+  if ! command -v "$ROUTINE_CLAUDE" >/dev/null 2>&1; then why=unavailable
+  elif ! supervise /dev/null "$ROUTINE_CLAUDE" auth status; then why="not logged in"
+  fi
+  if [ -n "$why" ]; then
+    printf 'catch degraded: claude %s\n' "$why"
     # the log is per-run and the exit code is the block's — without this marker
     # a degraded catch is invisible to status and to the routines-health sweep
     mkdir -p "$STATE_DIR"
@@ -402,16 +413,8 @@ not run the remaining blocks — the runner retries block $1 once after you exit
 $CATCH_THREAD_RULE"
   cout="$RUN_TMP/catch-$1.out"
   t0=$(date +%s)
-  # ROUTINE_HOME is already exported; the other two let the doc's
-  # $ROUTINE_STATE_DIR references resolve in the agent's commands
-  ROUTINE_NAME="$RNAME" ROUTINE_STATE_DIR="$STATE_DIR" \
-    "$ROUTINE_CLAUDE" --model opus --permission-mode=auto --no-session-persistence \
-    -p "$prompt" > "$cout" 2>&1 &
-  p=$!
-  printf '%s\n' "$p" > "$RUN_TMP/child.pid"
-  # the exec_block handshake — the agent past the deadline stops too
-  [ ! -f "$RUN_TMP/timedout" ] || kill_tree TERM "$p"
-  wait "$p" 2>/dev/null; crc=$?
+  supervise "$cout" "$ROUTINE_CLAUDE" --model opus --permission-mode=auto \
+    --no-session-persistence -p "$prompt"; crc=$?
   show "$cout"
   # the agent's code is diagnostic only — the retry below is still the verdict
   printf 'catch: claude exit=%s elapsed=%ss\n' "$crc" "$(($(date +%s) - t0))"
