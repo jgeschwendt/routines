@@ -172,7 +172,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">④ degrade</div>
       <div class="panel-body">
         <ul role="list">
-          <li>no claude binary or auth (bare CI) ⇒ behaves as <code class="code">on_error: fail</code>, with the reason logged</li>
+          <li>no claude binary, or no credentials (<code class="code">claude auth status</code> exits 1 — bare CI) ⇒ behaves as <code class="code">on_error: fail</code>, with the reason logged; credentials are never verified, so a bad or expired one still runs the catch</li>
         </ul>
       </div>
     </div>
@@ -323,7 +323,6 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <h2 class="h2">Next</h2>
   </header>
   <ol class="stack" id="next">
-    <li><strong>An installed but unauthenticated claude</strong> runs the catch, fails, and the block is retried anyway; it should degrade like a missing binary, as step ④ promises.</li>
     <li><strong>The stale-lock reap is check-then-act</strong> — a hand run and the tick reaping the same dead lock can both win. launchd serializes ticks, so only a hand run can race one.</li>
     <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
   </ol>
