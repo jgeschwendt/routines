@@ -726,8 +726,8 @@ on:
 
 # runners share no lock: two overlapping ticks would both fire and one save would drop the other's state
 concurrency:
-  group: routines
   cancel-in-progress: false
+  group: routines
 
 jobs:
   due:
