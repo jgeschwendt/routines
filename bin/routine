@@ -525,7 +525,9 @@ cmd_run() { # $1=name
 # system is in Dark Wake"), so the tick defers and derived due-ness carries over.
 # ※ dark-wake-gate
 dark_wake() { # true only when macOS reports a wake without Graphics — a Power Nap dark wake
-  "$ROUTINE_PMSET" -g systemstate 2>/dev/null | grep '^Current System Capabilities are:' | grep -qv Graphics
+  local caps
+  caps=$("$ROUTINE_PMSET" -g systemstate 2>/dev/null | grep '^Current System Capabilities are:') &&
+    case "$caps" in *Graphics*) return 1 ;; esac
 }
 
 due_stop() { # $1=exit code — a background child ignores INT, so every signal forwards as TERM
