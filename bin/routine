@@ -21,6 +21,8 @@ ROUTINE_AGENTS_DIR=$(abspath "${ROUTINE_AGENTS_DIR:-${HOME:-/tmp}/Library/Launch
 ROUTINE_LAUNCHCTL="${ROUTINE_LAUNCHCTL:-launchctl}"
 ROUTINE_CLAUDE="${ROUTINE_CLAUDE:-claude}"
 ROUTINE_PMSET="${ROUTINE_PMSET:-pmset}"
+TICK=dev.gigantic.routines.due
+TICK_OLD=com.routines.due # the label was com.routines.due until 2026-10-20
 export ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
 export ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_PMSET
 
@@ -45,7 +47,7 @@ routine — executable markdown on rails
   routine run <name>     run one routine document
   routine run --due      run every due routine (silent when none are)
   routine status         schedule × due? × last run, one row per routine
-  routine install        install the launchd tick agent (com.routines.due)
+  routine install        install the launchd tick agent (dev.gigantic.routines.due)
   routine uninstall      remove it
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text
@@ -675,7 +677,11 @@ cmd_status() {
 xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; } # $1=text for a plist <string>
 
 cmd_install() {
-  local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
+  local plist="$ROUTINE_AGENTS_DIR/$TICK.plist"
+  if [ -e "$ROUTINE_AGENTS_DIR/$TICK_OLD.plist" ]; then # the pre-2026-10-20 agent; left in place, both would tick
+    "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/$TICK_OLD" >/dev/null 2>&1 || true
+    rm -f "$ROUTINE_AGENTS_DIR/$TICK_OLD.plist"
+  fi
   mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_HOME" "$ROUTINE_STATE"
   # launchd hands a bare PATH and `bash -l` reads ~/.bash_profile, never the zsh
   # profile — so ~/.local/bin (claude, mise, sandman, stele) is absent under the
@@ -687,7 +693,7 @@ cmd_install() {
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>Label</key><string>com.routines.due</string>
+  <key>Label</key><string>$TICK</string>
   <key>ProgramArguments</key>
   <array>
     <string>/bin/bash</string>
@@ -709,16 +715,18 @@ cmd_install() {
 </dict>
 </plist>
 EOF
-  "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/com.routines.due" >/dev/null 2>&1
+  "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/$TICK" >/dev/null 2>&1
   "$ROUTINE_LAUNCHCTL" bootstrap "gui/$(id -u)" "$plist" || die 1 "launchctl bootstrap failed"
   printf 'installed %s\n' "$plist"
 }
 
 cmd_uninstall() {
-  local plist="$ROUTINE_AGENTS_DIR/com.routines.due.plist"
-  "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/com.routines.due" >/dev/null 2>&1
-  rm -f "$plist"
-  printf 'removed %s\n' "$plist"
+  local l
+  for l in "$TICK_OLD" "$TICK"; do
+    "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/$l" >/dev/null 2>&1
+    rm -f "$ROUTINE_AGENTS_DIR/$l.plist"
+  done
+  printf 'removed %s\n' "$ROUTINE_AGENTS_DIR/$TICK.plist"
 }
 
 cmd_sync_ci() {

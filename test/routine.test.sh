@@ -960,13 +960,17 @@ rm "$RDIR/AGENTS.md"
 
 # ─── install / uninstall ──────────────────────────────────────────────────────
 
-PLIST="$RAGENTS/com.routines.due.plist"
+PLIST="$RAGENTS/dev.gigantic.routines.due.plist"
+OLD=com.routines.due # the label was com.routines.due until 2026-10-20
+OLD_PLIST="$RAGENTS/$OLD.plist"
 UID_NOW=$(id -u)
+mkdir -p "$RAGENTS" && : > "$OLD_PLIST"
 runr install
+assert_no_file "install removes the pre-2026-10-20 plist" "$OLD_PLIST"
 assert_eq "install exits 0" 0 "$RC"
 assert_file "install writes the launch agent" "$PLIST"
 PL=$(cat "$PLIST" 2>/dev/null)
-assert_contains "plist declares the label" "$PL" "com.routines.due"
+assert_contains "plist declares the label" "$PL" "<key>Label</key><string>dev.gigantic.routines.due</string>"
 assert_contains "plist sets StartInterval 60" "$PL" "<key>StartInterval</key><integer>60</integer>"
 assert_contains "plist sets RunAtLoad" "$PL" "<key>RunAtLoad</key><true/>"
 assert_contains "plist runs /bin/bash" "$PL" "/bin/bash"
@@ -977,10 +981,9 @@ assert_contains "plist stamps a PATH — the tick inherits none" "$PL" "<key>PAT
 assert_contains "plist PATH carries ~/.local/bin (claude, mise, sandman, stele)" \
   "$PL" "$HOME/.local/bin:"
 assert_missing "plist never cds into a repo — the runner cds itself" "$PL" "&amp;&amp;"
-LC=$(cat "$LCTL_LOG" 2>/dev/null)
-assert_contains "install boots the old agent out" "$LC" "bootout gui/$UID_NOW/com.routines.due"
-assert_contains "install bootstraps the agent" "$LC" "bootstrap gui/$UID_NOW"
-assert_eq "bootout precedes bootstrap" 1 "$(grep -n bootout "$LCTL_LOG" | head -1 | cut -d: -f1)"
+assert_eq "install boots out the legacy label, then the current, then bootstraps" \
+  "bootout gui/$UID_NOW/$OLD|bootout gui/$UID_NOW/dev.gigantic.routines.due|bootstrap gui/$UID_NOW $PLIST" \
+  "$(paste -sd'|' "$LCTL_LOG")"
 
 FRESH_HOME="$SANDBOX/fresh <&> 'home"
 runr_home "$FRESH_HOME" install
@@ -990,12 +993,14 @@ assert_dir "install creates the derived state dir" "$FRESH_HOME/.state"
 assert_contains "plist stamps the custom home, XML-escaped — the tick runs against it" \
   "$(cat "$PLIST" 2>/dev/null)" "<key>ROUTINE_HOME</key><string>$SANDBOX/fresh &lt;&amp;&gt; 'home</string>"
 
-: > "$LCTL_LOG"
+: > "$LCTL_LOG"; : > "$OLD_PLIST"
 runr uninstall
 assert_eq "uninstall exits 0" 0 "$RC"
 assert_no_file "uninstall removes the plist" "$PLIST"
-assert_contains "uninstall boots the agent out" "$(cat "$LCTL_LOG" 2>/dev/null)" \
-  "bootout gui/$UID_NOW/com.routines.due"
+assert_no_file "uninstall removes the pre-2026-10-20 plist" "$OLD_PLIST"
+assert_eq "uninstall boots out both labels" \
+  "bootout gui/$UID_NOW/$OLD|bootout gui/$UID_NOW/dev.gigantic.routines.due" \
+  "$(paste -sd'|' "$LCTL_LOG")"
 
 # ─── sync-ci ──────────────────────────────────────────────────────────────────
 
