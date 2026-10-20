@@ -215,10 +215,10 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
   </header>
   <div class="stations">
     <div class="panel" data-station="launchd">
-      <div class="panel-head">launchd — <code class="code">com.routines.due</code></div>
+      <div class="panel-head">launchd — <code class="code">dev.gigantic.routines.due</code></div>
       <div class="panel-body">
         <ul role="list">
-          <li><code class="code">routine install</code> renders one agent; <code class="code">routine uninstall</code> boots it out</li>
+          <li><code class="code">routine install</code> renders one agent; <code class="code">routine uninstall</code> boots it out; install retires the pre-2026-10-20 <code class="code">com.routines.due</code> agent first</li>
           <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running <code class="code">/bin/bash -lc "exec &lt;runner&gt; run --due"</code> with <code class="code">PATH</code> and the <code class="code">ROUTINE_HOME</code>/<code class="code">ROUTINE_DIR</code>/<code class="code">ROUTINE_STATE</code> anchors stamped (XML-escaped) — no <code class="code">cd</code>, the runner enters the routines home itself</li>
           <li><code class="code">RunAtLoad</code> doubles as login and wake catch-up</li>
         </ul>
