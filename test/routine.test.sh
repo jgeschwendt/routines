@@ -416,11 +416,8 @@ runr run repair-yes
 rm "$SANDBOX/claude.repairs"
 assert "catch repairs, the retried block passes ⇒ exit 0" [ $RC = 0 ]
 assert "on_error defaults to claude" [ -f "$CLAUDE_CALLED" ]
-FLAGS=$(cat "$CLAUDE_FLAGS")
-assert "claude is invoked with --model opus" has "--model opus" "$FLAGS"
-assert "claude is invoked with --permission-mode=auto" has "--permission-mode=auto" "$FLAGS"
-assert "claude is invoked with --no-session-persistence" has "--no-session-persistence" "$FLAGS"
-assert "claude is invoked with -p" has " -p" "$FLAGS"
+assert "claude is invoked with exactly --model opus --permission-mode=auto --no-session-persistence -p" \
+  [ "$(cat "$CLAUDE_FLAGS")" = " --model opus --permission-mode=auto --no-session-persistence -p" ]
 PROMPT=$(cat "$CLAUDE_PROMPT")
 assert "the prompt carries the document's prose" has "PROSE-CANARY-4417" "$PROMPT"
 assert "the prompt carries the frontmatter" has "timeout: 30" "$PROMPT"
@@ -428,10 +425,8 @@ assert "the prompt carries the failing block's output" has "SENTINEL-OUTPUT-9271
 assert "the prompt forbids a needs-input/failed last-message line" \
   has 'Never start a line of your final message with `needs input:` or `failed:`' "$PROMPT"
 assert "the prompt points at the doc's stable thread keys" has '`ci:<repo>:<sha7>`' "$PROMPT"
-CENV=$(cat "$CLAUDE_ENV")
-assert "the catch agent sees ROUTINE_NAME" has "name=repair-yes" "$CENV"
-assert "the catch agent sees ROUTINE_STATE_DIR" has "state_dir=$RSTATE/repair-yes" "$CENV"
-assert "the catch agent sees ROUTINE_HOME" has "home=$RHOME" "$CENV"
+assert "the catch agent sees ROUTINE_NAME, ROUTINE_STATE_DIR, ROUTINE_HOME" \
+  [ "$(cat "$CLAUDE_ENV")" = "$(printf 'name=repair-yes\nstate_dir=%s\nhome=%s' "$RSTATE/repair-yes" "$RHOME")" ]
 assert "the repaired block is executed twice — one retry, no loop" [ "$(nlines "$SANDBOX/repair-yes.runs")" = 2 ]
 
 rm -f "$CLAUDE_CALLED"

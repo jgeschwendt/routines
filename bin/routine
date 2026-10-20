@@ -34,11 +34,7 @@ else epoch_fmt() { date -u -d "@$1" +"$2"; }; fi
 
 warn() { printf 'routine: %s\n' "$*" >&2; }
 
-die() { # $1=exit code, rest=message
-  local code="$1"; shift
-  warn "$@"
-  exit "$code"
-}
+die() { warn "${@:2}"; exit "$1"; } # $1=exit code, rest=message
 
 usage() {
   cat <<'EOF'
@@ -120,9 +116,7 @@ json_get() { # $1=file $2=key — reads the single-line last-run.json
 
 # ─── observability ────────────────────────────────────────────────────────────
 
-iso() { # $1=epoch — the one timestamp shape every log line and JSON field carries
-  epoch_fmt "$1" '%Y-%m-%dT%H:%M:%SZ'
-}
+iso() { epoch_fmt "$1" '%Y-%m-%dT%H:%M:%SZ'; } # $1=epoch — the one timestamp shape every log line and JSON field carries
 
 keep_tail() { # $1=file $2=wc flag (c|l) $3=max $4=lines to keep — once past max, rewrite in place, never in the reader's fd
   local tmp="$1.trim.$$"
@@ -415,17 +409,11 @@ watchdog() { # $1=deadline epoch $2=sequence pid
   done
   : > "$RUN_TMP/timedout"
   p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
-  if [ -z "$p" ]; then
-    printf 'watchdog: deadline reached, no child pid to kill\n'
-    exit 0
-  fi
+  [ -n "$p" ] || { printf 'watchdog: deadline reached, no child pid to kill\n'; exit 0; }
   printf 'watchdog: deadline reached, killing pid %s\n' "$p"
   kill_tree TERM "$p"
   while [ "$n" -lt 10 ]; do
-    if ! { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null; then
-      printf 'watchdog: pid %s exited on TERM after %ss\n' "$p" "$n"
-      exit 0
-    fi
+    { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null || { printf 'watchdog: pid %s exited on TERM after %ss\n' "$p" "$n"; exit 0; }
     sleep 1; n=$((n + 1))
   done
   printf 'watchdog: pid %s survived TERM for %ss, escalating to KILL\n' "$p" "$n"
