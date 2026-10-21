@@ -410,6 +410,17 @@ release
 runr run locked
 assert "stale lock is reaped" [ $RC = 0 ]
 assert "the reaped lock is released" [ ! -e "$RSTATE/locked/lock" ]
+assert "and the reap guard with it" [ ! -e "$RSTATE/locked/lock.reap" ]
+
+# a live reap guard means another run is reaping: the stale lock is its to take
+hold locked; release; mkdir "$RSTATE/locked/lock.reap"
+runr run locked
+assert "a fresh reap guard exits 75" [ $RC = 75 ]
+assert "and leaves the stale lock to its reaper" [ -e "$RSTATE/locked/lock/pid" ]
+touch -t 202001010000 "$RSTATE/locked/lock.reap"
+runr run locked
+assert "an old reap guard is a crashed reaper's: the lock is reaped" [ $RC = 0 ]
+assert "and the old guard is gone" [ ! -e "$RSTATE/locked/lock.reap" ]
 
 # ─── catch ────────────────────────────────────────────────────────────────────
 

@@ -237,7 +237,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     </div>
   </div>
   <figure class="snippet-figure">
-<pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead ⇒ reap, reused (its UTC start time differs, where ps can read it) ⇒ reap, no pid ⇒ held for a minute)
+<pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead ⇒ reap, reused (its UTC start time differs, where ps can read it) ⇒ reap, no pid ⇒ held for a minute; a reap runs under a mkdir lock.reap guard and re-judges inside it, so two reapers never both win — a fresh guard ⇒ 75, one a minute old is a crashed reaper's)
              → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
              → <b>watchdog</b> (bash-native; SIGTERM to the block's group, SIGKILL after grace; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
@@ -323,8 +323,8 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <h2 class="h2">Next</h2>
   </header>
   <ol class="stack" id="next">
-    <li><strong>The stale-lock reap is check-then-act</strong> — a hand run and the tick reaping the same dead lock can both win. launchd serializes ticks, so only a hand run can race one.</li>
-    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>  </ol>
+    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
+  </ol>
 </section>
 
 <section class="docs-section" id="rejected" data-component="rejected">
