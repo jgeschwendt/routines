@@ -76,7 +76,7 @@
   </header>
   <figure class="snippet-figure">
 <pre class="snippet"><b>~/.routines/&lt;name&gt;.md</b>            <i># the routine: frontmatter + prose + ```sh blocks</i>
-<b>~/.routines/.state/&lt;name&gt;/</b>       <i># lock/, last-run.json, runs.jsonl, logs/&lt;ts&gt;-&lt;pid&gt;.log</i>
+<b>~/.routines/.state/&lt;name&gt;/</b>       <i># lock/, lock.reap/ while reaping, last-run.json, runs.jsonl, logs/&lt;ts&gt;-&lt;pid&gt;.log</i>
 <b>~/.routines/.state/tick.log</b>      <i># the sweep's journal — one line per tick</i>
 
 <b>bin/routine</b>                      <i># the only runner — bash 3.2-safe, zero-dep</i>
@@ -201,8 +201,8 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     </table>
   </div>
   <p class="docs-note plan-coda"><code class="code">next-fire-after</code>
-    is a minute-scan forward from the last run (horizon eight years, so Feb 29 recurs;
-    dead months skip to their 28th) — dumb, correct, sub-second. Day-of-month and
+    walks days forward from the last run, dates by arithmetic, never a fork (horizon
+    eight years, so Feb 29 recurs; dead months skip to their 28th) — dumb, correct, sub-second. Day-of-month and
     day-of-week follow cronie: OR when both are restricted, AND when either opens with
     <code class="code">*</code> (<code class="code">*/2</code> included).</p>
 </section>
@@ -304,7 +304,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <li data-contract="bash-3-2"><strong>bash 3.2-safe, zero-dep</strong> — <code class="code">bin/routine</code> is one script with no jq, yq, or GNU timeout; claude is needed only when a catch fires or a block calls it.</li>
     <li data-contract="state"><strong><code class="code">$ROUTINE_HOME/.state/</code> is never committed</strong> — CI persists <code class="code">routines/.state</code> through <code class="code">actions/cache</code> only.</li>
   </ul>
-  <p class="docs-note plan-coda">Scale: the runner is ~770 lines of bash plus two small generators (plist, workflow).</p>
+  <p class="docs-note plan-coda">Scale: the runner is ~720 lines of bash plus two small generators (plist, workflow).</p>
 </section>
 
 <section class="docs-section" id="migration" data-component="migration">
