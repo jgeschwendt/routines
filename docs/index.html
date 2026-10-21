@@ -324,9 +324,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
   </header>
   <ol class="stack" id="next">
     <li><strong>The stale-lock reap is check-then-act</strong> — a hand run and the tick reaping the same dead lock can both win. launchd serializes ticks, so only a hand run can race one.</li>
-    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
-    <li><strong>Dividers measure bytes</strong> — under <code class="code">LC_ALL=C</code> a <code class="code">·</code> counts two, so a divider loses a column per <code class="code">·</code> in its label.</li>
-  </ol>
+    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>  </ol>
 </section>
 
 <section class="docs-section" id="rejected" data-component="rejected">
