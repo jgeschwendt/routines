@@ -180,7 +180,7 @@ expand() { # $1=field $2=lo $3=hi — prints the expanded value set
 
 # ※ due-derivation
 next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly after
-  local start="$1" mins hours doms mons dows day0 d=0 both=0 de mm dd ww ok h m t fire=""
+  local start="$1" mins hours doms mons dows day0 d=0 both=0 de mm dd ww y z ok h m t fire=""
   set -f; set -- $2; set +f
   [ $# -eq 5 ] || return 1
   mins=$(expand "$1" 0 59) || return 1
@@ -196,8 +196,9 @@ next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly
   # eight years: Feb 29 recurs every four, and 2100 skips one
   while [ "$d" -le 2922 ]; do
     de=$((day0 + d * 86400)); d=$((d + 1))
-    set -- $(epoch_fmt "$de" '%m %d %w')
-    mm=$((10#$1)); dd=$((10#$2)); ww=$((10#$3))
+    # Hinnant's civil_from_days, no date fork: z counts days from 0000-03-01, a Wednesday
+    ((z = de / 86400 + 719468, ww = (z + 3) % 7, z %= 146097, y = (z - z / 1460 + z / 36524 - z / 146096) / 365,
+      z -= 365 * y + y / 4 - y / 100, mm = (5 * z + 2) / 153, dd = z - (153 * mm + 2) / 5 + 1, mm = (mm + 2) % 12 + 1))
     # a dead month jumps to its 28th, then walks — never past a next month's 1st
     if ! inset "$mons" "$mm"; then [ "$dd" -lt 28 ] && d=$((d + 27 - dd)); continue; fi
     ok=0
