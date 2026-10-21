@@ -666,6 +666,13 @@ assert "sync-ci never writes into the source tree under test" [ "$(ls -d "$SRC_R
 
 # ─── edge inputs ──────────────────────────────────────────────────────────────
 
+# GNU date reads no epoch from -r, so the probe falls back to -d @epoch — the shim plays GNU
+printf '#!/bin/bash\n[ "$2" != -r ] || exit 1\nexec /bin/date -u -r "${3#@}" "$4"\n' | mkfix "$SANDBOX/gnu/date"
+chmod +x "$SANDBOX/gnu/date"
+doc "$SANDBOX/r-gnu/gnu.md" "" true
+RDIR="$SANDBOX/r-gnu" RNOW=1792368060 EXPORTS="PATH=$SANDBOX/gnu:$PATH" runr run gnu
+assert "without date -r, an epoch formats through date -d @" has '"started":"2026-10-19T00:01:00Z"' "$(lastrun gnu)"
+
 mkfix "$RDIR/comment.md" <<EOF
 <!--->
 <!-- a one-line comment ends where it opens -->

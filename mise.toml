@@ -1,6 +1,10 @@
 [tools]
 hk = "2.5.0"
 
+[tasks.cover]
+description = "line coverage of bin/routine under the suite — lists every executable line never hit; --min fails below 100 %"
+run = "/bin/bash test/cover.sh"
+
 [tasks.figures]
 description = "render every Claude Design artboard under docs/figures/project/ to its PNG (agent-browser, 2×)"
 run = "sh docs/figures/export.sh"
