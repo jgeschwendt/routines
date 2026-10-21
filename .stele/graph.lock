@@ -78,7 +78,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -90,7 +90,7 @@
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -102,7 +102,7 @@
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -114,7 +114,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -126,7 +126,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -138,7 +138,7 @@
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -150,7 +150,7 @@
           "text": "no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         },
         {
@@ -162,7 +162,7 @@
           "text": "run --due dispatches every due routine at once and waits for all — launchd starts no second tick while one runs, so a serial sweep would blind the */5 routines behind one long run; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         }
       ],
@@ -192,7 +192,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "bac85d2ebc9f7ab498590c6d052025f7c10c7cef"
+            "sha": "ceaa5c0cdb04d7da1ec86ba057022a0c0956e72b"
           }
         }
       ],
