@@ -545,6 +545,13 @@ due "'0 0 */2 * 1' — Mon 19th satisfies both, due" star 1792368060 2          
 due "" leap 1835404260                                                         # Tue 2028-02-29T02:31:00Z
 due "'30 2 29 2 *' fires again four years on" leap 1961712000 2               # Mon 2032-03-01T00:00:00Z
 
+# Feb 30 never fires, so the walk spans its whole horizon — it must fork no date per day
+doc "$SANDBOX/r-feb30/feb30.md" "schedule: 0 0 30 2 *" true
+printf '#!/bin/bash\necho >> "%s"\nexec /bin/date "$@"\n' "$SANDBOX/date.calls" | mkfix "$SANDBOX/shim/date"
+chmod +x "$SANDBOX/shim/date"
+RDIR="$SANDBOX/r-feb30" EXPORTS="PATH=$SANDBOX/shim:$PATH" runr status
+assert "a never-firing schedule's walk forks no date per day" [ "$(nlines "$SANDBOX/date.calls")" -lt 10 ]
+
 for t in "$T_HOURLY_RUN" "$T_HOURLY_PLUS600"; do due "" quoted "$t"; done
 due "a CRLF doc's quoted schedule is due on the hour, not before" quoted "$T_HOURLY_DUE" 2
 
