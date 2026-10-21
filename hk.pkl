@@ -3,7 +3,7 @@ hooks {
   ["pre-push"] {
     steps {
       ["gate"] {
-        check = "unset $(git rev-parse --local-env-vars); stele check && stele emit --check && /bin/bash test/routine.test.sh"
+        check = "unset $(git rev-parse --local-env-vars); stele check && stele emit --check && /bin/bash test/cover.sh --min"
       }
     }
   }

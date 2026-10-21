@@ -30,7 +30,7 @@ The design is `docs/index.html`; `bin/routine help` lists the verbs, exit codes 
 | -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
 | bin      | container | The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run.                                                                      | `stele unfold bin` · or read `bin/AGENTS.md`           |
 | routines | container | This repo's own routines — the CI convention, where a repo's routines/ dir is its ROUTINE_HOME. A document is frontmatter, prose as the error-handler's context, and fenced sh blocks as the mechanics. | `stele unfold routines` · or read `routines/AGENTS.md` |
-| test     | container | Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about thirty-five seconds, nearly all of it timeout and watchdog-grace sleeps.                | `stele unfold test` · or read `test/AGENTS.md`         |
+| test     | container | Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about twenty seconds, nearly all of it timeout and watchdog-grace sleeps.                     | `stele unfold test` · or read `test/AGENTS.md`         |
 
 ## Indexes
 
