@@ -231,8 +231,9 @@ is_due() { # $1=name — true when the schedule's next fire has passed
 
 # ─── run ──────────────────────────────────────────────────────────────────────
 
-divider() { # $1=label — 80 columns
-  local r n=$((70 - ${#1}))
+divider() { # $1=label — 80 columns; LC_ALL=C counts a · as two
+  local r v="${1//·/.}" n
+  n=$((70 - ${#v}))
   printf -v r '%*s' $((n > 0 ? n : 0)) ''
   printf '──────── %s %s\n' "$1" "${r// /─}"
 }

@@ -383,6 +383,8 @@ assert "last-run.json is a single line" [ "$(nlines "$RSTATE/blocks/last-run.jso
 assert "one log file per run" [ "$(ls "$RSTATE/blocks/logs" | wc -l | tr -d ' ')" = 1 ]
 assert "log delimits block 1" wait_grep "$(lastlog blocks)" "block 1"
 assert "log delimits block 2" wait_grep "$(lastlog blocks)" "block 2"
+assert "every divider spans 80 columns, a · one of them" \
+  [ -z "$(grep '^─' "$(lastlog blocks)" | sed 's/─/-/g; s/·/./g' | awk 'length != 80')" ]
 assert "the log tee opens no /dev/fd path — Seatbelt denies it" not grep -qF '> >(' "$RUNNER"
 
 runr run failing
