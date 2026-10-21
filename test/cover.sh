@@ -21,7 +21,8 @@ ROUTINE_COVER_LOG="$T/hits" /bin/bash "$T/test/routine.test.sh"; RC=$?
 # statement is a span — quotes, $(…) and backslashes left open, heredoc bodies —
 # credited at its first line by a hit anywhere inside. A span opening on a blank,
 # comment, closer (} fi done esac ;; else then do) or bare case pattern is inert.
-# Line 4 carries the probe. A hit on an inert span is an orphan: classifier drift.
+# Line 4 carries the probe. A hit on an inert span is an orphan, and a span left open
+# at EOF swallowed the rest: classifier drift either way, and a --min failure.
 # It reads the copy, never bin/routine: an edit mid-run would shift every line.
 awk '
   FILENAME == ARGV[1] { hit[$1] = 1; next }
@@ -50,9 +51,11 @@ awk '
   END {
     for (l in hit) if (l in sp) { if (ex[sp[l]]) cov[sp[l]] = 1; else orph[sp[l]] = 1 }
     for (l = 1; l <= FNR; l++) if (ex[l]) { tot++; if (l in cov) got++; else out = out sprintf("miss   %4d  %s\n", l, src[l]) }
-    for (l = 1; l <= FNR; l++) if (l in orph) out = out sprintf("orphan %4d  %s\n", l, src[l])
+    for (l = 1; l <= FNR; l++) if (l in orph) { no++; out = out sprintf("orphan %4d  %s\n", l, src[l]) }
+    # a quote, paren or heredoc the scan never closed swallowed every line after it
+    if (st != "" || hd != "") { no++; out = out sprintf("open   %4d  %s\n", s, src[s]) }
     printf "\n%scoverage: %d/%d executable lines (%.1f %%)\n", out, got, tot, 100 * got / tot
-    exit (got < tot)
+    exit (got < tot || no)
   }
 ' "$T/hits" "$T/bin/routine"; CRC=$?
 
