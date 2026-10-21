@@ -323,6 +323,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <h2 class="h2">Next</h2>
   </header>
   <ol class="stack" id="next">
+    <li><strong>An old reap guard is passed, not claimed</strong> — two runs meeting a crashed reaper's <code class="code">lock.reap</code> can both reap; needs a SIGKILL mid-reap first.</li>
     <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
   </ol>
 </section>
