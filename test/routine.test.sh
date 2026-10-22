@@ -670,9 +670,10 @@ assert "workflow runs the due tick" has "bin/routine run --due" "$WFC"
 assert "workflow saves state even when a routine fails" has "if: always()
         uses: actions/cache/save@v4" "$WFC"
 assert "workflow prunes every older state entry, only once this one saved" has "if: always() && steps.save.outcome == 'success'
-        run: gh cache list --key routines-state- --limit 100 --json id,key --jq '.[] | select(.key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
-assert "and may delete caches" has "permissions:
-      actions: write" "$WFC"
+        run: gh cache list --key routines-state- --limit 100 --ref \${{ github.ref }} --json id,key --jq '.[] | select(.key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
+assert "and may delete caches, still check out" has "permissions:
+      actions: write
+      contents: read" "$WFC"
 assert "workflow ticks never overlap — runners share no lock" has "concurrency:
   cancel-in-progress: false
   group: routines" "$WFC"
@@ -682,11 +683,11 @@ assert "sync-ci never writes into the source tree under test" [ "$(ls -d "$SRC_R
 # ─── edge inputs ──────────────────────────────────────────────────────────────
 
 # an epoch formats by arithmetic — BSD -r and GNU -d alike are refused, a leap day included
-printf '#!/bin/bash\n[ "$1" = +%%s ] && exec /bin/date "$@"; exit 1\n' | mkfix "$SANDBOX/gnu/date"
-chmod +x "$SANDBOX/gnu/date"
-doc "$SANDBOX/r-gnu/gnu.md" "" true
-RDIR="$SANDBOX/r-gnu" RNOW=1835404263 EXPORTS="PATH=$SANDBOX/gnu:$PATH" runr run gnu
-assert "an epoch formats with no date fork, the log name too" has '"started":"2028-02-29T02:31:03Z","started_epoch":1835404263,"finished":"2028-02-29T02:31:03Z","exit":0,"duration":0,"degraded":false} 20280229T023103Z-' "$(lastrun gnu) $(ls "$RSTATE/gnu/logs")"
+printf '#!/bin/bash\n[ "$1" = +%%s ] && exec /bin/date "$@"; exit 1\n' | mkfix "$SANDBOX/nodate/date"
+chmod +x "$SANDBOX/nodate/date"
+doc "$SANDBOX/r-nodate/nodate.md" "" true
+RDIR="$SANDBOX/r-nodate" RNOW=1835404263 EXPORTS="PATH=$SANDBOX/nodate:$PATH" runr run nodate
+assert "an epoch formats with no date fork, the log name too" has '"started":"2028-02-29T02:31:03Z","started_epoch":1835404263,"finished":"2028-02-29T02:31:03Z","exit":0,"duration":0,"degraded":false} 20280229T023103Z-' "$(lastrun nodate) $(ls "$RSTATE/nodate/logs")"
 
 mkfix "$RDIR/comment.md" <<EOF
 <!--->
