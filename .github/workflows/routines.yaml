@@ -39,5 +39,6 @@ jobs:
       - env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.ref }}
         if: always() && steps.save.outcome == 'success'
-        run: gh cache list --key routines-state- --limit 100 --ref ${{ github.ref }} --json id,key --jq '.[] | select(.key != "routines-state-${{ github.run_id }}") | .id' | xargs -rn1 gh cache delete
+        run: gh cache list --key routines-state- --limit 100 --ref "$REF" --json id,key --jq '.[] | select(.key != "routines-state-${{ github.run_id }}") | .id' | xargs -rn1 gh cache delete
