@@ -667,8 +667,12 @@ assert "workflow caches the derived state path" has "path: routines/.state" "$WF
 assert "workflow restores the newest state key" has "restore-keys" "$WFC"
 assert "workflow fetches the runner when the repo has none" has "[ -x bin/routine ] || (mkdir -p bin && curl -fsSL" "$WFC"
 assert "workflow runs the due tick" has "bin/routine run --due" "$WFC"
-assert "workflow saves state even when a routine fails" has "actions/cache/save@v4
-        if: always()" "$WFC"
+assert "workflow saves state even when a routine fails" has "if: always()
+        uses: actions/cache/save@v4" "$WFC"
+assert "workflow prunes every older state entry, only once this one saved" has "if: always() && steps.save.outcome == 'success'
+        run: gh cache list --key routines-state- --limit 100 --json id,key --jq '.[] | select(.key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
+assert "and may delete caches" has "permissions:
+      actions: write" "$WFC"
 assert "workflow ticks never overlap — runners share no lock" has "concurrency:
   cancel-in-progress: false
   group: routines" "$WFC"

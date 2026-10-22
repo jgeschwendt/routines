@@ -231,6 +231,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
           <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yaml</code> into the repo it is invoked in</li>
           <li>cron every 15 min + <code class="code">workflow_dispatch</code>, one tick at a time (a <code class="code">concurrency</code> group: runners share no lock); <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, fetch <code class="code">bin/routine</code> if absent, <code class="code">run --due</code>, save cache</li>
           <li>the save runs under <code class="code">if: always()</code> — <code class="code">actions/cache</code> saves only on success, so one red routine would roll back every other routine's state</li>
+          <li>each tick saves a new key, so once the save succeeds every older <code class="code">routines-state-</code> entry is deleted (<code class="code">gh cache delete</code>, <code class="code">actions: write</code>)</li>
           <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
         </ul>
       </div>
@@ -324,7 +325,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
   </header>
   <ol class="stack" id="next">
     <li><strong>An old reap guard is passed, not claimed</strong> — two runs meeting a crashed reaper's <code class="code">lock.reap</code> can both reap; needs a SIGKILL mid-reap first.</li>
-    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned, and saves one cache entry per tick: pin a tag, prune old entries.</li>
+    <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned: pin a tag, once the owner cuts a release.</li>
   </ol>
 </section>
 
