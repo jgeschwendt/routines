@@ -12,9 +12,12 @@ concurrency:
 
 jobs:
   due:
-    runs-on: ubuntu-latest
     env:
       ROUTINE_HOME: ${{ github.workspace }}/routines
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/cache/restore@v4
@@ -26,8 +29,15 @@ jobs:
       - run: bin/routine run --due
       # actions/cache saves only on success; one red routine would roll every
       # other routine's state back and re-run it each tick
-      - uses: actions/cache/save@v4
+      - id: save
         if: always()
+        uses: actions/cache/save@v4
         with:
           path: routines/.state
           key: routines-state-${{ github.run_id }}
+      # each tick saves a new key; once this one is saved, every older entry is dead weight
+      - env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        if: always() && steps.save.outcome == 'success'
+        run: gh cache list --key routines-state- --limit 100 --json id,key --jq '.[] | select(.key != "routines-state-${{ github.run_id }}") | .id' | xargs -rn1 gh cache delete
