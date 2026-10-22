@@ -375,12 +375,12 @@ not run the remaining blocks — the runner retries block $1 once after you exit
 
 $CATCH_THREAD_RULE"
   cout="$RUN_TMP/catch-$1.out"
-  t0=$(date +%s)
+  t0=$SECONDS
   supervise "$cout" "$ROUTINE_CLAUDE" --model opus --permission-mode=auto \
     --no-session-persistence -p "$prompt"; crc=$?
   show "$cout"
   # the agent's code is diagnostic only — the retry below is still the verdict
-  printf 'catch: claude exit=%s elapsed=%ss\n' "$crc" "$(($(date +%s) - t0))"
+  printf 'catch: claude exit=%s elapsed=%ss\n' "$crc" "$((SECONDS - t0))"
   # the watchdog fired once, on the agent, and is gone — a retry would be unbounded
   [ ! -f "$RUN_TMP/timedout" ] || exit 124
   divider "block $1 · retry"
@@ -396,14 +396,14 @@ run_sequence() {
   while [ "$i" -le "$NBLOCKS" ]; do
     out="$RUN_TMP/blk-$i.out"
     divider "block $i"
-    t0=$(date +%s)
+    t0=$SECONDS
     exec_block "$i" "$out"; code=$?
     show "$out"
-    divider "block $i · exit $code · $(($(date +%s) - t0))s"
+    divider "block $i · exit $code · $((SECONDS - t0))s"
     if [ "$code" -ne 0 ] && [ ! -f "$RUN_TMP/timedout" ]; then
-      t0=$(date +%s)
+      t0=$SECONDS
       catch_block "$i" "$out" "$code"; code=$?
-      divider "block $i · caught exit $code · $(($(date +%s) - t0))s"
+      divider "block $i · caught exit $code · $((SECONDS - t0))s"
     fi
     [ ! -f "$RUN_TMP/timedout" ] || exit 124
     [ "$code" -eq 0 ] || exit "$code"
@@ -412,13 +412,17 @@ run_sequence() {
   exit 0
 }
 
-watchdog() { # $1=deadline epoch $2=sequence pid
+watchdog() { # $1=deadline in $SECONDS $2=sequence pid
   trap - EXIT HUP INT TERM
-  local n=0 p
+  # a watched second forks nothing: the clock is $SECONDS, the nap a read timing out
+  # on a fifo held open both ends, so no writer ever comes and no open ever blocks;
+  # a read on a bad fd returns at once, so a refused fifo naps by sleep, never spins
+  local n=0 p nap="read -t 1 -u 3"
+  { mkfifo "$RUN_TMP/nap" && exec 3<> "$RUN_TMP/nap"; } 2>/dev/null || nap="sleep 1"
   while :; do
     [ ! -f "$RUN_TMP/done" ] || exit 0
-    [ "$(date +%s)" -lt "$1" ] || break
-    sleep 1
+    [ "$SECONDS" -lt "$1" ] || break
+    $nap
   done
   : > "$RUN_TMP/timedout"
   p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
@@ -427,11 +431,11 @@ watchdog() { # $1=deadline epoch $2=sequence pid
   kill_tree TERM "$p"
   while [ "$n" -lt 10 ]; do
     { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null || { printf 'watchdog: pid %s exited on TERM after %ss\n' "$p" "$n"; exit 0; }
-    sleep 1; n=$((n + 1))
+    $nap; n=$((n + 1))
   done
   printf 'watchdog: pid %s survived TERM for %ss, escalating to KILL\n' "$p" "$n"
   kill_tree KILL "$p"
-  sleep 1
+  $nap
   printf 'watchdog: killing sequence pid %s\n' "$2"
   kill -KILL "$2" 2>/dev/null
 }
@@ -508,7 +512,7 @@ cmd_run() { # $1=name
   cd "$ROUTINE_HOME" || die 64 "no routines home $ROUTINE_HOME"
 
   divider "routine $RNAME · $STARTED_ISO"
-  deadline=$(($(date +%s) + TIMEOUT))
+  deadline=$((SECONDS + TIMEOUT))
   run_sequence & SEQ_PID=$!
   watchdog "$deadline" "$SEQ_PID" & WD_PID=$!
   wait "$SEQ_PID"; rc=$?; SEQ_PID=""

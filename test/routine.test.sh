@@ -689,6 +689,13 @@ doc "$SANDBOX/r-nodate/nodate.md" "" true
 RDIR="$SANDBOX/r-nodate" RNOW=1835404263 EXPORTS="PATH=$SANDBOX/nodate:$PATH" runr run nodate
 assert "an epoch formats with no date fork, the log name too" has '"started":"2028-02-29T02:31:03Z","started_epoch":1835404263,"finished":"2028-02-29T02:31:03Z","exit":0,"duration":0,"degraded":false} 20280229T023103Z-' "$(lastrun nodate) $(ls "$RSTATE/nodate/logs")"
 
+# a five-hour routine was 36,000 forks of watchdog clock and nap; a watched second now forks none
+for c in date sleep; do printf '#!/bin/bash\necho %s >> "%s"\nexec /bin/%s "$@"\n' $c "$SANDBOX/fork.calls" $c | mkfix "$SANDBOX/forks/$c"; done
+chmod +x "$SANDBOX"/forks/*
+doc "$SANDBOX/r-quiet/quiet.md" "timeout: 30" "/bin/sleep 2"
+RDIR="$SANDBOX/r-quiet" RNOW=1835404263 EXPORTS="PATH=$SANDBOX/forks:$PATH" runr run quiet
+assert "a watched second forks no date and no sleep" [ "$RC/$(nlines "$SANDBOX/fork.calls")" = 0/0 ]
+
 mkfix "$RDIR/comment.md" <<EOF
 <!--->
 <!-- a one-line comment ends where it opens -->
