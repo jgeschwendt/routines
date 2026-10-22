@@ -241,7 +241,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
 <pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead ⇒ reap, reused (its UTC start time differs, where ps can read it) ⇒ reap, no pid ⇒ held for a minute; a reap runs under a mkdir lock.reap guard and re-judges inside it, so two reapers never both win — a fresh guard ⇒ 75, one a minute old is a crashed reaper's)
              → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
-             → <b>watchdog</b> (bash-native, and a watched second forks nothing — $SECONDS for the clock, a read timing out on a private fifo for the nap; SIGTERM to the block's group, SIGKILL after grace; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
+             → <b>watchdog</b> (bash-native, its clock $SECONDS, never a date fork; SIGTERM to the block's group, SIGKILL after grace; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
              → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release; run --due forwards its own as TERM to every routine it runs
              → <b>blocks</b> under the try/catch contract
              → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap), renamed into place, and appended to runs.jsonl

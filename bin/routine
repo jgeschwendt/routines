@@ -414,15 +414,13 @@ run_sequence() {
 
 watchdog() { # $1=deadline in $SECONDS $2=sequence pid
   trap - EXIT HUP INT TERM
-  # a watched second forks nothing: the clock is $SECONDS, the nap a read timing out
-  # on a fifo held open both ends, so no writer ever comes and no open ever blocks;
-  # a read on a bad fd returns at once, so a refused fifo naps by sleep, never spins
-  local n=0 p nap="read -t 1 -u 3"
-  { mkfifo "$RUN_TMP/nap" && exec 3<> "$RUN_TMP/nap"; } 2>/dev/null || nap="sleep 1"
+  # the clock is $SECONDS, never a date fork; the nap stays sleep — bash 3.2 times
+  # read -t by SIGALRM, so a caller that blocks it would hang the watchdog for good
+  local n=0 p
   while :; do
     [ ! -f "$RUN_TMP/done" ] || exit 0
     [ "$SECONDS" -lt "$1" ] || break
-    $nap
+    sleep 1
   done
   : > "$RUN_TMP/timedout"
   p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
@@ -431,11 +429,11 @@ watchdog() { # $1=deadline in $SECONDS $2=sequence pid
   kill_tree TERM "$p"
   while [ "$n" -lt 10 ]; do
     { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null || { printf 'watchdog: pid %s exited on TERM after %ss\n' "$p" "$n"; exit 0; }
-    $nap; n=$((n + 1))
+    sleep 1; n=$((n + 1))
   done
   printf 'watchdog: pid %s survived TERM for %ss, escalating to KILL\n' "$p" "$n"
   kill_tree KILL "$p"
-  $nap
+  sleep 1
   printf 'watchdog: killing sequence pid %s\n' "$2"
   kill -KILL "$2" 2>/dev/null
 }
