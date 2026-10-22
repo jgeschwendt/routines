@@ -28,9 +28,11 @@ export ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_PMSET
 
 now() { printf '%s\n' "${ROUTINE_NOW:-$(date +%s)}"; }
 
-# $1=epoch $2=strftime format — always UTC
-if date -u -r 0 +%Y >/dev/null 2>&1; then epoch_fmt() { date -u -r "$1" +"$2"; }
-else epoch_fmt() { date -u -d "@$1" +"$2"; }; fi
+civil() { # $1=epoch — sets Y M D W (UTC; W 0=Sunday) by Hinnant's civil_from_days: no date fork, BSD and GNU alike
+  local z=$(($1 / 86400 + 719468)) e # z counts days from 0000-03-01, a Wednesday
+  ((W = (z + 3) % 7, e = z / 146097, z %= 146097, Y = (z - z / 1460 + z / 36524 - z / 146096) / 365,
+    z -= 365 * Y + Y / 4 - Y / 100, M = (5 * z + 2) / 153, D = z - (153 * M + 2) / 5 + 1, M = (M + 2) % 12 + 1, Y += e * 400 + (M < 3)))
+}
 
 warn() { printf 'routine: %s\n' "$*" >&2; }
 
@@ -116,7 +118,11 @@ json_get() { # $1=file $2=key — reads the single-line last-run.json
 
 # ─── observability ────────────────────────────────────────────────────────────
 
-iso() { epoch_fmt "$1" '%Y-%m-%dT%H:%M:%SZ'; } # $1=epoch — the one timestamp shape every log line and JSON field carries
+iso() { # $1=epoch — the one timestamp shape every log line, log name and JSON field carries
+  local Y M D W
+  civil "$1"
+  printf '%04d-%02d-%02dT%02d:%02d:%02dZ\n' "$Y" "$M" "$D" $(($1 % 86400 / 3600)) $(($1 % 3600 / 60)) $(($1 % 60))
+}
 
 keep_tail() { # $1=file $2=wc flag (c|l) $3=max $4=lines to keep — once past max, rewrite in place, never in the reader's fd
   local tmp="$1.trim.$$"
@@ -154,9 +160,9 @@ inset() { [[ " $1 " == *" $2 "* ]]; } # $1=set $2=value
 
 isnum() { [[ $1 && $1 != *[!0-9]* ]]; } # $1=text — a non-empty run of digits
 
-expand() { # $1=field $2=lo $3=hi — prints the expanded value set
-  local lo="$2" hi="$3" out="" part step s e i IFS=,
-  set -f; set -- $1; set +f
+expand() { # $1=var $2=field $3=lo $4=hi — sets var to the expanded value set, in-process: a tick expands five per routine
+  local v="$1" lo="$3" hi="$4" out="" part step s e i IFS=,
+  set -f; set -- $2; set +f
   for part in "$@"; do
     step=1
     case "$part" in */*) step="${part##*/}"; part="${part%%/*}" ;; esac
@@ -175,19 +181,16 @@ expand() { # $1=field $2=lo $3=hi — prints the expanded value set
     while [ "$i" -le "$e" ]; do out="$out $i"; i=$((i + step)); done
   done
   [ -n "$out" ] || return 1
-  printf '%s\n' "$out"
+  printf -v "$v" %s "$out"
 }
 
 # ※ due-derivation
 next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly after
-  local start="$1" mins hours doms mons dows day0 d=0 both=0 de mm dd ww y z ok h m t fire=""
+  local start="$1" mins hours doms mons dows day0 d=0 both=0 de Y M D W ok h m t fire=""
   set -f; set -- $2; set +f
   [ $# -eq 5 ] || return 1
-  mins=$(expand "$1" 0 59) || return 1
-  hours=$(expand "$2" 0 23) || return 1
-  doms=$(expand "$3" 1 31) || return 1
-  mons=$(expand "$4" 1 12) || return 1
-  dows=$(expand "$5" 0 7) || return 1
+  expand mins "$1" 0 59 && expand hours "$2" 0 23 && expand doms "$3" 1 31 &&
+    expand mons "$4" 1 12 && expand dows "$5" 0 7 || return 1
   inset "$dows" 7 && dows="$dows 0"
   # cronie's DOM_STAR/DOW_STAR: a day field opening with * (*/2 too) ANDs with
   # the other; only two restricted fields OR together
@@ -196,14 +199,12 @@ next_fire_after() { # $1=epoch $2=5-field cron — prints the next fire strictly
   # eight years: Feb 29 recurs every four, and 2100 skips one
   while [ "$d" -le 2922 ]; do
     de=$((day0 + d * 86400)); d=$((d + 1))
-    # Hinnant's civil_from_days, no date fork: z counts days from 0000-03-01, a Wednesday
-    ((z = de / 86400 + 719468, ww = (z + 3) % 7, z %= 146097, y = (z - z / 1460 + z / 36524 - z / 146096) / 365,
-      z -= 365 * y + y / 4 - y / 100, mm = (5 * z + 2) / 153, dd = z - (153 * mm + 2) / 5 + 1, mm = (mm + 2) % 12 + 1))
+    civil "$de"
     # a dead month jumps to its 28th, then walks — never past a next month's 1st
-    if ! inset "$mons" "$mm"; then [ "$dd" -lt 28 ] && d=$((d + 27 - dd)); continue; fi
+    if ! inset "$mons" "$M"; then [ "$D" -lt 28 ] && d=$((d + 27 - D)); continue; fi
     ok=0
-    inset "$doms" "$dd" && ok=1
-    inset "$dows" "$ww" && ok=$((ok + 1))
+    inset "$doms" "$D" && ok=1
+    inset "$dows" "$W" && ok=$((ok + 1))
     [ "$ok" -gt "$both" ] || continue
     for h in $hours; do for m in $mins; do
       t=$((de + h * 3600 + m * 60))
@@ -491,7 +492,7 @@ cmd_run() { # $1=name
   find "$STATE_DIR/logs" -maxdepth 1 -type f -name '*.log' -mtime +14 -delete 2>/dev/null
   # the stamp is second-resolution and a routine can be run twice inside one —
   # the pid is what keeps two runs from sharing a log file
-  LOG="$STATE_DIR/logs/$(epoch_fmt "$STARTED_EPOCH" '%Y%m%dT%H%M%SZ')-$$.log"
+  LOG="$STATE_DIR/logs/${STARTED_ISO//[-:]/}-$$.log"
   RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX")
   # ※ no-process-substitution
   # fifos, not >(tee): Seatbelt denies the /dev/fd paths process substitution opens
@@ -541,15 +542,16 @@ due_stop() { # $1=exit code — a background child ignores INT, so every signal 
 
 # ※ due-tick
 cmd_due() {
-  local f="$ROUTINE_STATE/due.log" name p rc=0 drc docs=0 due="" next="" nxt ddisp ndisp
+  local f="$ROUTINE_STATE/due.log" name p rc=0 drc docs=0 due="" next="" nxt ddisp ndisp t
   # stdout is the contract's silence; the sweep narrates into tick.log instead.
   # launchd holds due.log's fd open (StandardOutPath), so a rename orphans every
   # later write into an unlinked inode — the rotation must copy and truncate.
   { [ "$(wc -c < "$f")" -gt 5242880 ]; } 2>/dev/null && cp "$f" "$f.1" 2>/dev/null && : > "$f"
+  t=$(now) # one clock read per sweep, not a date fork per routine
   for name in $(routines tick_log); do
     docs=$((docs + 1))
     if ! nxt=$(next_fire_of "$name"); then next="$next $name@unscheduled"
-    elif [ "$nxt" -le "$(now)" ]; then due="$due $name"
+    elif [ "$nxt" -le "$t" ]; then due="$due $name"
     else next="$next $name@$(iso "$nxt")"
     fi
   done

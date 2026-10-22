@@ -5,7 +5,7 @@
 # repo tree. bash 3.2-safe (rules/bash.md) — runs under macOS /bin/bash and CI.
 set -u
 
-# The runner formats every epoch with `date -u` and floors days at UTC midnight,
+# The runner formats every epoch by UTC arithmetic and floors days at UTC midnight,
 # so cron evaluation is UTC regardless of the ambient zone; TZ is pinned anyway
 # so a failure is never a zone artifact.
 TZ=UTC; export TZ
@@ -677,12 +677,12 @@ assert "sync-ci never writes into the source tree under test" [ "$(ls -d "$SRC_R
 
 # ─── edge inputs ──────────────────────────────────────────────────────────────
 
-# GNU date reads no epoch from -r, so the probe falls back to -d @epoch — the shim plays GNU
-printf '#!/bin/bash\n[ "$2" != -r ] || exit 1\n[ "$2" != -d ] || exec /bin/date -u -r "${3#@}" "$4"\nexec /bin/date "$@"\n' | mkfix "$SANDBOX/gnu/date"
+# an epoch formats by arithmetic — BSD -r and GNU -d alike are refused, a leap day included
+printf '#!/bin/bash\n[ "$1" = +%%s ] && exec /bin/date "$@"; exit 1\n' | mkfix "$SANDBOX/gnu/date"
 chmod +x "$SANDBOX/gnu/date"
 doc "$SANDBOX/r-gnu/gnu.md" "" true
-RDIR="$SANDBOX/r-gnu" RNOW=1792368060 EXPORTS="PATH=$SANDBOX/gnu:$PATH" runr run gnu
-assert "without date -r, an epoch formats through date -d @" has '"started":"2026-10-19T00:01:00Z","started_epoch":1792368060,"finished":"2026-10-19T00:01:00Z","exit":0' "$(lastrun gnu)"
+RDIR="$SANDBOX/r-gnu" RNOW=1835404263 EXPORTS="PATH=$SANDBOX/gnu:$PATH" runr run gnu
+assert "an epoch formats with no date fork, the log name too" has '"started":"2028-02-29T02:31:03Z","started_epoch":1835404263,"finished":"2028-02-29T02:31:03Z","exit":0,"duration":0,"degraded":false} 20280229T023103Z-' "$(lastrun gnu) $(ls "$RSTATE/gnu/logs")"
 
 mkfix "$RDIR/comment.md" <<EOF
 <!--->
