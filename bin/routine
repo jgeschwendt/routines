@@ -552,7 +552,8 @@ cmd_due() {
   t=$(now) # one clock read per sweep, not a date fork per routine
   for name in $(routines tick_log); do
     docs=$((docs + 1))
-    if ! nxt=$(next_fire_of "$name"); then next="$next $name@unscheduled"
+    if ! nxt=$(next_fire_of "$name"); then # a rejected schedule must read apart from an on-demand doc
+      [ -n "$(fm_get "$ROUTINE_DIR/$name.md" schedule)" ] && next="$next $name@bad" || next="$next $name@unscheduled"
     elif [ "$nxt" -le "$t" ]; then due="$due $name"
     else next="$next $name@$(iso "$nxt")"
     fi
