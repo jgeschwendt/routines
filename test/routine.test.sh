@@ -726,6 +726,9 @@ assert "a fence after the comment closes runs" [ -f "$SANDBOX/uncommented.marker
 doc "$RDIR/zero.md" "timeout: 0\non_error: fail" true
 runr run zero
 assert "timeout: 0 falls back to the default, never an instant 124" [ $RC = 0 ]
+doc "$RDIR/huge.md" "timeout: 18446744073709551617\non_error: fail" "sleep 2"
+runr run huge
+assert "a timeout past 64 bits falls back to the default, never wraps to 1s" [ $RC = 0 ]
 
 doc "$RDIR/digit.md" "requires: ROUTINE_TEST_REQ_A 2FA\non_error: fail" true
 EXPORTS="ROUTINE_TEST_REQ_A=1" runr run digit
@@ -774,6 +777,7 @@ assert "nor leave the lock behind" [ ! -e "$RSTATE/sig/lock" ]
 # ─── host events ──────────────────────────────────────────────────────────────
 
 doc "$SANDBOX/r-bad/at.md" 'schedule: "@daily"' ": > \"$SANDBOX/at.marker\""
+doc "$SANDBOX/r-bad/wrap.md" 'schedule: "18446744073709551617 * * * *"' ": > \"$SANDBOX/at.marker\"" # 2^64+1 wraps to minute 1
 doc "$SANDBOX/r-bad/--due.md" 'schedule: "* * * * *"' true
 doc "$SANDBOX/r-bad/fail3.md" 'schedule: "* * * * *"\non_error: fail' "exit 3"
 due "" bad "$T_HOURLY_DUE"
