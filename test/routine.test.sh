@@ -668,7 +668,11 @@ assert "workflow restores the newest state key" has "restore-keys" "$WFC"
 assert "workflow fetches the runner when the repo has none" has "[ -x bin/routine ] || (mkdir -p bin && curl -fsSL" "$WFC"
 assert "workflow runs the due tick" has "bin/routine run --due" "$WFC"
 assert "workflow saves state even when a routine fails" has "if: always()
-        uses: actions/cache/save@v4" "$WFC"
+        uses: actions/cache/save@" "$WFC"
+assert "workflow pins every action to a commit — a moved tag runs foreign code under its token" \
+  [ -z "$(printf '%s\n' "$WFC" | grep 'uses:' | grep -Ev '@[0-9a-f]{40} # v[0-9.]+$')" ]
+assert "checkout leaves no token in .git/config for a routine's block to read" has "with:
+          persist-credentials: false" "$WFC"
 assert "workflow prunes every older state entry, only once this one saved" has "if: always() && steps.save.outcome == 'success'
         run: gh cache list --key routines-state- --limit 100 --ref \"\$REF\" --json id,key --jq '.[] | select(.key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
 assert "and may delete caches, still check out" has "permissions:

@@ -8,11 +8,15 @@ on:
 
 jobs:
   stele:
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
+    # pinned by commit, the installer too: a moved tag or main would run foreign code in this job
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
           fetch-depth: 0        # full history — freshness checks use blame
-      - run: curl -fsSL https://raw.githubusercontent.com/jgeschwendt/stele/main/scripts/install.sh | bash -s v0.3.0
+          persist-credentials: false
+      - run: curl -fsSL https://raw.githubusercontent.com/jgeschwendt/stele/c7882176f321809064205db5b6474827834c5a34/scripts/install.sh | bash -s v0.3.0
       - run: ~/.local/bin/stele check
       - run: ~/.local/bin/stele emit --check
