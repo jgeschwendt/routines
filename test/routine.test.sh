@@ -780,8 +780,10 @@ doc "$SANDBOX/r-bad/at.md" 'schedule: "@daily"' ": > \"$SANDBOX/at.marker\""
 doc "$SANDBOX/r-bad/wrap.md" 'schedule: "18446744073709551617 * * * *"' ": > \"$SANDBOX/at.marker\"" # 2^64+1 wraps to minute 1
 doc "$SANDBOX/r-bad/--due.md" 'schedule: "* * * * *"' true
 doc "$SANDBOX/r-bad/fail3.md" 'schedule: "* * * * *"\non_error: fail' "exit 3"
+doc "$SANDBOX/r-bad/manual.md" "" true
 due "" bad "$T_HOURLY_DUE"
 assert "a schedule the parser rejects never fires, not even once" [ ! -e "$SANDBOX/at.marker" ]
+assert "and the tick journals it bad, never as on-demand" wait_grep "$RSTATE/tick.log" "at@bad,manual@unscheduled"
 assert "a document named like a flag is skipped, never dispatched as one" wait_grep "$RSTATE/tick.log" "skip --due.md"
 assert "run --due exits 1 when a due routine fails" [ $RC = 1 ]
 assert "the tick records the failed dispatch's exit" wait_grep "$RSTATE/tick.log" "dispatched fail3 exit=3"
