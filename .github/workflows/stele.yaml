@@ -11,7 +11,8 @@ jobs:
     permissions:
       contents: read
     runs-on: ubuntu-latest
-    # pinned by commit, the installer too: a moved tag or main would run foreign code in this job
+    # pinned by commit, the installer too: a moved tag or main would run foreign code in this
+    # job; the stele binary itself still trusts the v0.3.0 release assets
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
