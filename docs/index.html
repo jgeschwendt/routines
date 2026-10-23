@@ -153,7 +153,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">② catch — <code class="code">on_error: claude</code></div>
       <div class="panel-body">
         <ul role="list">
-          <li>the runner invokes <code class="code">claude --model opus --permission-mode=auto --no-session-persistence -p</code> with the full document, the failing block, and its captured output, cwd = the routines home, env carrying <code class="code">ROUTINE_NAME</code>, <code class="code">ROUTINE_STATE_DIR</code> and <code class="code">ROUTINE_HOME</code> as the blocks see them</li>
+          <li>the runner invokes <code class="code">claude --model opus --permission-mode=auto --no-session-persistence -p</code> with the prompt on stdin (never argv — a large document passes ARG_MAX): the full document, the failing block, and its captured output, each section between markers carrying the run's random suffix so output cannot forge its end, cwd = the routines home, env carrying <code class="code">ROUTINE_NAME</code>, <code class="code">ROUTINE_STATE_DIR</code> and <code class="code">ROUTINE_HOME</code> as the blocks see them</li>
           <li>instruction: running unattended; diagnose and repair state; do not continue the routine yourself</li>
           <li>never start a final-message line with <code class="code">needs input:</code> or <code class="code">failed:</code> — the Stop hook would open an unkeyed thread per run — but use the stable thread key the document names</li>
         </ul>
@@ -187,7 +187,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <h2 class="h2">Due-ness — derived, never matched</h2>
     <p class="docs-note">A routine is due when
       <code class="code">next-fire-after(last started run, schedule) ≤ now</code>; a
-      missing <code class="code">last-run.json</code> means due. Cron evaluates in UTC —
+      missing <code class="code">last-run.json</code>, or one stamped ahead of the clock (a stepped clock), means due. Cron evaluates in UTC —
       one clock for launchd, CI, and the shell.</p>
   </header>
   <div class="table-wrap">
@@ -239,10 +239,10 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     </div>
   </div>
   <figure class="snippet-figure">
-<pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead ⇒ reap, reused (its UTC start time differs, where ps can read it) ⇒ reap, no pid ⇒ held for a minute; a reap runs under a mkdir lock.reap guard and re-judges inside it, so two reapers never both win — a fresh guard ⇒ 75, one a minute old is a crashed reaper's)
-             → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder)
+<pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead ⇒ reap, reused (its UTC start time differs, where ps can read it) ⇒ reap, no pid ⇒ held for a minute; older than its timeout plus a minute ⇒ reap, whatever the pid says; a reap runs under a mkdir lock.reap guard and re-judges inside it, so two reapers never both win — a fresh guard ⇒ 75, one a minute old is a crashed reaper's)
+             → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder; a run that loses the lock records nothing, even signalled)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
-             → <b>watchdog</b> (bash-native, its clock $SECONDS, never a date fork; SIGTERM to the block's group, SIGKILL after grace; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
+             → <b>watchdog</b> (bash-native, its clock $SECONDS, never a date fork; SIGTERM to the block's group, SIGKILL after grace; a block's leftover children (cmd &amp;) get TERM when it exits; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
              → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release; run --due forwards its own as TERM to every routine it runs
              → <b>blocks</b> under the try/catch contract
              → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap), renamed into place, and appended to runs.jsonl
@@ -327,6 +327,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
   <ol class="stack" id="next">
     <li><strong>An old reap guard is passed, not claimed</strong> — two runs meeting a crashed reaper's <code class="code">lock.reap</code> can both reap; needs a SIGKILL mid-reap first.</li>
     <li><strong>The CI workflow</strong> fetches <code class="code">bin/routine</code> from <code class="code">main</code> unpinned: pin a tag, once the owner cuts a release.</li>
+    <li><strong>hk 2.5.0 → 2.8.0</strong> (<code class="code">mise.toml</code>, <code class="code">hk.pkl</code>): no breaking change listed; the shift sandbox cannot install it.</li>
   </ol>
 </section>
 
