@@ -783,9 +783,15 @@ runr run forge
 assert "a prompt past ARG_MAX still reaches claude — on stdin, never argv" [ "$(wc -c < "$CLAUDE_PROMPT" 2>/dev/null)" -gt 1100000 ]
 assert "block output cannot forge the end of its own section" [ "$(grep -cx '=== end output ===' "$CLAUDE_PROMPT")" = 1 ]
 
-hold locked; : > "$RSTATE/locked/lock/started"; touch -t 202001010000 "$RSTATE/locked/lock"
+hold locked; touch -t 202001010000 "$RSTATE/locked/lock"
 runr run locked
-assert "a lock older than its timeout is reaped whatever its pid says" [ $RC = 0 ]
+assert "a live pid with no start time to compare is reaped once its lock outlives the timeout" [ $RC = 0 ]
+release
+printf '#!/bin/bash\necho "Thu Oct 23 00:00:00 2026"\n' | mkfix "$SANDBOX/fixps/ps"
+chmod +x "$SANDBOX/fixps/ps"
+hold locked; echo "Thu Oct 23 00:00:00 2026" > "$RSTATE/locked/lock/started"; touch -t 202001010000 "$RSTATE/locked/lock"
+EXPORTS="PATH=$SANDBOX/fixps:$PATH" runr run locked
+assert "a live holder's lock is never reaped for its age — a sleep or a lowered timeout ages it too" [ $RC = 75 ]
 release
 
 printf '#!/bin/bash\necho > "%s"; sleep 3; exec /bin/ps "$@"\n' "$SANDBOX/ps.slow" | mkfix "$SANDBOX/slowps/ps"
@@ -793,7 +799,8 @@ chmod +x "$SANDBOX/slowps/ps"
 LOCKED_BEFORE=$(lastrun locked); hold locked
 ( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET" PATH="$SANDBOX/slowps:$PATH"
   exec "$RUNNER" run locked ) >/dev/null 2>&1 & LP=$!
-wait_grep "$SANDBOX/ps.slow" ""; kill -TERM "$LP"; wait "$LP"
+assert "the loser is still judging the lock when signalled" wait_grep "$SANDBOX/ps.slow" ""
+kill -TERM "$LP"; wait "$LP"
 assert "a run signalled while it loses the lock leaves the holder's record alone" [ "$(lastrun locked)" = "$LOCKED_BEFORE" ]
 release
 

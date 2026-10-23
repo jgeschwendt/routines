@@ -299,15 +299,15 @@ acquire_lock() {
 
 stale() { # the lock's holder is dead
   local p s c
-  # the watchdog ends every holder within a minute of its timeout, so an older lock is
-  # a dead one's — whatever a reused pid says, and where ps cannot run (Seatbelt)
-  [ -z "$(find "$LOCK_DIR" -maxdepth 0 -mmin +$((TIMEOUT / 60 + 2)) 2>/dev/null)" ] || return 0
   p=$(cat "$LOCK_DIR/pid" 2>/dev/null)
   # a lock outlives a SIGKILL or a power cut, and after a reboot its pid may belong to
   # any process: alive is the pid AND its start time, wherever both can be read
   if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
     s=$(cat "$LOCK_DIR/started" 2>/dev/null); c=$(started_at "$p")
-    [ -n "$s" ] && [ -n "$c" ] && [ "$c" != "$s" ] || return 1
+    # where ps cannot read one (Seatbelt), only age frees a reused pid — never where it
+    # can: a sleep or a lowered timeout ages a live holder's lock too
+    if [ -n "$s" ] && [ -n "$c" ]; then [ "$c" != "$s" ] || return 1
+    else [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin +$((TIMEOUT / 60 + 2)) 2>/dev/null)" ] || return 1; fi
   fi
   # no pid yet is a holder between its mkdir and its pid write — a crash in that
   # gap is all that leaves one empty, so a minute's grace reaps it soon enough
