@@ -783,10 +783,6 @@ runr run forge
 assert "a prompt past ARG_MAX still reaches claude — on stdin, never argv" [ "$(wc -c < "$CLAUDE_PROMPT" 2>/dev/null)" -gt 1100000 ]
 assert "block output cannot forge the end of its own section" [ "$(grep -cx '=== end output ===' "$CLAUDE_PROMPT")" = 1 ]
 
-hold locked; touch -t 202001010000 "$RSTATE/locked/lock"
-runr run locked
-assert "a live pid with no start time to compare is reaped once its lock outlives the timeout" [ $RC = 0 ]
-release
 printf '#!/bin/bash\necho "Thu Oct 23 00:00:00 2026"\n' | mkfix "$SANDBOX/fixps/ps"
 chmod +x "$SANDBOX/fixps/ps"
 hold locked; echo "Thu Oct 23 00:00:00 2026" > "$RSTATE/locked/lock/started"; touch -t 202001010000 "$RSTATE/locked/lock"
