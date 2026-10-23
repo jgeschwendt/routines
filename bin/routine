@@ -158,7 +158,7 @@ routines() { # $1=skip reporter (tick_log|warn) — prints each slug-named docum
 
 inset() { [[ " $1 " == *" $2 "* ]]; } # $1=set $2=value
 
-isnum() { [[ $1 && $1 != *[!0-9]* && ${#1} -lt 19 ]]; } # $1=text — 1-18 digits: a longer run wraps mod 2^64 in $((…))
+isnum() { [[ $1 && $1 != *[!0-9]* && ${#1} -lt 19 ]]; } # $1=text — 1-18 digits: $((…)) wraps from 2^63, so 18 is the safe cap
 
 expand() { # $1=var $2=field $3=lo $4=hi — sets var to the expanded value set, in-process: a tick expands five per routine
   local v="$1" lo="$3" hi="$4" out="" part step s e i IFS=,
@@ -695,7 +695,8 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     # actions pinned by commit: a moved tag would run foreign code holding this
-    # token; checkout keeps it out of .git/config, where every block could read it
+    # token; checkout keeps it out of .git/config, where every block could read it —
+    # a block that needs git auth against origin brings its own
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:

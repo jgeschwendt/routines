@@ -19,7 +19,8 @@ jobs:
       contents: read
     runs-on: ubuntu-latest
     # actions pinned by commit: a moved tag would run foreign code holding this
-    # token; checkout keeps it out of .git/config, where every block could read it
+    # token; checkout keeps it out of .git/config, where every block could read it —
+    # a block that needs git auth against origin brings its own
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
