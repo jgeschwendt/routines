@@ -304,10 +304,9 @@ stale() { # the lock's holder is dead
   # any process: alive is the pid AND its start time, wherever both can be read
   if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
     s=$(cat "$LOCK_DIR/started" 2>/dev/null); c=$(started_at "$p")
-    # where ps cannot read one (Seatbelt), only age frees a reused pid — never where it
-    # can: a sleep or a lowered timeout ages a live holder's lock too
-    if [ -n "$s" ] && [ -n "$c" ]; then [ "$c" != "$s" ] || return 1
-    else [ -n "$(find "$LOCK_DIR" -maxdepth 0 -mmin +$((TIMEOUT / 60 + 2)) 2>/dev/null)" ] || return 1; fi
+    # no age ever frees a live pid: a sleep or a lowered timeout ages a live holder's
+    # lock too, and two runs at once is worse than a reused pid held where ps cannot run
+    [ -n "$s" ] && [ -n "$c" ] && [ "$c" != "$s" ] || return 1
   fi
   # no pid yet is a holder between its mkdir and its pid write — a crash in that
   # gap is all that leaves one empty, so a minute's grace reaps it soon enough
