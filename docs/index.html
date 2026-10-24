@@ -113,7 +113,7 @@
 <b>schedule</b>: 30 7 * * 1-5     <i># 5-field cron, evaluated in UTC; omit ⇒ on-demand only</i>
 <b>timeout</b>: 600               <i># seconds for the whole routine</i>
 <b>requires</b>: GITHUB_TOKEN     <i># env vars that must be non-empty</i>
-<b>on_error</b>: claude           <i># claude (default) | fail</i>
+<b>on_error</b>: claude           <i># claude (default) | fail; else exit 64</i>
 ---
 
 # Morning brief

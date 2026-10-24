@@ -354,6 +354,13 @@ assert "satisfied requires reaches the block" [ -f "$SANDBOX/requires-ran.marker
 runr run deftimeout
 assert "absent timeout key defaults large (2s block survives)" [ $RC = 0 ]
 
+# a misspelt opt-out fails the document — no block runs to fail, no claude is called
+doc "$RDIR/onerr.md" "on_error: Fail" ": > \"$SANDBOX/onerr.marker\""
+runr run onerr
+assert "an on_error neither claude nor fail exits 64, recorded, before any block" \
+  [ "$RC:$(lastrun onerr | grep -c '"exit":64'):$(ls "$SANDBOX/onerr.marker" 2>/dev/null)" = 64:1: ]
+assert "and names the value" has "on_error Fail is neither claude nor fail" "$ERR"
+
 # ─── routines home ────────────────────────────────────────────────────────────
 
 runr_home "$DHOME" run derived

@@ -523,6 +523,8 @@ cmd_run() { # $1=name
   BLK_DIR="$RUN_TMP/blocks"; mkdir -p "$BLK_DIR"
   NBLOCKS=$(extract_blocks "$DOC" "$BLK_DIR")
   [ "$NBLOCKS" -gt 0 ] || die 64 "no sh or bash blocks in $DOC"
+  # a misspelt opt-out (none, Fail) must not start an unattended agent
+  case "$ON_ERROR" in ""|claude|fail) ;; *) die 64 "on_error $ON_ERROR is neither claude nor fail in $DOC" ;; esac
   cd "$ROUTINE_HOME" || die 64 "no routines home $ROUTINE_HOME"
 
   divider "routine $RNAME · $STARTED_ISO"
