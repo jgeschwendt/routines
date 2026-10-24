@@ -418,6 +418,13 @@ runr run locked
 assert "an old reap guard is a crashed reaper's: the lock is reaped" [ $RC = 0 ]
 assert "and the old guard is gone" [ ! -e "$RSTATE/locked/lock.reap" ]
 
+# the block hands its lock to pid 1 — launchd, which kill -0 refuses a user with EPERM
+doc "$RDIR/usurped.md" "on_error: fail" "echo 1 > \"\$ROUTINE_STATE_DIR/lock/pid\""
+runr run usurped
+assert "a run whose lock passed to another holder leaves it to that holder" [ "$RC:$(cat "$RSTATE/usurped/lock/pid")" = 0:1 ]
+runr run usurped
+assert "a holder kill -0 cannot signal (EPERM) is alive — 75, its lock kept" [ "$RC:$(cat "$RSTATE/usurped/lock/pid")" = 75:1 ]
+
 # ─── catch ────────────────────────────────────────────────────────────────────
 
 : > "$SANDBOX/claude.repairs"

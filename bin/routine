@@ -272,7 +272,8 @@ on_exit() {
     printf '%s\n' "$line" >> "$STATE_DIR/runs.jsonl"
     keep_tail "$STATE_DIR/runs.jsonl" l 5000 2000
   fi
-  [ "${OWN_LOCK:-0}" != 1 ] || rm -rf "$LOCK_DIR"
+  # a lock reaped from under this run is its successor's now
+  [ "${OWN_LOCK:-0}" != 1 ] || [ "$(cat "$LOCK_DIR/pid" 2>/dev/null)" != $$ ] || rm -rf "$LOCK_DIR"
   [ "${REAP:-0}" != 1 ] || rm -rf "$LOCK_DIR.reap"
   [ -z "${RUN_TMP:-}" ] || rm -rf "$RUN_TMP"
   exit "$rc"
@@ -298,11 +299,13 @@ acquire_lock() {
 }
 
 stale() { # the lock's holder is dead
-  local p s c
+  local p s c e
   p=$(cat "$LOCK_DIR/pid" 2>/dev/null)
   # a lock outlives a SIGKILL or a power cut, and after a reboot its pid may belong to
-  # any process: alive is the pid AND its start time, wherever both can be read
-  if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
+  # any process: alive is the pid AND its start time, wherever both can be read.
+  # Only ESRCH is dead — EPERM (Seatbelt, another uid) is a live pid this run cannot
+  # signal; the message is C-locale under the LC_ALL above
+  if [ -n "$p" ] && { e=$(kill -0 "$p" 2>&1) || [[ $e != *'No such process'* ]]; }; then
     s=$(cat "$LOCK_DIR/started" 2>/dev/null); c=$(started_at "$p")
     # no age ever frees a live pid: a sleep or a lowered timeout ages a live holder's
     # lock too, and two runs at once is worse than a reused pid held where ps cannot run
