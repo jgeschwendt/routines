@@ -502,6 +502,7 @@ EXPORTS="ROUTINE_CLAUDE=$SANDBOX/bin/claude-slow" runr run catch-late
 assert "a deadline inside the catch exits 124" [ $RC = 124 ]
 # claude-slow hangs auth status too — the probe runs under the watchdog, not past it
 assert "a hung auth probe ends at the deadline, not after it" [ $(( $(date +%s) - T0 )) -lt 10 ]
+assert "and a probe the deadline killed is a timeout, never a logout" [ "$(ls "$RSTATE/catch-late/degraded" 2>/dev/null):$(lastrun catch-late | grep -c '"degraded":false')" = :1 ]
 assert "a deadline inside the catch skips the retry" [ ! -e "$SANDBOX/catch-late.retried" ]
 
 # a clean run is the proof a degradation lifted; runs.jsonl past 5000 lines keeps 2000

@@ -356,9 +356,9 @@ catch_block() { # $1=index $2=capture file $3=block exit code
   local cout rc crc t0 why="" k=${RUN_TMP##*.}
   [ "$ON_ERROR" != fail ] || return "$3"
   # auth status exits 1 with no credentials at all — it never verifies them, so a
-  # bad or expired one passes
+  # bad or expired one passes; a probe the watchdog killed is a timeout, not a logout
   if ! command -v "$ROUTINE_CLAUDE" >/dev/null 2>&1; then why=unavailable
-  elif ! supervise /dev/null /dev/null "$ROUTINE_CLAUDE" auth status; then why="not logged in"
+  elif ! supervise /dev/null /dev/null "$ROUTINE_CLAUDE" auth status; then [ ! -f "$RUN_TMP/timedout" ] || exit 124; why="not logged in"
   fi
   if [ -n "$why" ]; then
     printf 'catch degraded: claude %s\n' "$why"
