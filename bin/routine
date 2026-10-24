@@ -638,17 +638,15 @@ xml() { printf '%s' "$1" | sed 's/&/\&amp;/g; s/</\&lt;/g; s/>/\&gt;/g'; } # $1=
 cmd_install() {
   local plist="$ROUTINE_AGENTS_DIR/$TICK.plist"
   : "${HOME:?unset — the tick PATH needs ~/.local/bin}"
-  if [ -e "$ROUTINE_AGENTS_DIR/$TICK_OLD.plist" ]; then # the pre-2026-10-20 agent; left in place, both would tick
-    "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/$TICK_OLD" >/dev/null 2>&1
-    rm -f "$ROUTINE_AGENTS_DIR/$TICK_OLD.plist"
-  fi
   mkdir -p "$ROUTINE_AGENTS_DIR" "$ROUTINE_HOME" "$ROUTINE_STATE"
   # launchd hands a bare PATH and `bash -l` reads ~/.bash_profile, never the zsh
   # profile — so ~/.local/bin (claude, mise, sandman, stele) is absent under the
   # tick and present by hand. That asymmetry silently degrades every on_error
   # catch to `claude unavailable`; stamp the PATH the tick must run with, and the
   # anchors, or a custom ROUTINE_HOME install ticks the default ~/.routines.
-  cat > "$plist" <<EOF
+  # Written aside and renamed in before any bootout: a plist that cannot land
+  # (an unwritable agents dir) leaves the live tick running
+  cat > "$plist.$$" <<EOF &&
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -675,6 +673,11 @@ cmd_install() {
 </dict>
 </plist>
 EOF
+    mv -f "$plist.$$" "$plist" || { rm -f "$plist.$$"; die 1 "cannot write $plist"; }
+  if [ -e "$ROUTINE_AGENTS_DIR/$TICK_OLD.plist" ]; then # the pre-2026-10-20 agent; left in place, both would tick
+    "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/$TICK_OLD" >/dev/null 2>&1
+    rm -f "$ROUTINE_AGENTS_DIR/$TICK_OLD.plist"
+  fi
   "$ROUTINE_LAUNCHCTL" bootout "gui/$(id -u)/$TICK" >/dev/null 2>&1
   "$ROUTINE_LAUNCHCTL" bootstrap "gui/$(id -u)" "$plist" || die 1 "launchctl bootstrap failed"
   printf 'installed %s\n' "$plist"
