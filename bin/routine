@@ -351,6 +351,10 @@ or reply to the thread under the stable key the document names (e.g.
 `ci:<repo>:<sha7>`, `home-inventory:<entry>`, `claude-breaker`), and state
 failures in plain prose.'
 
+# the log is per-run and the exit code is the block's — without this marker
+# a degraded catch is invisible to status and to the routines-health sweep
+degrade() { mkdir -p "$STATE_DIR"; iso "$(now)" > "$STATE_DIR/degraded"; }
+
 # ※ catch-retry
 catch_block() { # $1=index $2=capture file $3=block exit code
   local cout rc crc t0 why="" k=${RUN_TMP##*.}
@@ -362,13 +366,8 @@ catch_block() { # $1=index $2=capture file $3=block exit code
   fi
   if [ -n "$why" ]; then
     printf 'catch degraded: claude %s\n' "$why"
-    # the log is per-run and the exit code is the block's — without this marker
-    # a degraded catch is invisible to status and to the routines-health sweep
-    mkdir -p "$STATE_DIR"
-    iso "$(now)" > "$STATE_DIR/degraded"
-    return "$3"
+    degrade; return "$3"
   fi
-  rm -f "$STATE_DIR/degraded"
   divider "block $1 · catch"
   # on stdin, never argv: a large document passes ARG_MAX (one argument caps at
   # 128 KiB on Linux); the markers carry the run's random suffix, so output that
@@ -400,6 +399,8 @@ EOF
   printf 'catch: claude exit=%s elapsed=%ss\n' "$crc" "$((SECONDS - t0))"
   # the watchdog fired once, on the agent, and is gone — a retry would be unbounded
   [ ! -f "$RUN_TMP/timedout" ] || exit 124
+  # the repair's outcome, not the probe's, lifts or sets the marker
+  if [ "$crc" -eq 0 ]; then rm -f "$STATE_DIR/degraded"; else degrade; fi
   divider "block $1 · retry"
   exec_block "$1" "$2"; rc=$?
   show "$2"
