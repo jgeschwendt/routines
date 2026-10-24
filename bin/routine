@@ -50,8 +50,8 @@ routine — executable markdown on rails
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text
 
-exit: 64 usage/unknown routine, recorded for a bad doc or no home · 75 lock held ·
-      78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
+exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed ·
+      75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
       else the failing block's code · run --due 1 when any routine failed ·
       install 1 when the plist cannot land or bootstrap fails
 
@@ -149,7 +149,7 @@ tick_log() { # rest=message — the sweep's own journal, bounded at ~1 MB
 routines() { # $1=skip reporter (tick_log|warn) — prints each slug-named document's name
   local f n
   for f in "$ROUTINE_DIR"/*.md; do
-    [ -e "$f" ] || continue
+    [ -e "$f" ] || { [ ! -L "$f" ] || "$1" "skip ${f##*/}: dangling symlink"; continue; } # else an unmatched glob
     n=${f##*/}; n=${n%.md}
     case "$n" in -*|*[!a-z0-9-]*) "$1" "skip ${f##*/}: name not a slug"; continue ;; esac
     printf '%s\n' "$n"
@@ -514,7 +514,8 @@ cmd_run() { # $1=name
   # the stamp is second-resolution and a routine can be run twice inside one —
   # the pid is what keeps two runs from sharing a log file
   LOG="$STATE_DIR/logs/${STARTED_ISO//[-:]/}-$$.log"
-  RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX")
+  # an unchecked failure ran on with an empty RUN_TMP into a false "no sh or bash blocks"
+  RUN_TMP=$(mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX") || die 73 "mktemp failed under ${TMPDIR:-/tmp}"
   # ※ no-process-substitution
   # fifos, not >(tee): Seatbelt denies the /dev/fd paths process substitution opens
   mkfifo "$RUN_TMP/out" "$RUN_TMP/err"

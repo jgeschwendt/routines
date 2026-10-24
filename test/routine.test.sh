@@ -376,6 +376,8 @@ assert "status reads \$ROUTINE_HOME/*.md" has derived "$OUT"
 # it would run in does not exist.
 EXPORTS="ROUTINE_HOME=$SANDBOX/no-such-home" runr run deftimeout
 assert "a missing routines home exits 64" [ $RC = 64 ]
+EXPORTS="TMPDIR=$SANDBOX/no-tmp" runr run deftimeout
+assert "a failed mktemp exits 73 and says so, never a doc with no blocks" [ "$RC:$(has "routine: mktemp failed" "$ERR" && echo y)" = 73:y ]
 
 # ─── state ────────────────────────────────────────────────────────────────────
 
@@ -852,10 +854,12 @@ doc "$SANDBOX/r-bad/wrap.md" 'schedule: "18446744073709551617 * * * *"' ": > \"$
 doc "$SANDBOX/r-bad/--due.md" 'schedule: "* * * * *"' true
 doc "$SANDBOX/r-bad/fail3.md" 'schedule: "* * * * *"\non_error: fail' "exit 3"
 doc "$SANDBOX/r-bad/manual.md" "" true
+ln -s "$SANDBOX/moved/gone.md" "$SANDBOX/r-bad/gone.md" # a doc linked into a checkout that moved
 due "" bad "$T_HOURLY_DUE"
 assert "a schedule the parser rejects never fires, not even once" [ ! -e "$SANDBOX/at.marker" ]
 assert "and the tick journals it bad, never as on-demand" wait_grep "$RSTATE/tick.log" "at@bad,manual@unscheduled"
 assert "a document named like a flag is skipped, never dispatched as one" wait_grep "$RSTATE/tick.log" "skip --due.md"
+assert "a dangling symlink is journalled as a skip, never dropped silently" wait_grep "$RSTATE/tick.log" "skip gone.md: dangling symlink"
 assert "run --due exits 1 when a due routine fails" [ $RC = 1 ]
 assert "the tick records the failed dispatch's exit" wait_grep "$RSTATE/tick.log" "dispatched fail3 exit=3"
 doc "$SANDBOX/r-bad/feb.md" 'schedule: "0 9 */31 2 3"' true
