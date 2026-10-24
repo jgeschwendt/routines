@@ -653,6 +653,13 @@ assert "uninstall removes the pre-2026-10-20 plist" [ ! -e "$OLD_PLIST" ]
 assert "uninstall boots out both labels" \
   [ "$(paste -sd'|' "$LCTL_LOG")" = "bootout gui/$UID_NOW/$OLD|bootout gui/$UID_NOW/dev.gigantic.routines.due" ]
 
+# a plist that cannot land must leave the live tick, and the legacy one, alone
+: > "$LCTL_LOG"; : > "$OLD_PLIST"; chmod 555 "$RAGENTS"
+runr install
+chmod 755 "$RAGENTS"
+assert "an unwritable agents dir fails install, and says so" [ "$RC:$(has "cannot write $PLIST" "$ERR" && echo y)" = 1:y ]
+assert "and boots nothing out, the legacy plist kept" [ "$(cat "$LCTL_LOG"):$(ls "$RAGENTS")" = ":$OLD.plist" ]
+
 EXPORTS="ROUTINE_LAUNCHCTL=/usr/bin/false" runr install
 assert "a failed bootstrap exits 1" [ $RC = 1 ]
 assert "and says so" has "launchctl bootstrap failed" "$ERR"
