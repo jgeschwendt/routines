@@ -79,7 +79,7 @@ for p in "$PMSET:CPU Graphics Audio Network" "$PMSET_DARK:CPU Network"; do
 done
 printf '#!/bin/bash\nsleep 30\n' > "$SANDBOX/bin/claude-slow"
 
-# claude.loggedout fails `auth status`; claude.repairs makes the catch repair
+# claude.loggedout fails `auth status`, claude.fails the catch; claude.repairs makes it repair
 cat > "$CLAUDE" <<EOF
 #!/bin/bash
 [ "\$1" != auth ] || { [ ! -f "$SANDBOX/claude.loggedout" ]; exit \$?; }
@@ -87,6 +87,7 @@ cat > "$CLAUDE" <<EOF
 printf 'name=%s\nstate_dir=%s\nhome=%s\n' "\$ROUTINE_NAME" "\$ROUTINE_STATE_DIR" "\$ROUTINE_HOME" > "$CLAUDE_ENV"
 printf '%s\n' " \$*" > "$CLAUDE_FLAGS"
 cat > "$CLAUDE_PROMPT"
+[ ! -f "$SANDBOX/claude.fails" ] || exit 1
 [ ! -f "$SANDBOX/claude.repairs" ] || : > "$REPAIR_MARKER"
 EOF
 chmod +x "$SANDBOX"/bin/*
@@ -481,6 +482,13 @@ assert "the degraded marker is stamped" [ -f "$RSTATE/repair-no/degraded" ]
 assert "the record says degraded" has '"degraded":true' "$(lastrun repair-no)"
 runr status
 assert "status shows the degradation" has "degraded since" "$(printf '%s\n' "$OUT" | grep '^repair-no ')"
+# auth status passes a bad or expired credential — the agent's failure is the degradation
+: > "$SANDBOX/claude.fails"
+runr run repair-no
+rm "$SANDBOX/claude.fails"
+assert "a catch agent that fails keeps the marker, the record degraded" [ "$RC:$(ls "$RSTATE/repair-no/degraded"):$(lastrun repair-no | grep -c '"degraded":true')" = "7:$RSTATE/repair-no/degraded:1" ]
+runr run repair-no
+assert "a repair that ran clears it" [ "$RC:$(ls "$RSTATE/repair-no/degraded" 2>/dev/null):$(lastrun repair-no | grep -c '"degraded":false')" = 7::1 ]
 
 # ─── run-path hazards ─────────────────────────────────────────────────────────
 

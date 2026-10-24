@@ -172,7 +172,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">④ degrade</div>
       <div class="panel-body">
         <ul role="list">
-          <li>no claude binary, or no credentials (<code class="code">claude auth status</code> exits 1 — bare CI) ⇒ behaves as <code class="code">on_error: fail</code>, with the reason logged; credentials are never verified, so a bad or expired one still runs the catch</li>
+          <li>no claude binary, or no credentials (<code class="code">claude auth status</code> exits 1 — bare CI) ⇒ behaves as <code class="code">on_error: fail</code>, with the reason logged; credentials are never verified, so a bad or expired one still runs the catch, and its failed agent stamps the <code class="code">degraded</code> marker that a repair which ran clears</li>
         </ul>
       </div>
     </div>
