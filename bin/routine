@@ -306,8 +306,8 @@ stale() { # the lock's holder is dead
   # a lock outlives a SIGKILL or a power cut, and after a reboot its pid may belong to
   # any process: alive is the pid AND its start time, wherever both can be read.
   # Only ESRCH is dead — EPERM (Seatbelt, another uid) is a live pid this run cannot
-  # signal; the message is C-locale under the LC_ALL above
-  if [ -n "$p" ] && { e=$(kill -0 "$p" 2>&1) || [[ $e != *'No such process'* ]]; }; then
+  # signal, and a pid that is no number is no holder; the message is C-locale under the LC_ALL above
+  if [ -n "$p" ] && { e=$(kill -0 "$p" 2>&1) || [[ $e != *'No such process'* && $p != *[!0-9]* ]]; }; then
     s=$(cat "$LOCK_DIR/started" 2>/dev/null); c=$(started_at "$p")
     # no age ever frees a live pid: a sleep or a lowered timeout ages a live holder's
     # lock too, and two runs at once is worse than a reused pid held where ps cannot run
