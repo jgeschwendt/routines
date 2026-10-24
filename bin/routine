@@ -50,8 +50,10 @@ routine — executable markdown on rails
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text
 
-exit: 64 usage/unknown routine · 75 lock held · 78 requires missing ·
-      124 timeout · else the failing block's code
+exit: 64 usage/unknown routine, recorded for a bad doc or no home · 75 lock held ·
+      78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
+      else the failing block's code · run --due 1 when any routine failed ·
+      install 1 when the plist cannot land or bootstrap fails
 
 env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
      ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_PMSET
@@ -585,9 +587,9 @@ cmd_due() {
     tick_log "defer dark-wake due=$ddisp"
     exit 0
   fi
-  # every due routine at once: launchd starts no second tick while this one waits,
-  # so a serial sweep would blind the */5 routines behind one long run; each
-  # routine's own lock still serializes it against a hand run ※ parallel-due
+  # every due routine at once, none behind another in this sweep — but the tick waits
+  # for its slowest and launchd fires no new tick meanwhile, so a long run holds later
+  # sweeps; each routine's own lock still serializes it against a hand run ※ parallel-due
   DUE_PIDS=""
   for name in $due; do
     tick_log "dispatch $name"
