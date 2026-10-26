@@ -231,7 +231,7 @@ for n in stubborn:'timeout: 1\non_error: fail' sig:'on_error: fail'; do
 done
 # gap's auth probe exits only once the deadline is marked, so the watchdog reads a
 # child.pid whose child is gone, and the TERM-ignoring agent forks after it
-doc "$RDIR/gap.md" "timeout: 1" "exit 1"
+doc "$RDIR/gap.md" "timeout: 1" "[ ! -f \"$SANDBOX/gap.first\" ] || { : > \"$SANDBOX/gap.retried\"; exit 0; }; : > \"$SANDBOX/gap.first\"; exit 1"
 mkdir -p "$SANDBOX/gaptmp"
 cat > "$SANDBOX/bin/claude-gap" <<EOF
 #!/bin/bash
@@ -256,6 +256,7 @@ leap 30 2 29 2 *
 quarter */15 * * * *
 star 0 0 */2 * 1
 step1 30/1 * * * *
+sunday 0 9 * * 7
 weekday 30 7 * * 1-5
 EOF
 
@@ -524,22 +525,23 @@ for s in HUP:129 TERM:143; do
   assert "SIG${s%:*} kills the block's TERM-ignoring member" gone "$SANDBOX/sig.pid"
 done
 
-doc "$RDIR/catch-late.md" "timeout: 1" "[ ! -f \"$SANDBOX/catch-late.first\" ] || { : > \"$SANDBOX/catch-late.retried\"; exit 0; }; : > \"$SANDBOX/catch-late.first\"; exit 3"
+doc "$RDIR/catch-late.md" "timeout: 1" "exit 3"
 T0=$(date +%s)
 EXPORTS="ROUTINE_CLAUDE=$SANDBOX/bin/claude-slow" runr run catch-late
 assert "a deadline inside the catch exits 124" [ $RC = 124 ]
 # claude-slow hangs auth status too — the probe runs under the watchdog, not past it
 assert "a hung auth probe ends at the deadline, not after it" [ $(( $(date +%s) - T0 )) -lt 10 ]
 assert "and a probe the deadline killed is a timeout, never a logout" [ "$(ls "$RSTATE/catch-late/degraded" 2>/dev/null):$(lastrun catch-late | grep -c '"degraded":false')" = :1 ]
-assert "a deadline inside the catch skips the retry" [ ! -e "$SANDBOX/catch-late.retried" ]
 
 # a clean run is the proof a degradation lifted; runs.jsonl past 5000 lines keeps 2000
 doc "$RDIR/octal.md" "timeout: 08\non_error: fail" true
-mkdir -p "$RSTATE/octal"; seq 5001 > "$RSTATE/octal/runs.jsonl"; : > "$RSTATE/octal/degraded"
+mkdir -p "$RSTATE/octal/logs"; seq 5001 > "$RSTATE/octal/runs.jsonl"; : > "$RSTATE/octal/degraded"
+touch -t 202001010000 "$RSTATE/octal/logs/old.log"
 runr run octal
 assert "a zero-padded timeout is decimal" [ $RC = 0 ]
 assert "a clean run clears the degraded marker" [ ! -e "$RSTATE/octal/degraded" ]
 assert "runs.jsonl past 5000 lines keeps its last 2000" [ "$(nlines "$RSTATE/octal/runs.jsonl")" = 2000 ]
+assert "a log past 14 days is pruned" [ ! -e "$RSTATE/octal/logs/old.log" ]
 
 # an empty pid is a holder between mkdir and its pid write
 mkdir -p "$RSTATE/locked/lock"
@@ -601,6 +603,9 @@ due "'0 0 */2 * 1' — Mon 19th satisfies both, due" star 1792368060 2          
 due "" step1 1786699830                                                        # Fri 2026-08-14T09:30:30Z
 due "'30/1 * * * *' runs 30 to 59 like any N/step, so 09:32Z is due" step1 1786699920 2  # Fri 2026-08-14T09:32:00Z
 
+due "" sunday 1786795200                                                       # Sat 2026-08-15T12:00:00Z
+due "'0 9 * * 7' — 7 is Sunday too, so Sun 09:01Z is due" sunday 1786870860 2 # Sun 2026-08-16T09:01:00Z
+
 due "" leap 1835404260                                                         # Tue 2028-02-29T02:31:00Z
 due "'30 2 29 2 *' fires again four years on" leap 1961712000 2               # Mon 2032-03-01T00:00:00Z
 
@@ -643,8 +648,8 @@ assert "status joins the schedule" has "0 * * * *" "$OUT"
 printf 'not a routine\n' > "$RDIR/AGENTS.md"
 runr status
 assert "status skips non-routine names (AGENTS.md)" not has AGENTS "$OUT"
-mkdir -p "$SANDBOX/r-none" && cp "$RDIR/AGENTS.md" "$SANDBOX/r-none/"
-RDIR="$SANDBOX/r-none" runr run --due  # AGENTS.md alone — dispatched, it would exit 64
+doc "$SANDBOX/r-none/AGENTS.md" 'schedule: "* * * * *"' true
+RDIR="$SANDBOX/r-none" runr run --due  # a scheduled AGENTS.md alone — dispatched, it would exit 64
 assert "run --due skips non-routine names" [ $RC = 0 ]
 rm "$RDIR/AGENTS.md"
 
@@ -930,6 +935,7 @@ wait "$STUBBORN" "$SLOW" "$GAP"
 # the agent forks past the deadline: TERMed once exec'd (143), never lost to a
 # birth TERM and KILLed at ten seconds (137) or left its 30s by a gone pid (0)
 assert "a deadline between two children TERMs the next one" has "claude exit=143" "$(cat "$SANDBOX/gap.out")"
+assert "and a deadline inside the catch skips the retry" [ ! -e "$SANDBOX/gap.retried" ]
 assert "a runner killed -9 leaves a watchdog that KILLs its block, then ends" gone "$SANDBOX/orphan.pid"
 assert "and a sequence that outlives the KILL is KILLed too — the watch is bounded" has "killing sequence pid" "$(cat "$RSTATE"/orphan/logs/*.log)"
 assert "a TERM-ignoring block still times out 124" [ "$(cat "$SANDBOX/stubborn.rc")" = 124 ]
