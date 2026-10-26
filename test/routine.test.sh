@@ -391,6 +391,9 @@ EXPORTS="ROUTINE_HOME=$SANDBOX/no-such-home" runr run deftimeout
 assert "a missing routines home exits 64" [ $RC = 64 ]
 EXPORTS="TMPDIR=$SANDBOX/no-tmp" runr run deftimeout
 assert "a failed mktemp exits 73 and says so, never a doc with no blocks" [ "$RC:$(has "routine: mktemp failed" "$ERR" && echo y)" = 73:y ]
+mkdir -p "$RSTATE/ro"; chmod 555 "$RSTATE/ro"; doc "$RDIR/ro.md" "on_error: fail" true
+runr run ro; chmod 755 "$RSTATE/ro"
+assert "an unwritable state dir exits 73, never 75 'already running'" [ $RC = 73 ]
 
 # ─── state ────────────────────────────────────────────────────────────────────
 

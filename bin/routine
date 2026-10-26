@@ -50,7 +50,7 @@ routine — executable markdown on rails
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text
 
-exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed ·
+exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed or state unwritable ·
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
       else the failing block's code · run --due 1 when any routine failed ·
       install 1 when the plist cannot land or bootstrap fails
@@ -292,7 +292,10 @@ take_lock() {
 
 acquire_lock() {
   local g="$LOCK_DIR.reap" rc
-  mkdir -p "$STATE_DIR"
+  # an unwritable state dir (a sudo run's root-owned leftover) is no contention:
+  # every run would read its failed mkdir as a held lock and exit 75 forever
+  mkdir -p "$STATE_DIR" 2>/dev/null && [ -w "$STATE_DIR" ] || {
+    tick_log "run $RNAME refused: $STATE_DIR not writable"; die 73 "cannot write $STATE_DIR"; }
   take_lock && return 0
   stale || return 1
   # two runs that judged one lock stale must not both reap it, the loser deleting the
