@@ -235,8 +235,7 @@ doc "$RDIR/gap.md" "timeout: 1" "exit 1"
 mkdir -p "$SANDBOX/gaptmp"
 cat > "$SANDBOX/bin/claude-gap" <<EOF
 #!/bin/bash
-trap '' TERM
-[ "\$1" != auth ] || { until ls "$SANDBOX/gaptmp"/*/timedout; do sleep 0.1; done; exit 0; } >/dev/null 2>&1
+[ "\$1" != auth ] || { trap '' TERM; until ls "$SANDBOX/gaptmp"/*/timedout; do sleep 0.1; done; exit 0; } >/dev/null 2>&1
 cat > /dev/null; sleep 30
 EOF
 chmod +x "$SANDBOX/bin/claude-gap"
@@ -926,9 +925,9 @@ assert "the tick records each dispatch's exit" wait_grep "$RSTATE/tick.log" "dis
 # ─── timeouts (launched before usage & dispatch) ──────────────────────────────
 
 wait "$STUBBORN" "$SLOW" "$GAP"
-# supervise TERMs the agent at birth, which may beat its trap (143) or not (KILL, 137);
-# the watchdog that read the gone pid let it run out its 30s (0)
-assert "a deadline between two children still bounds the next one" not has "claude exit=0" "$(cat "$SANDBOX/gap.out")"
+# the agent forks past the deadline: TERMed once exec'd (143), never lost to a
+# birth TERM and KILLed at ten seconds (137) or left its 30s by a gone pid (0)
+assert "a deadline between two children TERMs the next one" has "claude exit=143" "$(cat "$SANDBOX/gap.out")"
 assert "a runner killed -9 leaves a watchdog that KILLs its block, then ends" gone "$SANDBOX/orphan.pid"
 assert "and a sequence that outlives the KILL is KILLed too — the watch is bounded" has "killing sequence pid" "$(cat "$RSTATE"/orphan/logs/*.log)"
 assert "a TERM-ignoring block still times out 124" [ "$(cat "$SANDBOX/stubborn.rc")" = 124 ]
