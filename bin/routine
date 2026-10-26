@@ -748,13 +748,14 @@ jobs:
         with:
           path: routines/.state
           key: routines-state-${{ github.run_id }}
-      # each tick saves a new key; once this one is saved, every older one on this ref is dead weight (a branch run must not delete main's)
+      # each tick saves a new key; once this one is saved, every older one on this ref is dead weight (a branch run must not delete main's).
+      # cache/save exits 0 on a failed save too, so only this run's key in the list proves it
       - env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           REF: ${{ github.ref }}
         if: always() && steps.save.outcome == 'success'
-        run: gh cache list --key routines-state- --limit 100 --ref "$REF" --json id,key --jq '.[] | select(.key != "routines-state-${{ github.run_id }}") | .id' | xargs -rn1 gh cache delete
+        run: gh cache list --key routines-state- --limit 100 --ref "$REF" --json id,key --jq 'any(.key == "routines-state-${{ github.run_id }}") as $saved | .[] | select($saved and .key != "routines-state-${{ github.run_id }}") | .id' | xargs -rn1 gh cache delete
 EOF
   printf 'wrote %s\n' "$wf"
 }
