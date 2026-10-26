@@ -28,7 +28,7 @@ jobs:
       - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: routines/.state
-          key: routines-state-${{ github.run_id }}
+          key: routines-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: routines-state-
       - run: '[ -x bin/routine ] || (mkdir -p bin && curl -fsSL https://raw.githubusercontent.com/jgeschwendt/routines/main/bin/routine -o bin/routine && chmod +x bin/routine)'
       - run: bin/routine run --due
@@ -39,12 +39,12 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: routines/.state
-          key: routines-state-${{ github.run_id }}
-      # each tick saves a new key; once this one is saved, every older one on this ref is dead weight (a branch run must not delete main's).
+          key: routines-state-${{ github.run_id }}-${{ github.run_attempt }}
+      # each tick saves a new key, a re-run too: it keeps run_id, and a taken key is never overwritten; once this one is saved, every older one on this ref is dead weight (a branch run must not delete main's).
       # cache/save exits 0 on a failed save too, so only this run's key in the list proves it
       - env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
           REF: ${{ github.ref }}
         if: always() && steps.save.outcome == 'success'
-        run: gh cache list --key routines-state- --limit 100 --ref "$REF" --json id,key --jq 'any(.key == "routines-state-${{ github.run_id }}") as $saved | .[] | select($saved and .key != "routines-state-${{ github.run_id }}") | .id' | xargs -rn1 gh cache delete
+        run: gh cache list --key routines-state- --limit 100 --ref "$REF" --json id,key --jq 'any(.key == "routines-state-${{ github.run_id }}-${{ github.run_attempt }}") as $saved | .[] | select($saved and .key != "routines-state-${{ github.run_id }}-${{ github.run_attempt }}") | .id' | xargs -rn1 gh cache delete
