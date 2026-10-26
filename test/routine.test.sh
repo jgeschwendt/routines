@@ -726,7 +726,11 @@ assert "workflow pins every action to a commit — a moved tag runs foreign code
 assert "checkout leaves no token in .git/config for a routine's block to read" has "with:
           persist-credentials: false" "$WFC"
 assert "workflow prunes every older state entry, only once this one saved" has "if: always() && steps.save.outcome == 'success'
-        run: gh cache list --key routines-state- --limit 100 --ref \"\$REF\" --json id,key --jq '.[] | select(.key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
+        run: gh cache list --key routines-state- --limit 100 --ref \"\$REF\" --json id,key --jq 'any(.key == \"routines-state-\${{ github.run_id }}\") as \$saved | .[] | select(\$saved and .key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
+PRUNE=$(printf '%s\n' "$WFC" | sed -n "s/.*--jq '\([^']*\)'.*/\1/p" | sed 's/\${{ github.run_id }}/7/g')
+assert "and deletes nothing until this run's key is listed — a failed save still exits 0" [ "$(
+  printf '%s' '[{"id":1,"key":"routines-state-6"}]' | jq -r "$PRUNE")/$(
+  printf '%s' '[{"id":2,"key":"routines-state-7"},{"id":1,"key":"routines-state-6"}]' | jq -r "$PRUNE")" = /1 ]
 assert "and may delete caches, still check out" has "permissions:
       actions: write
       contents: read" "$WFC"
