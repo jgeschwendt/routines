@@ -448,14 +448,15 @@ watchdog() { # $1=deadline in $SECONDS $2=sequence pid
   # the deadline can fall between two children, child.pid naming one already gone:
   # the watch outlives the sequence, TERMs each child it has not yet seen and KILLs
   # whichever is current at ten seconds. Never at birth: until exec a child keeps
-  # the handler the runner's EXIT trap installed, which catches the TERM and loses
-  # it. A sequence still not done a second on (a child SIGKILL cannot reap, a
-  # runner killed -9 that never writes done) is KILLed itself: the watch is bounded
+  # the catching handler the runner's traps leave it, and execve drops the TERM. A
+  # sequence still not done a second on (a child SIGKILL cannot reap, a runner
+  # killed -9 that never writes done) is KILLed itself, with any child it forked
+  # after the KILL's read: the watch is bounded
   while :; do
     p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
-    if [ "$n" -eq 10 ]; then printf 'watchdog: pid %s survived TERM for 10s, escalating to KILL\n' "$p"; kill_tree KILL "$p"
+    if [ "$n" -eq 10 ]; then t=$p; printf 'watchdog: pid %s still running 10s past the deadline, escalating to KILL\n' "$p"; kill_tree KILL "$p"
     elif [ "$n" -gt 10 ]; then
-      [ -f "$RUN_TMP/done" ] || { printf 'watchdog: killing sequence pid %s\n' "$2"; kill -KILL "$2"; }
+      [ -f "$RUN_TMP/done" ] || { printf 'watchdog: killing sequence pid %s\n' "$2"; [ "$p" = "$t" ] || kill_tree KILL "$p"; kill -KILL "$2"; }
       exit 0
     elif [ "$p" != "$t" ]; then t=$p; printf 'watchdog: deadline reached, killing pid %s\n' "$p"; kill_tree TERM "$p"
     fi

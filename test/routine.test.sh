@@ -229,8 +229,8 @@ EOF
 for n in stubborn:'timeout: 1\non_error: fail' sig:'on_error: fail'; do
   doc "$RDIR/${n%%:*}.md" "${n#*:}" "sh -c 'trap \"\" TERM; echo \$\$ > \"$SANDBOX/${n%%:*}.pid\"; exec sleep 30' & wait"
 done
-# gap's auth probe exits only once the deadline is marked, so the watchdog reads a
-# child.pid whose child is gone, and the TERM-ignoring agent forks after it
+# gap's TERM-ignoring auth probe exits only once the deadline is marked, so the
+# agent forks past it — an agent that honours TERM, which only a TERM after exec ends
 doc "$RDIR/gap.md" "timeout: 1" "[ ! -f \"$SANDBOX/gap.first\" ] || { : > \"$SANDBOX/gap.retried\"; exit 0; }; : > \"$SANDBOX/gap.first\"; exit 1"
 mkdir -p "$SANDBOX/gaptmp"
 cat > "$SANDBOX/bin/claude-gap" <<EOF
@@ -239,8 +239,12 @@ cat > "$SANDBOX/bin/claude-gap" <<EOF
 cat > /dev/null; sleep 30
 EOF
 chmod +x "$SANDBOX/bin/claude-gap"
-# orphan's runner is killed -9 mid-block, so nothing ever writes done: the watch must still end
-doc "$RDIR/orphan.md" "timeout: 1\non_error: fail" "trap '' TERM; echo \$\$ > \"$SANDBOX/orphan.pid\"; sleep 30"
+# orphan's runner is killed -9 mid-block, so nothing ever writes done: the watch must still end.
+# A child forked after the KILL's read stands in for an agent born in that second
+doc "$RDIR/orphan.md" "timeout: 1\non_error: fail" "trap '' TERM; echo \$\$ > \"$SANDBOX/orphan.pid\"; set -m
+( until grep -q 'escalating to KILL' \"\$ROUTINE_STATE_DIR\"/logs/*.log; do sleep 0.1; done
+  sleep 120 & echo \$! > \"$SANDBOX/orphan-late.pid\"; for f in \"$SANDBOX\"/orphantmp/*/child.pid; do echo \$! > \"\$f\"; done ) &
+sleep 30"
 
 # derived-defaults fixture — a routines home with no ROUTINE_DIR/ROUTINE_STATE
 # override, so the document must be found at the home's root.
@@ -308,7 +312,7 @@ EOF
 bgr stubborn; STUBBORN=$!
 bgr slow; SLOW=$!
 EXPORTS="TMPDIR=$SANDBOX/gaptmp ROUTINE_CLAUDE=$SANDBOX/bin/claude-gap" bgr gap; GAP=$!
-bgr orphan; wait_grep "$SANDBOX/orphan.pid" ""; kill -9 "$(cat "$RSTATE/orphan/lock/pid")"
+mkdir -p "$SANDBOX/orphantmp"; EXPORTS="TMPDIR=$SANDBOX/orphantmp" bgr orphan; wait_grep "$SANDBOX/orphan.pid" ""; kill -9 "$(cat "$RSTATE/orphan/lock/pid")"
 
 # ─── usage & dispatch ─────────────────────────────────────────────────────────
 
@@ -537,11 +541,12 @@ assert "and a probe the deadline killed is a timeout, never a logout" [ "$(ls "$
 doc "$RDIR/octal.md" "timeout: 08\non_error: fail" true
 mkdir -p "$RSTATE/octal/logs"; seq 5001 > "$RSTATE/octal/runs.jsonl"; : > "$RSTATE/octal/degraded"
 touch -t 202001010000 "$RSTATE/octal/logs/old.log"
+: > "$RSTATE/octal/logs/kept.log"; perl -e 'utime $^T - 13 * 86400, $^T - 13 * 86400, shift' "$RSTATE/octal/logs/kept.log"
 runr run octal
 assert "a zero-padded timeout is decimal" [ $RC = 0 ]
 assert "a clean run clears the degraded marker" [ ! -e "$RSTATE/octal/degraded" ]
 assert "runs.jsonl past 5000 lines keeps its last 2000" [ "$(nlines "$RSTATE/octal/runs.jsonl")" = 2000 ]
-assert "a log past 14 days is pruned" [ ! -e "$RSTATE/octal/logs/old.log" ]
+assert "a log past 14 days is pruned, one of 13 kept" [ -e "$RSTATE/octal/logs/kept.log" -a ! -e "$RSTATE/octal/logs/old.log" ]
 
 # an empty pid is a holder between mkdir and its pid write
 mkdir -p "$RSTATE/locked/lock"
@@ -938,6 +943,7 @@ assert "a deadline between two children TERMs the next one" has "claude exit=143
 assert "and a deadline inside the catch skips the retry" [ ! -e "$SANDBOX/gap.retried" ]
 assert "a runner killed -9 leaves a watchdog that KILLs its block, then ends" gone "$SANDBOX/orphan.pid"
 assert "and a sequence that outlives the KILL is KILLed too — the watch is bounded" has "killing sequence pid" "$(cat "$RSTATE"/orphan/logs/*.log)"
+assert "with a child it forked after the KILL's read" gone "$SANDBOX/orphan-late.pid"
 assert "a TERM-ignoring block still times out 124" [ "$(cat "$SANDBOX/stubborn.rc")" = 124 ]
 assert "the watchdog escalates to KILL on the block's group" gone "$SANDBOX/stubborn.pid"
 assert "a block past its timeout exits 124" [ "$(cat "$SANDBOX/slow.rc")" = 124 ]
