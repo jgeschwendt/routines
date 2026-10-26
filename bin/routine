@@ -430,7 +430,7 @@ run_sequence() {
   exit 0
 }
 
-watchdog() { # $1=deadline in $SECONDS $2=sequence pid
+watchdog() { # $1=deadline in $SECONDS
   trap - EXIT HUP INT TERM
   # the clock is $SECONDS, never a date fork; the nap stays sleep — bash 3.2 times
   # read -t by SIGALRM, so a caller that blocks it would hang the watchdog for good
@@ -441,23 +441,23 @@ watchdog() { # $1=deadline in $SECONDS $2=sequence pid
     sleep 1
   done
   : > "$RUN_TMP/timedout"
-  p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
-  [ -n "$p" ] || { printf 'watchdog: deadline reached, no child pid to kill\n'; exit 0; }
-  printf 'watchdog: deadline reached, killing pid %s\n' "$p"
-  kill_tree TERM "$p"
-  while [ "$n" -lt 10 ]; do
-    { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null || { printf 'watchdog: pid %s exited on TERM after %ss\n' "$p" "$n"; exit 0; }
+  # the deadline can fall between two children, child.pid naming one already gone:
+  # supervise TERMs any child forked from here on, so the watch outlives the
+  # sequence and KILLs whichever child is current from ten seconds on
+  while :; do
+    p=$(cat "$RUN_TMP/child.pid" 2>/dev/null)
+    if [ "$n" -eq 0 ]; then printf 'watchdog: deadline reached, killing pid %s\n' "$p"; kill_tree TERM "$p"
+    elif [ "$n" -ge 10 ]; then
+      [ "$n" -gt 10 ] || printf 'watchdog: pid %s survived TERM for 10s, escalating to KILL\n' "$p"
+      kill_tree KILL "$p"
+    fi
     sleep 1; n=$((n + 1))
+    [ -f "$RUN_TMP/done" ] && ! { kill -0 -"$p" || kill -0 "$p"; } 2>/dev/null && exit 0
   done
-  printf 'watchdog: pid %s survived TERM for %ss, escalating to KILL\n' "$p" "$n"
-  kill_tree KILL "$p"
-  sleep 1
-  printf 'watchdog: killing sequence pid %s\n' "$2"
-  kill -KILL "$2" 2>/dev/null
 }
 
 cmd_run() { # $1=name
-  local missing="" v val deadline rc
+  local missing="" v deadline rc
   RNAME="$1"
   # both gates fire before the run log exists — tick.log is the only durable ear
   case "$RNAME" in
@@ -534,7 +534,7 @@ cmd_run() { # $1=name
   divider "routine $RNAME · $STARTED_ISO"
   deadline=$((SECONDS + TIMEOUT))
   run_sequence & SEQ_PID=$!
-  watchdog "$deadline" "$SEQ_PID" & WD_PID=$!
+  watchdog "$deadline" & WD_PID=$!
   wait "$SEQ_PID"; rc=$?; SEQ_PID=""
   : > "$RUN_TMP/done"
   # past the deadline the watchdog may still be escalating on the block's group
