@@ -240,6 +240,8 @@ trap '' TERM
 cat > /dev/null; sleep 30
 EOF
 chmod +x "$SANDBOX/bin/claude-gap"
+# orphan's runner is killed -9 mid-block, so nothing ever writes done: the watch must still end
+doc "$RDIR/orphan.md" "timeout: 1\non_error: fail" "trap '' TERM; echo \$\$ > \"$SANDBOX/orphan.pid\"; sleep 30"
 
 # derived-defaults fixture — a routines home with no ROUTINE_DIR/ROUTINE_STATE
 # override, so the document must be found at the home's root.
@@ -306,6 +308,7 @@ EOF
 bgr stubborn; STUBBORN=$!
 bgr slow; SLOW=$!
 EXPORTS="TMPDIR=$SANDBOX/gaptmp ROUTINE_CLAUDE=$SANDBOX/bin/claude-gap" bgr gap; GAP=$!
+bgr orphan; wait_grep "$SANDBOX/orphan.pid" ""; kill -9 "$(cat "$RSTATE/orphan/lock/pid")"
 
 # ─── usage & dispatch ─────────────────────────────────────────────────────────
 
@@ -926,6 +929,8 @@ wait "$STUBBORN" "$SLOW" "$GAP"
 # supervise TERMs the agent at birth, which may beat its trap (143) or not (KILL, 137);
 # the watchdog that read the gone pid let it run out its 30s (0)
 assert "a deadline between two children still bounds the next one" not has "claude exit=0" "$(cat "$SANDBOX/gap.out")"
+assert "a runner killed -9 leaves a watchdog that KILLs its block, then ends" gone "$SANDBOX/orphan.pid"
+assert "and a sequence that outlives the KILL is KILLed too — the watch is bounded" has "killing sequence pid" "$(cat "$RSTATE"/orphan/logs/*.log)"
 assert "a TERM-ignoring block still times out 124" [ "$(cat "$SANDBOX/stubborn.rc")" = 124 ]
 assert "the watchdog escalates to KILL on the block's group" gone "$SANDBOX/stubborn.pid"
 assert "a block past its timeout exits 124" [ "$(cat "$SANDBOX/slow.rc")" = 124 ]
