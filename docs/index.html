@@ -100,7 +100,7 @@
       so personal routines never enter it and the runner can move without breaking launchd.
       One file per routine. Frontmatter is flat
       <code class="code">key: value</code>, parsed with awk — no yq, no yaml library;
-      one pair of surrounding quotes is stripped, CRLF tolerated.
+      one pair of surrounding quotes is stripped; CRLF, trailing blanks and a leading BOM tolerated.
       Only <code class="code">sh</code> / <code class="code">bash</code> fences execute,
       sequentially, each under <code class="code">bash -e</code>; other fences are
       material for the prose. Fences follow CommonMark (<code class="code">```</code> or
@@ -112,7 +112,7 @@
 <pre class="snippet">---
 <b>schedule</b>: 30 7 * * 1-5     <i># 5-field cron, evaluated in UTC; omit ⇒ on-demand only</i>
 <b>timeout</b>: 600               <i># seconds for the whole routine</i>
-<b>requires</b>: GITHUB_TOKEN     <i># env vars that must be non-empty</i>
+<b>requires</b>: GITHUB_TOKEN     <i># env vars that must be non-empty in the environment</i>
 <b>on_error</b>: claude           <i># claude (default) | fail; else exit 64</i>
 ---
 
@@ -231,7 +231,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
           <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yaml</code> into the repo it is invoked in</li>
           <li>cron every 15 min + <code class="code">workflow_dispatch</code>, one tick at a time (a <code class="code">concurrency</code> group: runners share no lock); <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, fetch <code class="code">bin/routine</code> if absent, <code class="code">run --due</code>, save cache</li>
           <li>the save runs under <code class="code">if: always()</code> — <code class="code">actions/cache</code> saves only on success, so one red routine would roll back every other routine's state</li>
-          <li>each tick saves a new key, so once the save succeeds every older <code class="code">routines-state-</code> entry on the same ref is deleted (<code class="code">gh cache delete</code>, <code class="code">actions: write</code>)</li>
+          <li>each tick saves a new key, so once this run's key is listed (a failed save still exits 0) every older <code class="code">routines-state-</code> entry on the same ref is deleted (<code class="code">gh cache delete</code>, <code class="code">actions: write</code>)</li>
           <li>every action is pinned by commit and checkout persists no token (<code class="code">persist-credentials: false</code>): a moved tag cannot run under the job's token, and no block reads it from <code class="code">.git/config</code> — a block that needs git auth brings its own</li>
           <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
         </ul>
@@ -242,7 +242,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
 <pre class="snippet"><b>routine run</b>  frontmatter → <b>lock</b> (mkdir .state/&lt;name&gt;/lock, pid and its start time inside; live pid ⇒ 75, dead ⇒ reap, reused (its UTC start time differs, where ps can read it) ⇒ reap, no pid ⇒ held for a minute; no lock age frees a live pid — a sleep or a lowered timeout ages a live holder's too; a reap runs under a mkdir lock.reap guard and re-judges inside it, so two reapers never both win — a fresh guard ⇒ 75, one a minute old is a crashed reaper's)
              → <b>requires</b> gate (exit 78, loud list of missing vars — recorded only by the holder; a run that loses the lock records nothing, even signalled)
              → <b>cd $ROUTINE_HOME</b> (blocks and the catch run there; a missing home ⇒ 64)
-             → <b>watchdog</b> (bash-native, its clock $SECONDS, never a date fork; SIGTERM to the block's group, SIGKILL after grace; a block's leftover children (cmd &amp;) get TERM when it exits; a block or agent started past the deadline TERMs itself; exit 124, and a catch that outlives the deadline skips its retry)
+             → <b>watchdog</b> (bash-native, its clock $SECONDS, never a date fork; SIGTERM to the block's group, SIGKILL after grace; a block's leftover children (cmd &amp;) get TERM when it exits; a block or agent started past the deadline TERMs itself and is KILLed with the rest; a sequence still not done a second after the KILL is KILLed too, so the watch is bounded; exit 124, and a catch that outlives the deadline skips its retry)
              → <b>HUP/INT/TERM</b> (129/130/143) TERM the block's group, KILL it after two seconds, before the record and the lock release; run --due forwards its own as TERM to every routine it runs
              → <b>blocks</b> under the try/catch contract
              → <b>last-run.json</b> {started, started_epoch, finished, exit, duration, degraded}, written on every path (trap), renamed into place, and appended to runs.jsonl
