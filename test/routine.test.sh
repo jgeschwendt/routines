@@ -728,11 +728,13 @@ assert "workflow pins every action to a commit — a moved tag runs foreign code
 assert "checkout leaves no token in .git/config for a routine's block to read" has "with:
           persist-credentials: false" "$WFC"
 assert "workflow prunes every older state entry, only once this one saved" has "if: always() && steps.save.outcome == 'success'
-        run: gh cache list --key routines-state- --limit 100 --ref \"\$REF\" --json id,key --jq 'any(.key == \"routines-state-\${{ github.run_id }}\") as \$saved | .[] | select(\$saved and .key != \"routines-state-\${{ github.run_id }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
-PRUNE=$(printf '%s\n' "$WFC" | sed -n "s/.*--jq '\([^']*\)'.*/\1/p" | sed 's/\${{ github.run_id }}/7/g')
+        run: gh cache list --key routines-state- --limit 100 --ref \"\$REF\" --json id,key --jq 'any(.key == \"routines-state-\${{ github.run_id }}-\${{ github.run_attempt }}\") as \$saved | .[] | select(\$saved and .key != \"routines-state-\${{ github.run_id }}-\${{ github.run_attempt }}\") | .id' | xargs -rn1 gh cache delete" "$WFC"
+assert "a re-run saves its own key — run_id survives it, and a taken key fails the save" \
+  [ "$(grep -c 'key: routines-state-${{ github.run_id }}-${{ github.run_attempt }}$' "$WF")" = 2 ]
+PRUNE=$(printf '%s\n' "$WFC" | sed -n "s/.*--jq '\([^']*\)'.*/\1/p" | sed 's/\${{ github.run_id }}-\${{ github.run_attempt }}/7-2/g')
 assert "and deletes nothing until this run's key is listed — a failed save still exits 0" [ "$(
-  printf '%s' '[{"id":1,"key":"routines-state-6"}]' | jq -r "$PRUNE")/$(
-  printf '%s' '[{"id":2,"key":"routines-state-7"},{"id":1,"key":"routines-state-6"}]' | jq -r "$PRUNE")" = /1 ]
+  printf '%s' '[{"id":1,"key":"routines-state-7-1"}]' | jq -r "$PRUNE" | tr '\n' ' ')/$(
+  printf '%s' '[{"id":3,"key":"routines-state-7-2"},{"id":2,"key":"routines-state-7-1"},{"id":1,"key":"routines-state-6-1"}]' | jq -r "$PRUNE" | tr '\n' ' ')" = "/2 1 " ]
 assert "and may delete caches, still check out" has "permissions:
       actions: write
       contents: read" "$WFC"
