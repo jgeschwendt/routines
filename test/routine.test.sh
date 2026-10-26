@@ -778,6 +778,12 @@ assert "a timeout past 64 bits falls back to the default, never wraps to 1s" [ $
 doc "$RDIR/digit.md" "requires: ROUTINE_TEST_REQ_A 2FA\non_error: fail" true
 EXPORTS="ROUTINE_TEST_REQ_A=1" runr run digit
 assert "a requires name opening with a digit is missing, never the last var's value" [ $RC = 78 ]
+doc "$RDIR/shadow.md" "requires: DOC\non_error: fail" true
+runr run shadow
+assert "a requires name the runner itself sets is missing unless exported" [ $RC = 78 ]
+printf '\357\273\277--- \nrequires: ROUTINE_TEST_REQ_A\n---\t\n```sh\ntrue\n```\n' | mkfix "$RDIR/bom.md"
+runr run bom
+assert "a BOM and blanks after the fences still parse the frontmatter" [ $RC = 78 ]
 
 head -c 2000000 /dev/zero | tr '\0' x > "$SANDBOX/big.txt"
 doc "$RDIR/big.md" "on_error: fail" "cat \"$SANDBOX/big.txt\""
