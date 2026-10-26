@@ -229,6 +229,17 @@ EOF
 for n in stubborn:'timeout: 1\non_error: fail' sig:'on_error: fail'; do
   doc "$RDIR/${n%%:*}.md" "${n#*:}" "sh -c 'trap \"\" TERM; echo \$\$ > \"$SANDBOX/${n%%:*}.pid\"; exec sleep 30' & wait"
 done
+# gap's auth probe exits only once the deadline is marked, so the watchdog reads a
+# child.pid whose child is gone, and the TERM-ignoring agent forks after it
+doc "$RDIR/gap.md" "timeout: 1" "exit 1"
+mkdir -p "$SANDBOX/gaptmp"
+cat > "$SANDBOX/bin/claude-gap" <<EOF
+#!/bin/bash
+trap '' TERM
+[ "\$1" != auth ] || { until ls "$SANDBOX/gaptmp"/*/timedout; do sleep 0.1; done; exit 0; } >/dev/null 2>&1
+cat > /dev/null; sleep 30
+EOF
+chmod +x "$SANDBOX/bin/claude-gap"
 
 # derived-defaults fixture — a routines home with no ROUTINE_DIR/ROUTINE_STATE
 # override, so the document must be found at the home's root.
@@ -293,6 +304,7 @@ EOF
 # TERM grace) under every case below; their asserts close the suite.
 bgr stubborn; STUBBORN=$!
 bgr slow; SLOW=$!
+EXPORTS="TMPDIR=$SANDBOX/gaptmp ROUTINE_CLAUDE=$SANDBOX/bin/claude-gap" bgr gap; GAP=$!
 
 # ─── usage & dispatch ─────────────────────────────────────────────────────────
 
@@ -893,7 +905,10 @@ assert "the tick records each dispatch's exit" wait_grep "$RSTATE/tick.log" "dis
 
 # ─── timeouts (launched before usage & dispatch) ──────────────────────────────
 
-wait "$STUBBORN" "$SLOW"
+wait "$STUBBORN" "$SLOW" "$GAP"
+# supervise TERMs the agent at birth, which may beat its trap (143) or not (KILL, 137);
+# the watchdog that read the gone pid let it run out its 30s (0)
+assert "a deadline between two children still bounds the next one" not has "claude exit=0" "$(cat "$SANDBOX/gap.out")"
 assert "a TERM-ignoring block still times out 124" [ "$(cat "$SANDBOX/stubborn.rc")" = 124 ]
 assert "the watchdog escalates to KILL on the block's group" gone "$SANDBOX/stubborn.pid"
 assert "a block past its timeout exits 124" [ "$(cat "$SANDBOX/slow.rc")" = 124 ]
