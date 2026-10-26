@@ -168,15 +168,16 @@ expand() { # $1=var $2=field $3=lo $4=hi — sets var to the expanded value set,
   local v="$1" lo="$3" hi="$4" out="" part step s e i IFS=,
   set -f; set -- $2; set +f
   for part in "$@"; do
-    step=1
-    case "$part" in */*) step="${part##*/}"; part="${part%%/*}" ;; esac
+    step=1; e=""
+    # N/step runs N to the field's end, N/1 too — the slash, not the step, says so
+    case "$part" in */*) step="${part##*/}"; part="${part%%/*}"; e="$hi" ;; esac
     isnum "$step" || return 1
     step=$((10#$step))
     [ "$step" -ge 1 ] || return 1
     case "$part" in
       '*') s="$lo"; e="$hi" ;;
       *-*) s="${part%%-*}"; e="${part#*-}" ;;
-      *) s="$part"; e="$part"; [ "$step" -eq 1 ] || e="$hi" ;;
+      *) s="$part"; e="${e:-$part}" ;;
     esac
     isnum "$s" && isnum "$e" || return 1
     s=$((10#$s)); e=$((10#$e))

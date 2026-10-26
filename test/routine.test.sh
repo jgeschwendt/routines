@@ -254,6 +254,7 @@ hourly 0 * * * *
 leap 30 2 29 2 *
 quarter */15 * * * *
 star 0 0 */2 * 1
+step1 30/1 * * * *
 weekday 30 7 * * 1-5
 EOF
 
@@ -591,6 +592,9 @@ due "Monday 07:31Z reopens the range — due" weekday 1786951860 3              
 due "" star 1791763200                                                         # Mon 2026-10-12T00:00:00Z
 due "'0 0 */2 * 1' — a */N day field ANDs (cronie), so Wed 14th is not due" star 1791936060 1  # Wed 2026-10-14T00:01:00Z
 due "'0 0 */2 * 1' — Mon 19th satisfies both, due" star 1792368060 2          # Mon 2026-10-19T00:01:00Z
+
+due "" step1 1786699830                                                        # Fri 2026-08-14T09:30:30Z
+due "'30/1 * * * *' runs 30 to 59 like any N/step, so 09:32Z is due" step1 1786699920 2  # Fri 2026-08-14T09:32:00Z
 
 due "" leap 1835404260                                                         # Tue 2028-02-29T02:31:00Z
 due "'30 2 29 2 *' fires again four years on" leap 1961712000 2               # Mon 2032-03-01T00:00:00Z
