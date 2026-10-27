@@ -300,9 +300,10 @@ acquire_lock() {
   stale || return 1
   # two runs that judged one lock stale must not both reap it, the loser deleting the
   # winner's fresh lock: the reap holds a guard and re-judges inside it, so the loser
-  # meets a live lock; a reaper killed in that instant leaves a guard honoured a minute
+  # meets a live lock; a reaper killed in that instant leaves a guard honoured a minute.
+  # A lock gone by then was released, and is simply taken
   mkdir "$g" 2>/dev/null || [ -n "$(find "$g" -maxdepth 0 ! -mmin -1 2>/dev/null)" ] || return 1
-  REAP=1; stale && rm -rf "$LOCK_DIR" && take_lock; rc=$?
+  REAP=1; take_lock || { stale && rm -rf "$LOCK_DIR" && take_lock; }; rc=$?
   rm -rf "$g"; REAP=0; return "$rc"
 }
 
@@ -319,9 +320,13 @@ stale() { # the lock's holder is dead
     # lock too, and two runs at once is worse than a reused pid held where ps cannot run
     [ -n "$s" ] && [ -n "$c" ] && [ "$c" != "$s" ] || return 1
   fi
-  # no pid yet is a holder between its mkdir and its pid write — a crash in that
-  # gap is all that leaves one empty, so a minute's grace reaps it soon enough
-  [ -n "$p" ] || [ -z "$(find "$LOCK_DIR" -maxdepth 0 -mmin -1 2>/dev/null)" ]
+  # inside the guard only its holder removes a lock and a dead holder never releases, so a
+  # verdict stands while the lock it judged does: the pid re-read after the probe (its holder
+  # may have released and a fresh run taken the lock meanwhile). No pid yet is a holder between
+  # its mkdir and its pid write — a crash in that gap is all that leaves one empty, so a
+  # minute's grace reaps it soon enough; no lock at all is no verdict
+  if [ -n "$p" ]; then [ "$(cat "$LOCK_DIR/pid" 2>/dev/null)" = "$p" ]
+  else [ -n "$(find "$LOCK_DIR" -maxdepth 0 ! -mmin -1 2>/dev/null)" ]; fi
 }
 
 kill_tree() { # $1=signal $2=pid — the pid leads its own process group (set -m)

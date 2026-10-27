@@ -92,9 +92,11 @@ pub(crate) mod tests {
     use super::{extract_blocks, frontmatter_get};
     use std::{fs, path::PathBuf, process::Command};
 
-    /// A fresh, empty dir `name` beside the test binary.
+    /// A fresh, empty dir `name.<pid>` beside the test binary: two runs of it never share one.
     pub(crate) fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::current_exe().unwrap().with_file_name(name);
+        let dir = std::env::current_exe()
+            .unwrap()
+            .with_file_name(format!("{name}.{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir

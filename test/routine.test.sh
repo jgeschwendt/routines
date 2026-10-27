@@ -453,6 +453,15 @@ runr run locked
 assert "an old reap guard is a crashed reaper's: the lock is reaped" [ $RC = 0 ]
 assert "and the old guard is gone" [ ! -e "$RSTATE/locked/lock.reap" ]
 
+# its holder released while a reaper probed it and a fresh run took the lock: the second ps,
+# the re-judge inside the guard, swaps that run's lock in, and the verdict must not reap it
+printf '#!/bin/bash\nL=%s; [ -e "$0.n" ] && rm -rf "$L" && mkdir "$L" && echo 2 > "$L/pid"; : > "$0.n"; echo "start-of-$4"\n' \
+  "$RSTATE/locked/lock" | mkfix "$SANDBOX/swapps/ps"; chmod +x "$SANDBOX/swapps/ps"
+mkdir "$RSTATE/locked/lock"; echo 1 > "$RSTATE/locked/lock/pid"; echo old > "$RSTATE/locked/lock/started"
+EXPORTS="PATH=$SANDBOX/swapps:$PATH" runr run locked
+assert "a lock taken afresh while its reaper probed the last holder is never reaped" [ "$RC:$(cat "$RSTATE/locked/lock/pid")" = 75:2 ]
+rm -rf "$RSTATE/locked/lock"
+
 # the block hands its lock to pid 1 — launchd, which kill -0 refuses a user with EPERM —
 # with no start time, so ps (denied under Seatbelt, allowed under launchd) cannot decide
 doc "$RDIR/usurped.md" "on_error: fail" "echo 1 > \"\$ROUTINE_STATE_DIR/lock/pid\"; : > \"\$ROUTINE_STATE_DIR/lock/started\""

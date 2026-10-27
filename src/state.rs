@@ -14,8 +14,10 @@ fn var(name: &str) -> Option<OsString> {
     env::var_os(name).filter(|v| !v.is_empty())
 }
 
-/// `abspath "${VAR:-default}"`: a relative root joins the working directory (bash's `$PWD`,
-/// which spells it through a symlink where getcwd resolves one — no path here is printed).
+/// `abspath "${VAR:-default}"`: a relative root joins the working directory. bash spells these
+/// paths from `$PWD` (through a symlink where getcwd resolves one) with any doubled `/`, where
+/// `join` and `current_dir` normalise them — the catch prompt's doc path and the lock refusal's
+/// state dir print differently.
 fn root(name: &str, default: PathBuf) -> PathBuf {
     env::current_dir()
         .unwrap_or_default()
