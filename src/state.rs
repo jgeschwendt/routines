@@ -90,10 +90,10 @@ pub fn read(file: &Path) -> String {
     String::from_utf8_lossy(&fs::read(file).unwrap_or_default()).replace('\0', "")
 }
 
-/// Each slug-named `*.md` document's name, in byte order; any other name is skipped with a
-/// warning on stderr — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first; any
+/// Each slug-named `*.md` document's name, in byte order; any other name is skipped, `skip`
+/// told why — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first; any
 /// other unreachable name (`[ -e ]` false, `[ -L ]` too: an unsearchable dir) is skipped silently.
-pub fn routines(dir: &Path) -> Vec<String> {
+pub fn routines(dir: &Path, skip: impl Fn(&str)) -> Vec<String> {
     let mut files: Vec<_> = fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -117,7 +117,7 @@ pub fn routines(dir: &Path) -> Vec<String> {
             } else {
                 return Some(n.to_owned());
             };
-            eprintln!("routine: skip {f}: {why}");
+            skip(&format!("skip {f}: {why}"));
             None
         })
         .collect()
