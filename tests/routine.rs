@@ -142,3 +142,42 @@ fn status_is_bin_routines() {
         assert_eq!(rust, (Some(64), String::new(), err));
     }
 }
+
+// `routine sync-ci` is bin/routine's: the same workflow in the working directory, the legacy
+// `.yml` gone, the same `wrote` line — and exit 0 when the write fails (a dir in its place).
+#[test]
+fn sync_ci_is_bin_routines() {
+    use std::fs;
+    let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("sync-ci");
+    let _ = fs::remove_dir_all(&tmp);
+    let run = |prog: &str, blocked: bool| {
+        let dir = tmp.join(format!("{}-{blocked}", prog.len()));
+        let wfs = dir.join(".github/workflows");
+        fs::create_dir_all(&wfs).unwrap();
+        fs::write(wfs.join("routines.yml"), "").unwrap();
+        if blocked {
+            fs::create_dir(wfs.join("routines.yaml")).unwrap();
+        }
+        let mut c = Command::new(prog);
+        if prog == "/bin/bash" {
+            c.arg(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"));
+        }
+        let o = c.arg("sync-ci").current_dir(&dir).output().unwrap();
+        let dir = dir.canonicalize().unwrap().to_string_lossy().into_owned();
+        (
+            o.status.code(),
+            String::from_utf8(o.stdout).unwrap().replace(&dir, "<cwd>"),
+            fs::read_to_string(wfs.join("routines.yaml")).ok(),
+            wfs.join("routines.yml").exists(),
+        )
+    };
+    for blocked in [false, true] {
+        let rust = run(env!("CARGO_BIN_EXE_routine"), blocked);
+        assert_eq!(rust, run("/bin/bash", blocked));
+        assert_eq!(rust.1, "wrote <cwd>/.github/workflows/routines.yaml\n");
+        assert_eq!(
+            rust.2.is_some_and(|w| w.starts_with("name: routines\n")),
+            !blocked
+        );
+    }
+}

@@ -2,7 +2,7 @@
 
 ```stele
 kind: container
-purpose: the Rust port of bin/routine, stages 3a and 4a — doc, cron, state, status (byte-identical) ported; run's lock, record, gates, catch prompt and run --due's sweep unwired; bin/routine runs until cutover
+purpose: the Rust port of bin/routine — doc, cron, state, status (byte-identical) and sync-ci ported; run's lock, record, gates, catch prompt and run --due's sweep unwired; bin/routine runs until cutover
 ```
 
 Accepted divergences from bin/routine:
@@ -16,6 +16,7 @@ Accepted divergences from bin/routine:
 - a `requires` name holding `=` (`A=B`) reads as getenv does, the part before the `=` (`A`), where printenv finds an `A=B=…` entry
 - `requires: --` reads getenv, where macOS `printenv --` prints the whole environment and passes
 - pmset output holding a NUL is read as text, where BSD grep calls it binary and the tick defers — real pmset writes none
+- sync-ci's failed write warns `routine: <path>: <io error>`, where bash's redirection names its own line
 - the lock's minute and the logs' 14 days are elapsed whole seconds from std's clock, as macOS find floors them; GNU find agrees on `-mtime`, and sub-second boundaries may differ
 
 <!-- @stele -->

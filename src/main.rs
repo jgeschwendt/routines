@@ -10,6 +10,7 @@ mod record;
 mod run;
 mod state;
 mod status;
+mod sync_ci;
 
 use std::process::ExitCode;
 
@@ -56,6 +57,10 @@ fn main() -> ExitCode {
                 ExitCode::from(64)
             }
         },
+        Some("sync-ci") => {
+            sync_ci::sync_ci();
+            ExitCode::SUCCESS
+        }
         Some(verb) => {
             eprintln!("routine: {verb} is not ported yet — use bin/routine");
             ExitCode::from(64)

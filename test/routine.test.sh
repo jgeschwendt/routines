@@ -108,7 +108,7 @@ runr() { # verb + args
     if [ -n "$RNOW" ]; then export ROUTINE_NOW="$RNOW"; else unset ROUTINE_NOW; fi
     for kv in $EXPORTS; do export "$kv"; done
     cd "$RCWD" || exit 1
-    [ "${1:-}" != status ] || RUNNER=${ROUTINE_RUST:-$RUNNER} # the Rust port takes status when set
+    case "${1:-}" in status|sync-ci) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac # the Rust port takes its verbs when set
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
@@ -125,7 +125,7 @@ runr_home() { # $1=home, then verb + args
     export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
     export ROUTINE_PMSET="$PMSET"
     cd "$RCWD" || exit 1
-    [ "${1:-}" != status ] || RUNNER=${ROUTINE_RUST:-$RUNNER}
+    case "${1:-}" in status|sync-ci) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
