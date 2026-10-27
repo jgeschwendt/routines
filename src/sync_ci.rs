@@ -1,19 +1,31 @@
 //! `routine sync-ci` — `cmd_sync_ci` of bin/routine. The workflow is bin/routine's own heredoc,
 //! compiled in, so the two cannot drift; the cutover moves the text here.
 
-use std::{env, ffi::OsString, fs, os::unix::fs::MetadataExt, path::PathBuf};
+use std::{
+    env,
+    ffi::OsString,
+    fs,
+    os::unix::fs::MetadataExt,
+    path::{Path, PathBuf},
+};
 
 const SRC: &str = include_str!("../bin/routine");
 
 /// bash's `$PWD`: the inherited `PWD` when absolute and naming the working directory — a
-/// symlinked path, a trailing `/`, stays as given — else the resolved one.
+/// symlinked path, a trailing `/`, stays as given — else the resolved one. With no working
+/// directory to resolve (deleted), bash keeps `PWD` as inherited; with none of that either, `.`,
+/// never an empty prefix that would put the workflow under `/`.
 fn pwd() -> OsString {
-    let id = |p: &PathBuf| fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
-    env::var_os("PWD")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute() && id(p).is_some_and(|i| id(&".".into()) == Some(i)))
-        .unwrap_or_else(|| env::current_dir().unwrap_or_default())
-        .into_os_string()
+    let id = |p: &Path| fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
+    let pwd = env::var_os("PWD").filter(|p| !p.is_empty());
+    match env::current_dir() {
+        Err(_) => pwd.unwrap_or_else(|| ".".into()),
+        Ok(cwd) => pwd
+            .filter(|p| {
+                Path::new(p).is_absolute() && id(p.as_ref()).is_some_and(|i| id(&cwd) == Some(i))
+            })
+            .unwrap_or_else(|| cwd.into()),
+    }
 }
 
 /// Writes `.github/workflows/routines.yaml` under the working directory and drops the pre-.yaml
