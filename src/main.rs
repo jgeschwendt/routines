@@ -26,7 +26,12 @@ env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
 ";
 
 fn main() -> ExitCode {
-    match std::env::args().nth(1).as_deref() {
+    match std::env::args_os()
+        .nth(1)
+        .as_deref()
+        .map(std::ffi::OsStr::to_string_lossy)
+        .as_deref()
+    {
         None | Some("" | "help" | "-h" | "--help") => {
             print!("{USAGE}");
             ExitCode::SUCCESS
