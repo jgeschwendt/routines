@@ -77,6 +77,7 @@ fn status_is_bin_routines() {
         ("full/.state/two/degraded", "since —\0 then\n\0\n"), // bash's $(…) drops NUL
         ("locked/a.md", &hourly),
         ("full/bad.md", &sched("@daily")),
+        ("full/nul.md", "---\nschedule: 0 * * * *\0 5\n---\n"), // awk cuts at the NUL
         ("full/blank.md", &sched("")),
         ("full/AGENTS.md", &hourly),
         ("full/-flag.md", &hourly),
