@@ -44,7 +44,10 @@ pub fn now() -> Result<i64, String> {
         },
         |v| {
             let v = v.to_string_lossy();
-            v.trim().parse().map_err(|_| v.into_owned())
+            // bash's own blanks only: `\v`, `\f`, `\r` or NBSP fail its arithmetic as well
+            v.trim_matches([' ', '\t', '\n'])
+                .parse()
+                .map_err(|_| v.into_owned())
         },
     )
 }
@@ -53,7 +56,7 @@ pub fn now() -> Result<i64, String> {
 /// the last `"key":`, one line per matching line, trailing newlines stripped; empty when none.
 pub fn json_get(file: &Path, key: &str) -> String {
     let pat = format!("\"{key}\":");
-    let text = String::from_utf8_lossy(&fs::read(file).unwrap_or_default()).into_owned();
+    let text = read(file);
     let vals: Vec<_> = text
         .split('\n')
         .filter_map(|l| {
@@ -65,8 +68,14 @@ pub fn json_get(file: &Path, key: &str) -> String {
     vals.join("\n").trim_end_matches('\n').to_owned()
 }
 
+/// A file's text as bash 3.2's `$(cat …)` holds it: NUL bytes dropped, empty when unreadable.
+pub fn read(file: &Path) -> String {
+    String::from_utf8_lossy(&fs::read(file).unwrap_or_default()).replace('\0', "")
+}
+
 /// Each slug-named `*.md` document's name, in byte order; any other name is skipped with a
-/// warning on stderr — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first.
+/// warning on stderr — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first; any
+/// other unreachable name (`[ -e ]` false, `[ -L ]` too: an unsearchable dir) is skipped silently.
 pub fn routines(dir: &Path) -> Vec<String> {
     let mut files: Vec<_> = fs::read_dir(dir)
         .into_iter()
@@ -80,7 +89,11 @@ pub fn routines(dir: &Path) -> Vec<String> {
         .into_iter()
         .filter_map(|f| {
             let n = f.strip_suffix(".md")?;
-            let why = if !dir.join(&f).exists() {
+            let p = dir.join(&f);
+            let why = if !p.exists() {
+                if !p.is_symlink() {
+                    return None;
+                }
                 "dangling symlink"
             } else if n.starts_with('-')
                 || !n

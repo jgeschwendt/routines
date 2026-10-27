@@ -45,8 +45,10 @@ fn help_is_bin_routines_and_other_verbs_wait() {
 // fixture home: missing, empty, and one holding each kind of row and each skipped name.
 #[test]
 fn status_is_bin_routines() {
-    use std::{fs, os::unix::fs::symlink};
+    use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
     let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("status");
+    let lock = |mode| fs::set_permissions(tmp.join("locked"), Permissions::from_mode(mode));
+    let _ = lock(0o700);
     let _ = fs::remove_dir_all(&tmp);
     let sched = |s: &str| format!("---\nschedule: \"{s}\"\n---\n");
     let hourly = sched("0 * * * *");
@@ -56,7 +58,7 @@ fn status_is_bin_routines() {
         )
     };
     let (two, past, recent, ahead) = (
-        "{\"exit\":\"\",\"duration\":3}\n{\"exit\":7,\"exit\":9}\n\n".to_owned(),
+        "{\"exit\":\"\",\"duration\":3}\n{\"exit\":7,\"exit\":9\0}\n\n".to_owned(),
         run("1786690000"),
         run("1786698000"),
         run("1786699999"),
@@ -72,7 +74,8 @@ fn status_is_bin_routines() {
         ("full/.state/ahead/last-run.json", &ahead),
         ("full/two.md", "no frontmatter\n"),
         ("full/.state/two/last-run.json", &two),
-        ("full/.state/two/degraded", "since — then\n\n"),
+        ("full/.state/two/degraded", "since —\0 then\n\0\n"), // bash's $(…) drops NUL
+        ("locked/a.md", &hourly),
         ("full/bad.md", &sched("@daily")),
         ("full/blank.md", &sched("")),
         ("full/AGENTS.md", &hourly),
@@ -87,19 +90,14 @@ fn status_is_bin_routines() {
     fs::create_dir_all(tmp.join("full/dir.md")).unwrap();
     fs::create_dir_all(tmp.join("empty")).unwrap();
     symlink("nowhere", tmp.join("full/dangling.md")).unwrap();
+    lock(0o600).unwrap(); // readable, unsearchable: a.md fails [ -e ] and [ -L ] alike
     let full = tmp.join("full").to_string_lossy().into_owned();
     let status = |prog: &str, env: &[(&str, &str)]| {
         let mut c = Command::new(prog);
         if prog == "/bin/bash" {
             c.arg(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"));
         }
-        for k in [
-            "HOME",
-            "ROUTINE_HOME",
-            "ROUTINE_DIR",
-            "ROUTINE_STATE",
-            "ROUTINE_NOW",
-        ] {
+        for k in "HOME ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW".split(' ') {
             c.env_remove(k);
         }
         let o = c
@@ -118,8 +116,9 @@ fn status_is_bin_routines() {
     for env in [
         &[("ROUTINE_HOME", "missing"), now][..],
         &[("ROUTINE_HOME", "empty"), now],
-        &[("ROUTINE_HOME", "full"), now],
+        &[("ROUTINE_HOME", "full"), ("ROUTINE_NOW", " \t1786699830\n")],
         &[("ROUTINE_HOME", &full)],
+        &[("ROUTINE_HOME", "locked"), now],
         &[
             ("HOME", ""),
             ("ROUTINE_DIR", "full"),
@@ -134,12 +133,11 @@ fn status_is_bin_routines() {
             "{env:?}"
         );
     }
-    assert_eq!(
-        status(env!("CARGO_BIN_EXE_routine"), &[("ROUTINE_NOW", "x")]),
-        (
-            Some(64),
-            String::new(),
-            "routine: ROUTINE_NOW=x is not an integer\n".into()
-        )
-    );
+    lock(0o700).unwrap();
+    // bash fails these too, naming its own line: only space, tab and newline are its blanks
+    for v in ["x", "\u{a0}5", "\u{b}5", "\u{c}5", "5\r"] {
+        let err = format!("routine: ROUTINE_NOW={v} is not an integer\n");
+        let rust = status(env!("CARGO_BIN_EXE_routine"), &[("ROUTINE_NOW", v)]);
+        assert_eq!(rust, (Some(64), String::new(), err));
+    }
 }

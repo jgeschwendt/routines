@@ -44,8 +44,10 @@ pub fn status(dir: &Path, states: &Path, now: i64) {
         };
         let deg = st.join("degraded");
         let deg = if deg.is_file() {
-            let since = String::from_utf8_lossy(&fs::read(&deg).unwrap_or_default()).into_owned();
-            format!(" · degraded since {}", since.trim_end_matches('\n'))
+            format!(
+                " · degraded since {}",
+                state::read(&deg).trim_end_matches('\n')
+            )
         } else {
             String::new()
         };
