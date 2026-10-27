@@ -1,7 +1,7 @@
 //! `routine run --due`'s sweep short of dispatch: `cmd_due`'s due.log rotation, its tick line
 //! and `dark_wake` of bin/routine. Dispatch waits on stage 3b's `run <name>`.
 
-use crate::{cron, doc, record, state, status};
+use crate::{cron, record, state, status};
 use std::{
     ffi::OsStr,
     fs,
@@ -26,17 +26,12 @@ pub fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
     let names = state::routines(dir, |m| record::tick_log(states, now, m));
     let (mut due, mut next) = (vec![], vec![]);
     for name in &names {
-        match status::next_fire_of(dir, states, name, now) {
+        let sched = status::schedule(dir, name);
+        match status::next_fire_of(states, name, &sched, now) {
             Some(n) if n <= now => due.push(name.clone()),
             Some(n) => next.push(format!("{name}@{}", cron::iso(n))),
-            None => {
-                let text = state::read(&dir.join(format!("{name}.md")));
-                let bad = doc::frontmatter_get(&text, "schedule").is_some_and(|s| !s.is_empty());
-                next.push(format!(
-                    "{name}@{}",
-                    if bad { "bad" } else { "unscheduled" }
-                ));
-            }
+            None if sched.is_empty() => next.push(format!("{name}@unscheduled")),
+            None => next.push(format!("{name}@bad")),
         }
     }
     let or_dash = |v: &[String]| {
@@ -116,6 +111,8 @@ mod tests {
                     "{\"started_epoch\":1786699999}\n".into(),
                 ),
                 ("bad.md", sched("@daily")),
+                ("nul.md", "---\nschedule: 0 * * * *\0 5\n---\n".into()), // awk cuts at the NUL
+                ("nulq.md", "---\nschedule: \"0 * * * *\"\0x\n---\n".into()),
                 ("blank.md", sched("")),
                 ("Not_Slug.md", sched("0 * * * *")),
                 ("notes.txt", String::new()),
@@ -141,7 +138,7 @@ mod tests {
             } else {
                 rotate(&st);
                 let due = sweep(&home, &st, 1_786_698_065);
-                assert_eq!(due, ["ahead", "hourly"]);
+                assert_eq!(due, ["ahead", "hourly", "nul", "nulq"]);
                 assert!(dark_wake(dark.as_os_str()));
                 let defer = format!("defer dark-wake due={}", due.join(","));
                 crate::record::tick_log(&st, 1_786_698_065, &defer);
@@ -161,7 +158,7 @@ mod tests {
         assert_eq!(homes[0], homes[1]);
         assert_eq!(homes[0].2, 0);
         assert!(homes[0].0.contains(
-            " tick docs=5 due=ahead,hourly next=bad@bad,blank@unscheduled,yearly@2027-01-01T00:00:00Z\n"
+            " tick docs=7 due=ahead,hourly,nul,nulq next=bad@bad,blank@unscheduled,yearly@2027-01-01T00:00:00Z\n"
         ));
         for p in [lit, none, dir.join("missing")] {
             assert!(!dark_wake(p.as_os_str()));
