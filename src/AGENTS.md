@@ -2,7 +2,7 @@
 
 ```stele
 kind: container
-purpose: the Rust port of bin/routine, stage 3a of the strangler — doc, cron, state and status ported (status byte-identical); run's lock, record, gates and catch prompt unwired; bin/routine runs until cutover
+purpose: the Rust port of bin/routine, stages 3a and 4a of the strangler — doc, cron, state, status ported; run's lock, record, gates, catch prompt and run --due's sweep and dark-wake gate unwired
 ```
 
 Accepted divergences from bin/routine:

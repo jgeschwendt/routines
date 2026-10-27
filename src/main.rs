@@ -1,5 +1,7 @@
 mod cron;
 mod doc;
+#[cfg_attr(not(test), expect(dead_code, reason = "stage 4 (run --due) wires it"))]
+mod due;
 #[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 mod lock;
 #[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
