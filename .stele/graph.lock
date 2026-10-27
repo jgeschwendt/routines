@@ -47,12 +47,15 @@
       "budget": null,
       "claims": [],
       "commands": {
+        "check": "mise run check",
         "test": "/bin/bash test/routine.test.sh"
       },
       "contains": [
         "bin",
         "routines",
-        "test"
+        "src",
+        "test",
+        "tests"
       ],
       "declared": {
         "allow": [],
@@ -78,7 +81,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -90,7 +93,7 @@
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -102,7 +105,7 @@
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -114,7 +117,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -126,7 +129,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -138,7 +141,7 @@
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -150,7 +153,7 @@
           "text": "no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         },
         {
@@ -162,7 +165,7 @@
           "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         }
       ],
@@ -192,7 +195,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "8a2935f20674bf567468c2321f7b89edf26acb5a"
+            "sha": "2066cb9b018acb558cddbcd4b7e4eca572cf0d26"
           }
         }
       ],
@@ -209,6 +212,23 @@
       "id": "routines",
       "kind": "container",
       "purpose": "This repo's own routines — the CI convention, where a repo's routines/ dir is its ROUTINE_HOME. A document is frontmatter, prose as the error-handler's context, and fenced sh blocks as the mechanics."
+    },
+    "src": {
+      "budget": null,
+      "claims": [],
+      "commands": {},
+      "contains": [],
+      "declared": {
+        "allow": [],
+        "decided_by": [],
+        "depends": []
+      },
+      "extracted": {
+        "imports": []
+      },
+      "id": "src",
+      "kind": "container",
+      "purpose": "the Rust port of bin/routine, stage 1 of the strangler — doc and cron ported, unwired; bin/routine stays the runner until the cutover"
     },
     "test": {
       "budget": null,
@@ -229,6 +249,23 @@
       "id": "test",
       "kind": "container",
       "purpose": "Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about thirty seconds, nearly all of it timeout and watchdog-grace sleeps."
+    },
+    "tests": {
+      "budget": null,
+      "claims": [],
+      "commands": {},
+      "contains": [],
+      "declared": {
+        "allow": [],
+        "decided_by": [],
+        "depends": []
+      },
+      "extracted": {
+        "imports": []
+      },
+      "id": "tests",
+      "kind": "container",
+      "purpose": "end-to-end suite — `routine.rs` runs the built binary and diffs its help against `bin/routine help`; the pure core's tables live in src, the cron table checked against bin/routine's bash too"
     }
   },
   "version": 2
