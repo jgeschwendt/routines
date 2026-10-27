@@ -20,7 +20,9 @@ run = [
 
 [tasks.cover]
 description = "the crate's tests under llvm-cov; anything under 100 % of lines fails"
-run = "cargo llvm-cov --fail-under-lines 100"
+# --remap-path-prefix: mbx shares compiled objects across checkouts, and an
+# unremapped object reports another worktree's source paths (73 % here).
+run = "cargo llvm-cov --remap-path-prefix --fail-under-lines 100"
 
 [tasks."cover:sh"]
 description = "line coverage of bin/routine under the suite — lists every executable line never hit; --min fails below 100 %"
