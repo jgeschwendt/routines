@@ -1,19 +1,7 @@
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "stage 1 ports the pure core unwired; the verbs that call it land next"
-    )
-)]
 mod cron;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "stage 1 ports the pure core unwired; the verbs that call it land next"
-    )
-)]
 mod doc;
+mod state;
+mod status;
 
 use std::process::ExitCode;
 
@@ -43,6 +31,18 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             ExitCode::SUCCESS
         }
+        Some("status") => match state::now() {
+            Ok(now) => {
+                let (dir, states) = state::roots();
+                status::status(&dir, &states, now);
+                ExitCode::SUCCESS
+            }
+            // bash evaluates it as arithmetic; an error there names the script's own line
+            Err(v) => {
+                eprintln!("routine: ROUTINE_NOW={v} is not an integer");
+                ExitCode::from(64)
+            }
+        },
         Some(verb) => {
             eprintln!("routine: {verb} is not ported yet — use bin/routine");
             ExitCode::from(64)
