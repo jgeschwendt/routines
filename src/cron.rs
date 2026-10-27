@@ -14,6 +14,7 @@ pub fn civil(epoch: i64) -> (i64, i64, i64, i64) {
 }
 
 /// The one timestamp shape every log line, log name and JSON field carries.
+#[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 pub fn iso(epoch: i64) -> String {
     let (y, m, d, _) = civil(epoch);
     format!(
@@ -25,7 +26,7 @@ pub fn iso(epoch: i64) -> String {
 }
 
 /// 1-18 ASCII digits: bash `$((…))` wraps from 2^63, so 18 is the safe cap.
-fn num(s: &str) -> Option<i64> {
+pub fn num(s: &str) -> Option<i64> {
     (s.len() < 19 && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse().ok())?
 }
 
