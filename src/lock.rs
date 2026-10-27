@@ -83,9 +83,8 @@ pub fn acquire(dir: &Path) -> Option<bool> {
     let g = dir.join("lock.reap");
     Some(
         take(dir)
-            || stale(dir)
-                && (fs::create_dir(&g).is_ok() || state::age(&g).is_some_and(|a| a >= 60))
-                && {
+            || if stale(dir) {
+                (fs::create_dir(&g).is_ok() || state::age(&g).is_some_and(|a| a >= 60)) && {
                     let won = take(dir)
                         || stale(dir) && {
                             let _ = fs::remove_dir_all(dir.join("lock"));
@@ -93,7 +92,10 @@ pub fn acquire(dir: &Path) -> Option<bool> {
                         };
                     let _ = fs::remove_dir_all(&g);
                     won
-                },
+                }
+            } else {
+                take(dir) // released since the mkdir: free, so taken
+            },
     )
 }
 
