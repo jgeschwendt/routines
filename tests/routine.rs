@@ -196,4 +196,28 @@ fn sync_ci_is_bin_routines() {
             !blocked
         );
     }
+    // a deleted working directory: the inherited PWD as bash keeps it, else `.` — never `/`
+    for (env, shown) in [("", "<cwd>"), ("-u PWD", ".")] {
+        let gone = tmp.join(format!("gone{}", env.len()));
+        fs::create_dir(&gone).unwrap();
+        let g = gone.display();
+        let o = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(format!(
+                "cd {g} && rmdir {g} && exec env {env} \"$0\" sync-ci"
+            ))
+            .arg(env!("CARGO_BIN_EXE_routine"))
+            .output()
+            .unwrap();
+        let out = String::from_utf8(o.stdout)
+            .unwrap()
+            .replace(&*g.to_string(), "<cwd>");
+        assert_eq!(
+            (o.status.code(), out),
+            (
+                Some(0),
+                format!("wrote {shown}/.github/workflows/routines.yaml\n")
+            )
+        );
+    }
 }
