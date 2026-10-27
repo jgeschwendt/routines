@@ -144,7 +144,7 @@ fn status_is_bin_routines() {
 }
 
 // `routine sync-ci` is bin/routine's: the same workflow in the working directory, the legacy
-// `.yml` gone, the same `wrote` line — a symlinked `PWD` kept as given — and exit 0 when the
+// `.yml` gone, the same `wrote` line — a symlinked `PWD` kept as given, a trailing `/` too — and exit 0 when the
 // write fails (a dir in its place).
 #[test]
 fn sync_ci_is_bin_routines() {
@@ -153,8 +153,8 @@ fn sync_ci_is_bin_routines() {
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(tmp.join("real")).unwrap();
     symlink("real", tmp.join("link")).unwrap();
-    let run = |prog: &str, blocked: bool, pwd: bool| {
-        let name = format!("{}-{blocked}-{pwd}", prog.len());
+    let run = |prog: &str, blocked: bool, pwd: Option<&str>| {
+        let name = format!("{}-{blocked}-{pwd:?}", prog.len());
         let wfs = tmp.join("real").join(&name).join(".github/workflows");
         fs::create_dir_all(&wfs).unwrap();
         fs::write(wfs.join("routines.yml"), "").unwrap();
@@ -167,30 +167,27 @@ fn sync_ci_is_bin_routines() {
         }
         let cwd = tmp.join("link").join(&name);
         // without a matching PWD, both fall back to the resolved path
-        c.env(
-            "PWD",
-            if pwd {
-                cwd.as_os_str()
-            } else {
-                "relative".as_ref()
-            },
+        let shown = pwd.map_or_else(
+            || cwd.canonicalize().unwrap().display().to_string(),
+            |suffix| format!("{}{suffix}", cwd.display()),
         );
+        c.env("PWD", if pwd.is_some() { &shown } else { "relative" });
         let o = c.arg("sync-ci").current_dir(&cwd).output().unwrap();
-        let shown = if pwd {
-            cwd
-        } else {
-            cwd.canonicalize().unwrap()
-        };
         (
             o.status.code(),
             String::from_utf8(o.stdout)
                 .unwrap()
-                .replace(&*shown.to_string_lossy(), "<cwd>"),
+                .replace(&shown, "<cwd>"),
             fs::read_to_string(wfs.join("routines.yaml")).ok(),
             wfs.join("routines.yml").exists(),
         )
     };
-    for (blocked, pwd) in [(false, true), (true, true), (false, false)] {
+    for (blocked, pwd) in [
+        (false, Some("")),
+        (true, Some("")),
+        (false, Some("/")),
+        (false, None),
+    ] {
         let rust = run(env!("CARGO_BIN_EXE_routine"), blocked, pwd);
         assert_eq!(rust, run("/bin/bash", blocked, pwd));
         assert_eq!(rust.1, "wrote <cwd>/.github/workflows/routines.yaml\n");
