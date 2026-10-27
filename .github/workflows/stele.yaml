@@ -19,5 +19,10 @@ jobs:
           fetch-depth: 0        # full history — freshness checks use blame
           persist-credentials: false
       - run: curl -fsSL https://raw.githubusercontent.com/jgeschwendt/stele/c7882176f321809064205db5b6474827834c5a34/scripts/install.sh | bash -s v0.3.0
+      # PATH only: AGENTS.md's `commands:` say `mise run check`, and stele's liveness
+      # check needs `mise` resolvable
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          install: false
       - run: ~/.local/bin/stele check
       - run: ~/.local/bin/stele emit --check
