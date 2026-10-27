@@ -50,27 +50,31 @@ fn take(dir: &Path) -> bool {
 /// The lock's holder is dead. Only ESRCH is dead — EPERM (Seatbelt, another uid) is a live pid
 /// this run cannot signal, and a pid that is no number is no holder. No age ever frees a live
 /// pid; an empty one is a holder between its mkdir and its pid write, reaped after a minute.
+/// Inside the guard only its holder removes a lock and a dead holder never releases, so a
+/// verdict stands while the lock it judged does: the pid re-read after the probe (its holder may
+/// have released and a fresh run taken the lock meanwhile); no lock at all is no verdict.
 pub fn stale(dir: &Path) -> bool {
     let p = holder(dir);
     if p.is_empty() {
-        return state::age(&dir.join("lock")).is_none_or(|a| a >= 60);
+        return state::age(&dir.join("lock")).is_some_and(|a| a >= 60);
     }
     let kill = || run("/bin/kill", &["-0", &p].map(OsStr::new)).stderr;
-    if !p.bytes().all(|b| b.is_ascii_digit())
+    let dead = !p.bytes().all(|b| b.is_ascii_digit())
         || String::from_utf8_lossy(&kill()).contains("No such process")
-    {
-        return true;
-    }
-    let s = state::read(&dir.join("lock/started"));
-    let (s, c) = (s.trim_end_matches('\n'), started_at(&p));
-    let c = c.trim_end_matches('\n');
-    !s.is_empty() && !c.is_empty() && c != s
+        || {
+            let s = state::read(&dir.join("lock/started"));
+            let (s, c) = (s.trim_end_matches('\n'), started_at(&p));
+            let c = c.trim_end_matches('\n');
+            !s.is_empty() && !c.is_empty() && c != s
+        };
+    dead && holder(dir) == p
 }
 
 /// `Some(true)` when this run now holds the lock, `Some(false)` when another does, `None` when
 /// `dir` is unwritable (exit 73: a sudo run's root-owned leftover is no contention). Two runs
 /// that judged one lock stale must not both reap it: the reap holds `lock.reap` and re-judges
-/// inside it; a reaper killed in that instant leaves a guard honoured a minute.
+/// inside it; a reaper killed in that instant leaves a guard honoured a minute. A lock gone by
+/// then was released, and is simply taken.
 pub fn acquire(dir: &Path) -> Option<bool> {
     let w = || run("test", &[OsStr::new("-w"), dir.as_os_str()]).status;
     if fs::create_dir_all(dir).is_err() || !w().success() {
@@ -82,10 +86,11 @@ pub fn acquire(dir: &Path) -> Option<bool> {
             || stale(dir)
                 && (fs::create_dir(&g).is_ok() || state::age(&g).is_some_and(|a| a >= 60))
                 && {
-                    let won = stale(dir) && {
-                        let _ = fs::remove_dir_all(dir.join("lock"));
-                        take(dir)
-                    };
+                    let won = take(dir)
+                        || stale(dir) && {
+                            let _ = fs::remove_dir_all(dir.join("lock"));
+                            take(dir)
+                        };
                     let _ = fs::remove_dir_all(&g);
                     won
                 },
@@ -115,7 +120,7 @@ pub fn blocked(dir: &Path, started: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{acquire, blocked, holder, release, started_at};
+    use super::{acquire, blocked, holder, release, stale, started_at};
     use crate::doc::tests::scratch;
     use std::{
         fs,
@@ -193,6 +198,7 @@ mod tests {
                 "{name}"
             );
         }
+        assert!(!stale(&scratch("lock-absent")), "no lock is no verdict");
         // a root-owned leftover: unwritable, and unmakeable beneath it
         let ro = scratch("lock-ro");
         fs::set_permissions(&ro, fs::Permissions::from_mode(0o500)).unwrap();
