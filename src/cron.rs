@@ -14,7 +14,6 @@ pub fn civil(epoch: i64) -> (i64, i64, i64, i64) {
 }
 
 /// The one timestamp shape every log line, log name and JSON field carries.
-#[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 pub fn iso(epoch: i64) -> String {
     let (y, m, d, _) = civil(epoch);
     format!(
