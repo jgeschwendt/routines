@@ -1,4 +1,4 @@
 [exhaustiveness]
-# .github is CI wiring, docs is the design page + its figures — neither is code the
-# router reaches.
-exclude = [".github", "docs"]
+# .github is CI wiring, docs is the design page + its figures, target build output —
+# none is code the router reaches.
+exclude = [".github", "docs", "target"]
