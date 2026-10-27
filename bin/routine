@@ -297,7 +297,7 @@ acquire_lock() {
   mkdir -p "$STATE_DIR" 2>/dev/null && [ -w "$STATE_DIR" ] || {
     tick_log "run $RNAME refused: $STATE_DIR not writable"; die 73 "cannot write $STATE_DIR"; }
   take_lock && return 0
-  stale || return 1
+  stale || { take_lock; return; } # released since the mkdir: free, so taken
   # two runs that judged one lock stale must not both reap it, the loser deleting the
   # winner's fresh lock: the reap holds a guard and re-judges inside it, so the loser
   # meets a live lock; a reaper killed in that instant leaves a guard honoured a minute.

@@ -462,6 +462,13 @@ EXPORTS="PATH=$SANDBOX/swapps:$PATH" runr run locked
 assert "a lock taken afresh while its reaper probed the last holder is never reaped" [ "$RC:$(cat "$RSTATE/locked/lock/pid")" = 75:2 ]
 rm -rf "$RSTATE/locked/lock"
 
+# its holder released between this run's mkdir and its first read: the lock is free, so taken
+printf '#!/bin/bash\n[ "$1" != %s ] || [ -e "$0.n" ] || { : > "$0.n"; rm -rf "${1%%/pid}"; exit 1; }; exec /bin/cat "$@"\n' \
+  "$RSTATE/locked/lock/pid" | mkfix "$SANDBOX/relcat/cat"; chmod +x "$SANDBOX/relcat/cat"
+mkdir "$RSTATE/locked/lock"; echo 1 > "$RSTATE/locked/lock/pid"
+EXPORTS="PATH=$SANDBOX/relcat:$PATH" runr run locked
+assert "a lock released as this run first reads it is taken, not waited on" [ $RC = 0 ]
+
 # the block hands its lock to pid 1 — launchd, which kill -0 refuses a user with EPERM —
 # with no start time, so ps (denied under Seatbelt, allowed under launchd) cannot decide
 doc "$RDIR/usurped.md" "on_error: fail" "echo 1 > \"\$ROUTINE_STATE_DIR/lock/pid\"; : > \"\$ROUTINE_STATE_DIR/lock/started\""
