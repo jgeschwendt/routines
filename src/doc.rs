@@ -5,12 +5,16 @@ fn dedent(line: &str, n: usize) -> &str {
     &line[line.bytes().take(n).take_while(|&b| b == b' ').count()..]
 }
 
+/// Each line, cut at its first NUL — where awk's C strings end.
+fn lines(text: &str) -> impl Iterator<Item = &str> {
+    text.split_terminator('\n')
+        .map(|l| l.split('\0').next().unwrap_or(l))
+}
+
 /// A flat `key: value` from the leading `---` fence pair; the first match wins.
 /// A BOM and blanks after a fence, invisible in an editor, never drop the frontmatter.
 pub fn frontmatter_get(text: &str, key: &str) -> Option<String> {
-    let mut lines = text
-        .split_terminator('\n')
-        .map(|l| l.trim_end_matches([' ', '\t', '\r']));
+    let mut lines = lines(text).map(|l| l.trim_end_matches([' ', '\t', '\r']));
     let first = lines.next()?;
     if first.strip_prefix('\u{feff}').unwrap_or(first) != "---" {
         return None;
@@ -47,7 +51,7 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
     // (fence char, run length, opener indent, kept)
     let mut fence: Option<(char, usize, usize, bool)> = None;
     let mut comment = false;
-    for line in text.split_terminator('\n') {
+    for line in lines(text) {
         let line = line.strip_suffix('\r').unwrap_or(line);
         let t = dedent(line, 3);
         if let Some((ch, len, ind, keep)) = fence {
@@ -86,10 +90,40 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::{extract_blocks, frontmatter_get};
+    use std::{fs, path::PathBuf, process::Command};
+
+    /// Each case's text in file `<i>` of a dir `func` beside the test binary, then one bash
+    /// there with bin/routine's own `func` sliced out running `each` per case (`$f` the file,
+    /// `$a` its arg); its NUL-ended outputs, in case order.
+    fn bash(func: &str, each: &str, cases: &[(&str, &str)]) -> (PathBuf, Vec<String>) {
+        let dir = std::env::current_exe().unwrap().with_file_name(func);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        for (i, (text, _)) in cases.iter().enumerate() {
+            fs::write(dir.join(i.to_string()), text).unwrap();
+        }
+        let script = format!(
+            r#"export LC_ALL=C; eval "$(sed -n '/^{func}()/,/^}}/p' "$0")"
+            i=0; for a; do f=$((i++)); {each}; printf '\0'; done"#
+        );
+        let out = Command::new("/bin/bash")
+            .args([
+                "-c",
+                &script,
+                concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"),
+            ])
+            .args(cases.iter().map(|c| c.1))
+            .current_dir(&dir)
+            .output()
+            .unwrap()
+            .stdout;
+        let out = String::from_utf8(out).unwrap();
+        (dir, out.split_terminator('\0').map(str::to_owned).collect())
+    }
 
     #[test]
-    fn frontmatter() {
-        for (text, key, want) in [
+    fn frontmatter_matches_the_table_and_bash() {
+        let cases = [
             (
                 "---\nschedule: 0 * * * *\n---\n",
                 "schedule",
@@ -125,14 +159,22 @@ mod tests {
             ("---\na: \"x'\n---\n", "a", Some("\"x'")),   // unmatched
             ("---\na: \"\n---\n", "a", Some("\"")),
             ("---\na: \"\"\n---\n", "a", Some("")),
-        ] {
-            assert_eq!(frontmatter_get(text, key).as_deref(), want, "{text:?}");
-        }
+            ("---\nk: a\0b\n---\n", "k", Some("a")), // awk's lines end at a NUL
+            ("---\0\nk: v\n---\n", "k", Some("v")),
+        ];
+        let ours: Vec<_> = cases.iter().map(|c| frontmatter_get(c.0, c.1)).collect();
+        let pairs: Vec<_> = cases.iter().map(|c| (c.0, c.1)).collect();
+        let theirs: Vec<_> = (bash("fm_get", r#"fm_get "$f" "$a""#, &pairs).1)
+            .into_iter()
+            .map(|v| v.strip_suffix('\n').map(str::to_owned))
+            .collect();
+        let want: Vec<_> = cases.iter().map(|c| c.2.map(str::to_owned)).collect();
+        assert_eq!((&ours, &theirs), (&want, &want));
     }
 
     #[test]
-    fn blocks() {
-        for (text, want) in [
+    fn blocks_match_the_table_and_bash() {
+        let cases = [
             // the suite's fences.md: a ~~~ and a ```` fence hold a ``` line, an inline span
             // opens nothing, an indented fence runs dedented
             (
@@ -162,8 +204,27 @@ mod tests {
             ("``\n```sh\n<!--\n```\n", &["<!--\n"]),      // a comment inside a block is content
             ("    <!--\n```sh\nx\n```\n", &["x\n"]),      // a 4-space <!-- is no comment
             ("   <!--\n```sh\nx\n```\n-->\n```sh\ny\n```\n", &["y\n"]),
-        ] {
-            assert_eq!(extract_blocks(text), want, "{text:?}");
-        }
+            ("```sh\necho a\0b\n```\n", &["echo a\n"]), // awk's lines end at a NUL
+            ("```sh\0\nx\n```\n", &["x\n"]),
+        ];
+        let ours: Vec<_> = cases.iter().map(|c| extract_blocks(c.0)).collect();
+        let texts: Vec<_> = cases.iter().map(|c| (c.0, "")).collect();
+        let (dir, counts) = bash(
+            "extract_blocks",
+            r#"mkdir "$f.d"; extract_blocks "$f" "$f.d""#,
+            &texts,
+        );
+        let theirs: Vec<Vec<_>> = (counts.iter().enumerate())
+            .map(|(i, n)| {
+                (1..=n.trim_end().parse().unwrap())
+                    .map(|k: u32| fs::read_to_string(dir.join(format!("{i}.d/{k:03}.sh"))).unwrap())
+                    .collect()
+            })
+            .collect();
+        let want: Vec<Vec<_>> = cases
+            .iter()
+            .map(|c| c.1.iter().map(|&b| b.to_owned()).collect())
+            .collect();
+        assert_eq!((&ours, &theirs), (&want, &want));
     }
 }

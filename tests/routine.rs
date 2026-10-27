@@ -1,10 +1,10 @@
-use std::process::Command;
+use std::{ffi::OsStr, os::unix::ffi::OsStrExt, process::Command};
 
 // The usage text is the runner's own: every help spelling prints it byte for byte,
 // and every verb not yet ported refuses with 64.
 #[test]
 fn help_is_bin_routines_and_other_verbs_wait() {
-    let run = |args: &[&str]| {
+    fn run(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> (Option<i32>, String, String) {
         let o = Command::new(env!("CARGO_BIN_EXE_routine"))
             .args(args)
             .output()
@@ -14,7 +14,7 @@ fn help_is_bin_routines_and_other_verbs_wait() {
             String::from_utf8(o.stdout).unwrap(),
             String::from_utf8(o.stderr).unwrap(),
         )
-    };
+    }
     let bash = Command::new("/bin/bash")
         .args(["bin/routine", "help"])
         .current_dir(env!("CARGO_MANIFEST_DIR"))
@@ -25,14 +25,20 @@ fn help_is_bin_routines_and_other_verbs_wait() {
     for args in [&[][..], &[""], &["help"], &["-h"], &["--help"]] {
         assert_eq!(run(args), (Some(0), usage.clone(), String::new()));
     }
-    assert_eq!(
-        run(&["install"]),
-        (
-            Some(64),
-            String::new(),
-            "routine: install is not ported yet — use bin/routine\n".into()
-        )
-    );
+    // a non-UTF-8 verb is bash's 64 too, never a panic
+    for (verb, shown) in [
+        (OsStr::new("install"), "install"),
+        (OsStr::from_bytes(b"\xff"), "\u{fffd}"),
+    ] {
+        assert_eq!(
+            run([verb]),
+            (
+                Some(64),
+                String::new(),
+                format!("routine: {shown} is not ported yet — use bin/routine\n")
+            )
+        );
+    }
 }
 
 // `routine status` is bin/routine's byte for byte — stdout, stderr and exit code — for every
