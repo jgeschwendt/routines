@@ -1,16 +1,24 @@
 //! `routine sync-ci` — `cmd_sync_ci` of bin/routine. The workflow is bin/routine's own heredoc,
 //! compiled in, so the two cannot drift; the cutover moves the text here.
 
-use std::{env, fs};
+use std::{env, fs, os::unix::fs::MetadataExt, path::PathBuf};
 
 const SRC: &str = include_str!("../bin/routine");
+
+/// bash's `$PWD`: the inherited `PWD` when absolute and naming the working directory — a
+/// symlinked path stays as given — else the resolved one.
+fn pwd() -> PathBuf {
+    let id = |p: &PathBuf| fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
+    env::var_os("PWD")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute() && id(p).is_some_and(|i| id(&".".into()) == Some(i)))
+        .unwrap_or_else(|| env::current_dir().unwrap_or_default())
+}
 
 /// Writes `.github/workflows/routines.yaml` under the working directory and drops the pre-.yaml
 /// `routines.yml`, which would double-tick. A failed write warns and still exits 0, as bash's.
 pub fn sync_ci() {
-    let dir = env::current_dir()
-        .unwrap_or_default()
-        .join(".github/workflows");
+    let dir = pwd().join(".github/workflows");
     let wf = dir.join("routines.yaml");
     let body = SRC.split_once("cat > \"$wf\" <<'EOF'\n").unwrap().1;
     let _ = fs::create_dir_all(&dir);
