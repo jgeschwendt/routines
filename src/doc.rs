@@ -88,22 +88,33 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{extract_blocks, frontmatter_get};
     use std::{fs, path::PathBuf, process::Command};
 
-    /// Each case's text in file `<i>` of a dir `func` beside the test binary, then one bash
-    /// there with bin/routine's own `func` sliced out running `each` per case (`$f` the file,
-    /// `$a` its arg); its NUL-ended outputs, in case order.
-    fn bash(func: &str, each: &str, cases: &[(&str, &str)]) -> (PathBuf, Vec<String>) {
-        let dir = std::env::current_exe().unwrap().with_file_name(func);
+    /// A fresh, empty dir `name` beside the test binary.
+    pub(crate) fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::current_exe().unwrap().with_file_name(name);
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// Each case's text in file `<i>` of a scratch dir named for the first of `funcs`, then one
+    /// bash there with bin/routine's own `funcs` (space-separated) sliced out running `each` per
+    /// case (`$f` the file, `$a` its arg, `$0` bin/routine); its NUL-ended outputs, in case order.
+    /// A one-line function's slice runs on to the next `}` line: name it before the function there.
+    pub(crate) fn bash(funcs: &str, each: &str, cases: &[(&str, &str)]) -> (PathBuf, Vec<String>) {
+        let dir = scratch(funcs.split(' ').next().unwrap());
         for (i, (text, _)) in cases.iter().enumerate() {
             fs::write(dir.join(i.to_string()), text).unwrap();
         }
+        let sed: String = funcs
+            .split(' ')
+            .flat_map(|f| ["/^", f, "()/,/^}/{p;d;};"])
+            .collect();
         let script = format!(
-            r#"export LC_ALL=C; eval "$(sed -n '/^{func}()/,/^}}/p' "$0")"
+            r#"export LC_ALL=C; eval "$(sed -n '{sed}' "$0")"
             i=0; for a; do f=$((i++)); {each}; printf '\0'; done"#
         );
         let out = Command::new("/bin/bash")

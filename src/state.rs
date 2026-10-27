@@ -68,6 +68,21 @@ pub fn json_get(file: &Path, key: &str) -> String {
     vals.join("\n").trim_end_matches('\n').to_owned()
 }
 
+/// Whole seconds since `p` was modified, a future stamp 0, as macOS find's `-mmin`/`-mtime`
+/// count them (whole minutes and days, floored); `None` when `p` is gone. Never follows a symlink.
+pub fn age(p: &Path) -> Option<u64> {
+    let m = fs::symlink_metadata(p).ok()?.modified().ok()?;
+    Some(m.elapsed().map_or(0, |d| d.as_secs()))
+}
+
+/// A routine name: `[a-z0-9-]`, never empty, never `-` first (`""|-*|*[!a-z0-9-]*`).
+pub fn slug(n: &str) -> bool {
+    !n.is_empty()
+        && !n.starts_with('-')
+        && n.bytes()
+            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-'))
+}
+
 /// A file's text as bash 3.2's `$(cat …)` holds it: NUL bytes dropped, empty when unreadable.
 pub fn read(file: &Path) -> String {
     String::from_utf8_lossy(&fs::read(file).unwrap_or_default()).replace('\0', "")
@@ -95,11 +110,7 @@ pub fn routines(dir: &Path) -> Vec<String> {
                     return None;
                 }
                 "dangling symlink"
-            } else if n.starts_with('-')
-                || !n
-                    .bytes()
-                    .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-'))
-            {
+            } else if !slug(n) {
                 "name not a slug"
             } else {
                 return Some(n.to_owned());
