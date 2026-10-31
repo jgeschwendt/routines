@@ -1,17 +1,73 @@
-//! `routine run --due`'s sweep short of dispatch: `cmd_due`'s due.log rotation, its tick line
-//! and `dark_wake` of bin/routine. Dispatch is stage 4b.
+//! `routine run --due` — `cmd_due`, `due_stop` and `dark_wake` of bin/routine: due.log's
+//! rotation, the sweep and its tick line, the dark-wake gate, then every due routine at once,
+//! each a `routine run <name>` child, waited for in turn.
 
-use crate::{cron, record, state, status};
+use crate::{cron, record, state, status, sys};
 use std::{
+    env,
     ffi::OsStr,
     fs,
+    os::unix::process::ExitStatusExt,
     path::Path,
     process::{Command, Stdio},
+    sync::{Mutex, PoisonError},
 };
+
+/// The dispatched pids, and the stop's exit code once a signal lands.
+static KIDS: Mutex<(Vec<i32>, Option<i32>)> = Mutex::new((Vec::new(), None));
+
+fn kids() -> std::sync::MutexGuard<'static, (Vec<i32>, Option<i32>)> {
+    KIDS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// `cmd_due`: 1 when any due routine failed. launchd stops the tick with a TERM to it alone,
+/// then KILLs its group, so a HUP, INT or TERM forwards TERM to every routine — a background
+/// child ignores INT — dispatches no more, and exits 128 + the signal once all are reaped.
+pub fn due(now: i64) -> i32 {
+    let (dir, states, _) = state::roots();
+    let log = |m: &str| record::tick_log(&states, state::now().unwrap_or(now), m);
+    rotate(&states);
+    let due = sweep(&dir, &states, now);
+    sys::catch(|sig| {
+        let mut k = kids();
+        k.1 = Some(128 + sig);
+        k.0.iter().for_each(|&p| _ = sys::signal(p, sys::TERM));
+    });
+    let pmset = state::var("ROUTINE_PMSET").unwrap_or_else(|| "pmset".into());
+    // a signal during the probe falls through to the dispatch, which then starts none
+    if !due.is_empty() && dark_wake(&pmset) && kids().1.is_none() {
+        log(&format!("defer dark-wake due={}", due.join(",")));
+        return 0;
+    }
+    let exe = env::current_exe().unwrap_or_default();
+    // spawned under the lock: a signal either sees the pid or stops the spawn
+    let runs: Vec<_> = (due.iter())
+        .filter_map(|name| {
+            let mut k = kids();
+            k.1.is_none().then(|| {
+                log(&format!("dispatch {name}"));
+                let mut c = Command::new(&exe);
+                let child = sys::background(c.args(["run", name]).stdin(Stdio::null())).spawn();
+                k.0.extend(child.as_ref().map(|c| c.id().cast_signed()));
+                (name, child)
+            })
+        })
+        .collect();
+    let mut rc = 0;
+    for (name, child) in runs {
+        let s = child.and_then(|mut c| c.wait());
+        let code = s.map_or(127, |s| s.code().unwrap_or(128 + s.signal().unwrap_or(0)));
+        if kids().1.is_none() {
+            rc |= i32::from(code != 0);
+            log(&format!("dispatched {name} exit={code}"));
+        }
+    }
+    kids().1.unwrap_or(rc)
+}
 
 /// launchd holds due.log's fd open (`StandardOutPath`), so a rename orphans every later write
 /// into an unlinked inode: past 5 MB it is copied to `due.log.1` and truncated.
-pub fn rotate(states: &Path) {
+fn rotate(states: &Path) {
     let f = states.join("due.log");
     if fs::metadata(&f).is_ok_and(|m| m.len() > 5_242_880)
         && fs::copy(&f, states.join("due.log.1")).is_ok()
@@ -22,7 +78,7 @@ pub fn rotate(states: &Path) {
 
 /// The due routines in byte order, journalled as one tick line — a skipped document ahead of
 /// it; a rejected schedule reads apart from an on-demand doc.
-pub fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
+fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
     let names = state::routines(dir, |m| record::tick_log(states, now, m));
     let (mut due, mut next) = (vec![], vec![]);
     for name in &names {
@@ -53,7 +109,7 @@ pub fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
 
 /// A Power Nap dark wake: `pmset -g systemstate` lists the capabilities and Graphics is not
 /// among them. No such line — the probe missing, failing or unparseable — fails open.
-pub fn dark_wake(pmset: &OsStr) -> bool {
+fn dark_wake(pmset: &OsStr) -> bool {
     let out = Command::new(pmset)
         .args(["-g", "systemstate"])
         .stderr(Stdio::null())
@@ -66,112 +122,4 @@ pub fn dark_wake(pmset: &OsStr) -> bool {
         .filter(|l| l.starts_with("Current System Capabilities are:"))
         .peekable();
     caps.peek().is_some() && !caps.any(|l| l.contains("Graphics"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{dark_wake, rotate, sweep};
-    use crate::doc::tests::scratch;
-    use std::{fs, os::unix::fs::symlink, process::Command};
-
-    // A dark wake makes bin/routine's `run --due` sweep, journal and defer without dispatching,
-    // so one fixture home per side compares rotation, the tick line and the gate end to end.
-    #[test]
-    fn sweep_and_gate_match_bin_routine() {
-        let dir = scratch("due");
-        let pmset = |name: &str, body: &str| {
-            let p = dir.join(name);
-            fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-            Command::new("chmod").arg("+x").arg(&p).status().unwrap();
-            p
-        };
-        let dark = pmset(
-            "dark",
-            "echo 'Current System Capabilities are: CPU Network'",
-        );
-        let lit = pmset(
-            "lit",
-            "printf 'x\\nCurrent System Capabilities are: CPU Graphics\\n'",
-        );
-        let none = pmset("none", "echo 'Current Power State: 4'; exit 1");
-        let homes = ["sh", "rs"].map(|side| {
-            let home = dir.join(side);
-            let st = home.join(".state");
-            let sched = |s: &str| format!("---\nschedule: \"{s}\"\n---\n");
-            for (path, body) in [
-                ("hourly.md", sched("0 * * * *")),
-                ("yearly.md", sched("0 0 1 1 *")),
-                (
-                    ".state/yearly/last-run.json",
-                    "{\"started_epoch\":1786698000}\n".into(),
-                ),
-                ("ahead.md", sched("0 0 1 1 *")),
-                (
-                    ".state/ahead/last-run.json",
-                    "{\"started_epoch\":1786699999}\n".into(),
-                ),
-                ("bad.md", sched("@daily")),
-                ("nul.md", "---\nschedule: 0 * * * *\0 5\n---\n".into()), // awk cuts at the NUL
-                ("nulq.md", "---\nschedule: \"0 * * * *\"\0x\n---\n".into()),
-                ("blank.md", sched("")),
-                ("Not_Slug.md", sched("0 * * * *")),
-                ("notes.txt", String::new()),
-                (".state/due.log", "x".repeat(5_242_881)),
-            ] {
-                fs::create_dir_all(home.join(path).parent().unwrap()).unwrap();
-                fs::write(home.join(path), body).unwrap();
-            }
-            symlink("gone.md", home.join("dangling.md")).unwrap();
-            if side == "sh" {
-                let o = Command::new("/bin/bash")
-                    .args([
-                        concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"),
-                        "run",
-                        "--due",
-                    ])
-                    .env("ROUTINE_HOME", &home)
-                    .env("ROUTINE_NOW", "1786698065")
-                    .env("ROUTINE_PMSET", &dark)
-                    .output()
-                    .unwrap();
-                assert_eq!((o.status.code(), o.stdout), (Some(0), vec![]));
-            } else {
-                rotate(&st);
-                let due = sweep(&home, &st, 1_786_698_065);
-                assert_eq!(due, ["ahead", "hourly", "nul", "nulq"]);
-                assert!(dark_wake(dark.as_os_str()));
-                let defer = format!("defer dark-wake due={}", due.join(","));
-                crate::record::tick_log(&st, 1_786_698_065, &defer);
-            }
-            let mut names: Vec<_> = (fs::read_dir(&st).unwrap())
-                .map(|e| e.unwrap().file_name().into_string().unwrap())
-                .collect();
-            names.sort();
-            let size = |f: &str| fs::metadata(st.join(f)).unwrap().len();
-            (
-                fs::read_to_string(st.join("tick.log")).unwrap(),
-                names,
-                size("due.log"),
-                size("due.log.1"),
-            )
-        });
-        assert_eq!(homes[0], homes[1]);
-        assert_eq!(homes[0].2, 0);
-        assert!(homes[0].0.contains(
-            " tick docs=7 due=ahead,hourly,nul,nulq next=bad@bad,blank@unscheduled,yearly@2027-01-01T00:00:00Z\n"
-        ));
-        for p in [lit, none, dir.join("missing")] {
-            assert!(!dark_wake(p.as_os_str()));
-        }
-        // under 5 MB, and no due.log at all, rotation leaves the dir as it was
-        rotate(&dir.join("rs/.state"));
-        rotate(&dir.join("nowhere"));
-        assert!(!dir.join("nowhere").exists());
-        // no home at all: an empty sweep, still journalled
-        assert!(sweep(&dir.join("nowhere"), &dir.join("nowhere"), 0).is_empty());
-        assert_eq!(
-            fs::read_to_string(dir.join("nowhere/tick.log")).unwrap(),
-            "1970-01-01T00:00:00Z tick docs=0 due=- next=-\n"
-        );
-    }
 }

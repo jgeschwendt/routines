@@ -1,44 +1,44 @@
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, process::Command};
 
-// The usage text is the runner's own: every help spelling prints it byte for byte,
-// and every verb not yet ported (`run --due`) refuses with 64.
+// The usage text is the runner's own: every help spelling prints it byte for byte, and an
+// unknown verb names itself above it on stderr with bash's 64.
 #[test]
-fn help_is_bin_routines_and_other_verbs_wait() {
-    fn run(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> (Option<i32>, String, String) {
-        let o = Command::new(env!("CARGO_BIN_EXE_routine"))
+fn help_is_bin_routines() {
+    fn run(args: &[&OsStr], bash: bool) -> (Option<i32>, String, String) {
+        let mut c = Command::new(if bash { "/bin/bash" } else { PORT });
+        let o = (if bash { c.arg(BASH) } else { &mut c })
             .args(args)
             .output()
             .unwrap();
         (
             o.status.code(),
             String::from_utf8(o.stdout).unwrap(),
-            String::from_utf8(o.stderr).unwrap(),
+            String::from_utf8_lossy(&o.stderr).into_owned(),
         )
     }
-    let bash = Command::new("/bin/bash")
-        .args(["bin/routine", "help"])
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .output()
-        .unwrap();
-    let usage = String::from_utf8(bash.stdout).unwrap();
-    assert!(bash.status.success() && usage.starts_with("routine — "));
-    for args in [&[][..], &[""], &["help"], &["-h"], &["--help"]] {
-        assert_eq!(run(args), (Some(0), usage.clone(), String::new()));
-    }
-    // a non-UTF-8 verb is bash's 64 too, never a panic
-    for (args, shown) in [
-        (&[OsStr::new("run"), OsStr::new("--due")][..], "run"),
-        (&[OsStr::from_bytes(b"\xff")], "\u{fffd}"),
+    let usage = run(&[], true).1;
+    assert!(usage.starts_with("routine — "));
+    for args in [
+        &[][..],
+        &[""],
+        &["help"],
+        &["-h"],
+        &["--help"],
+        &["bogus", "x"],
     ] {
-        assert_eq!(
-            run(args),
-            (
-                Some(64),
-                String::new(),
-                format!("routine: {shown} is not ported yet — use bin/routine\n")
-            )
-        );
+        let args: Vec<_> = args.iter().map(OsStr::new).collect();
+        assert_eq!(run(&args, false), run(&args, true));
     }
+    // a non-UTF-8 verb reads lossily, never a panic
+    let ff = run(&[OsStr::from_bytes(b"\xff")], false);
+    assert_eq!(
+        ff,
+        (
+            Some(64),
+            String::new(),
+            format!("routine: unknown command \u{fffd}\n{usage}")
+        )
+    );
 }
 
 // `routine status` is bin/routine's byte for byte — stdout, stderr and exit code — for every
@@ -694,4 +694,190 @@ fn run_times_out() {
             }
         }
     });
+}
+
+/// What a tick leaves in `home`'s state: tick.log, then each entry's name, and for a routine
+/// its record and what its dir holds.
+fn due_state(home: &std::path::Path) -> Vec<String> {
+    use std::fs;
+    let st = home.join(".state");
+    let mut out = vec![masked(&fs::read(st.join("tick.log")).unwrap(), home)];
+    let mut names: Vec<_> = (fs::read_dir(&st).unwrap())
+        .map(|e| e.unwrap().path())
+        .collect();
+    names.sort();
+    for p in names {
+        let mut inner: Vec<_> = (fs::read_dir(&p).into_iter().flatten())
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n != "pid")
+            .collect();
+        inner.sort();
+        let rec = fs::read_to_string(p.join("last-run.json")).unwrap_or_default();
+        let size = fs::metadata(&p).unwrap().len() * u64::from(p.is_file());
+        out.push(
+            format!("{} {size} {inner:?} {rec}", p.display())
+                .replace(&*home.to_string_lossy(), "<h>"),
+        );
+    }
+    out
+}
+
+/// A tick's home: `docs` a line per routine, `name|schedule|block` (an empty block `true`);
+/// `later` and `yearly` ran at 09:00, `ahead` past the clock, `c`'s lock is held, and a dark
+/// home holds a NUL schedule, a non-doc, a dangling link and a due.log past 5 MB.
+fn due_home(home: &std::path::Path, docs: &str) {
+    use std::{fs, os::unix::fs::symlink};
+    let st = home.join(".state");
+    for doc in docs.lines() {
+        let [name, sched, block] = [0, 1, 2].map(|i| doc.split('|').nth(i).unwrap());
+        let fm = format!("schedule: \"{sched}\"\non_error: fail");
+        let block = if block.is_empty() { "true" } else { block };
+        routine_doc(home, name, &fm, Some(block));
+        let dir = st.join(name);
+        let epoch = match name {
+            "c" => {
+                fs::create_dir_all(dir.join("lock")).unwrap();
+                fs::write(dir.join("lock/pid"), "1\n").unwrap(); // EPERM: alive
+                continue;
+            }
+            "later" | "yearly" => 1_786_698_000,
+            "ahead" => 1_786_699_999,
+            _ => continue,
+        };
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("last-run.json"),
+            format!("{{\"started_epoch\":{epoch}}}\n"),
+        )
+        .unwrap();
+    }
+    if docs.contains("Not_Slug") {
+        fs::write(home.join("nul.md"), "---\nschedule: 0 * * * *\0 5\n---\n").unwrap();
+        fs::write(home.join("notes.txt"), "").unwrap();
+        symlink("gone.md", home.join("dangling.md")).unwrap();
+        fs::write(st.join("due.log"), "x".repeat(5_242_881)).unwrap();
+    }
+}
+
+// `routine run --due` is bin/routine's: exit code, stdout and stderr (line by line, the
+// routines being concurrent), tick.log, and each routine's record and state — an empty home,
+// nothing due, one due under a full wake, several with one failing and one held under a pmset
+// that fails open, and a dark wake that defers, over every kind of skipped, bad and
+// unscheduled doc and a due.log past 5 MB.
+#[test]
+fn due_is_bin_routines() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let tmp = sandbox("due");
+    let pmset = |name: &str, body: &str| {
+        let p = tmp.join(name);
+        fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        p.to_string_lossy().into_owned()
+    };
+    let caps = "Current System Capabilities are:";
+    let (dark, lit, open) = (
+        pmset("dark", &format!("echo '{caps} CPU Network'")),
+        pmset("lit", &format!("printf 'x\\n{caps} CPU Graphics\\n'")),
+        pmset("open", "echo 'Current Power State: 4'; exit 1"),
+    );
+    let t = "2026-08-14T09:00:00Z";
+    // (case, pmset, docs, what tick.log must hold)
+    let cases = [
+        ("empty", &dark, "", " due=- ".into()),
+        (
+            "none",
+            &dark,
+            "manual||\nlater|0 0 1 1 *|",
+            " due=- ".into(),
+        ),
+        (
+            "one",
+            &lit,
+            "hourly|0 * * * *|echo out; echo err >&2",
+            "dispatched hourly exit=0\n".into(),
+        ),
+        (
+            "several",
+            &open,
+            "a|0 * * * *|echo a\nb|0 * * * *|exit 3\nc|0 * * * *|",
+            format!("dispatched b exit=3\n{t} dispatched c exit=75\n"),
+        ),
+        (
+            "dark",
+            &dark,
+            "hourly|0 * * * *|\nyearly|0 0 1 1 *|\nahead|0 0 1 1 *|\nbad|@daily|\nblank||\nNot_Slug|0 * * * *|",
+            format!(
+                " due=ahead,hourly,nul next=bad@bad,blank@unscheduled,yearly@2027-01-01T00:00:00Z\n\
+                 {t} defer dark-wake due=ahead,hourly,nul\n"
+            ),
+        ),
+    ];
+    for (case, pmset, docs, want) in cases {
+        let [sh, rs] = [BASH, PORT].map(|prog| {
+            let home = tmp.join(format!("{case}-{}", prog.len()));
+            due_home(&home, docs);
+            let env = [("ROUTINE_PMSET", pmset.clone())];
+            let o = routine_cmd(prog, &home, &["run", "--due"], &env)
+                .output()
+                .unwrap();
+            let lines = |b: &[u8]| {
+                let mut l: Vec<_> = masked(b, &home).lines().map(String::from).collect();
+                l.sort();
+                l
+            };
+            (
+                o.status.code(),
+                lines(&o.stdout),
+                lines(&o.stderr),
+                due_state(&home),
+            )
+        });
+        assert_eq!(sh, rs, "{case}");
+        assert_eq!(rs.0, Some(i32::from(case == "several")), "{case}");
+        assert!(rs.3[0].contains(&want), "{case}: {}", rs.3[0]);
+    }
+}
+
+// A TERM to the tick alone (launchd's stop), or an INT to its whole group (a ^C), reaches each
+// running routine as TERM — a background routine ignores INT — which records 143 and kills its
+// block; the tick exits 143 or 130 with no `dispatched` line, as bin/routine does.
+#[test]
+fn due_stops_on_a_signal() {
+    use std::{os::unix::process::CommandExt, thread, time::Duration};
+    let tmp = sandbox("due-signal");
+    let block = r#"echo $$ > "$ROUTINE_STATE_DIR/pid"; exec sleep 30"#;
+    let sides = [BASH, PORT].map(|prog| {
+        [("TERM", false, 143), ("INT", true, 130)].map(|(sig, group, code)| {
+            let home = tmp.join(format!("{}-{sig}", prog.len()));
+            for n in ["a", "b"] {
+                routine_doc(
+                    &home,
+                    n,
+                    "schedule: \"* * * * *\"\non_error: fail",
+                    Some(block),
+                );
+            }
+            let mut c = routine_cmd(prog, &home, &["run", "--due"], &[])
+                .process_group(0)
+                .stdout(std::process::Stdio::null())
+                .spawn()
+                .unwrap();
+            let st = home.join(".state");
+            while !(st.join("a/pid").exists() && st.join("b/pid").exists()) {
+                thread::sleep(Duration::from_millis(50));
+            }
+            let pid = format!("{}{}", if group { "-" } else { "" }, c.id());
+            Command::new("kill")
+                .args([&format!("-{sig}"), "--", &pid])
+                .status()
+                .unwrap();
+            assert_eq!(c.wait().unwrap().code(), Some(code), "{prog} {sig}");
+            assert!(!alive(&st.join("a/pid")) && !alive(&st.join("b/pid")));
+            let state = due_state(&home);
+            assert!(state[1].contains("\"exit\":143,") && state[2].contains("\"exit\":143,"));
+            state
+        })
+    });
+    assert_eq!(sides[0], sides[1]);
+    assert!(!sides[1][0][0].contains("dispatched"));
 }

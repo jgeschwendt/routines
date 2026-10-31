@@ -27,13 +27,13 @@ The design is `docs/index.html`; `bin/routine help` lists the verbs, exit codes 
 
 ## Map
 
-| node     | kind      | purpose                                                                                                                                                                                                 | unfold                                                 |
-| -------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| bin      | container | The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run.                                                                      | `stele unfold bin` · or read `bin/AGENTS.md`           |
-| routines | container | This repo's own routines — the CI convention, where a repo's routines/ dir is its ROUTINE_HOME. A document is frontmatter, prose as the error-handler's context, and fenced sh blocks as the mechanics. | `stele unfold routines` · or read `routines/AGENTS.md` |
-| src      | container | the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap), run <name> ported; the due sweep unwired; unsafe only in src/sys.rs; bin/routine runs until cutover         | `stele unfold src` · or read `src/AGENTS.md`           |
-| test     | container | Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about thirty seconds, nearly all of it timeout and watchdog-grace sleeps.                     | `stele unfold test` · or read `test/AGENTS.md`         |
-| tests    | container | end-to-end suite — `routine.rs` diffs the built binary's help, status, run <name> (gates, catch, signals, timeouts), sync-ci and tick plist against `bin/routine`; setup and upgrade run on stubs       | `stele unfold tests` · or read `tests/AGENTS.md`       |
+| node     | kind      | purpose                                                                                                                                                                                                  | unfold                                                 |
+| -------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| bin      | container | The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run.                                                                       | `stele unfold bin` · or read `bin/AGENTS.md`           |
+| routines | container | This repo's own routines — the CI convention, where a repo's routines/ dir is its ROUTINE_HOME. A document is frontmatter, prose as the error-handler's context, and fenced sh blocks as the mechanics.  | `stele unfold routines` · or read `routines/AGENTS.md` |
+| src      | container | the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap), run <name> and run --due ported; unsafe only in src/sys.rs; bin/routine runs until cutover                   | `stele unfold src` · or read `src/AGENTS.md`           |
+| test     | container | Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about thirty seconds, nearly all of it timeout and watchdog-grace sleeps.                      | `stele unfold test` · or read `test/AGENTS.md`         |
+| tests    | container | end-to-end suite — `routine.rs` diffs the built binary's help, status, run <name> (gates, catch, signals, timeouts), run --due, sync-ci and tick plist against `bin/routine`; setup and upgrade on stubs | `stele unfold tests` · or read `tests/AGENTS.md`       |
 
 ## Indexes
 

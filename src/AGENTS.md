@@ -2,14 +2,14 @@
 
 ```stele
 kind: container
-purpose: the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap), run <name> ported; the due sweep unwired; unsafe only in src/sys.rs; bin/routine runs until cutover
+purpose: the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap), run <name> and run --due ported; unsafe only in src/sys.rs; bin/routine runs until cutover
 ```
 
 Accepted divergences from bin/routine:
 
 - a leading-zero number is decimal, where bash reads `08`/`09` as bad octal
 - a debug build panics on i64 overflow near `i64::MAX`, where bash wraps (a release build wraps alike)
-- bytes that aren't UTF-8 in docs and state read lossily — the runner writes ASCII
+- bytes that aren't UTF-8 in docs, state and arguments read lossily — the runner writes ASCII
 - a non-integer `ROUTINE_NOW` exits 64, where bash's arithmetic error names its own line; a blank-padded or `+`-signed one is written normalised, where bash writes it raw
 - an unreadable doc reads as empty, without awk's stderr line
 - a lock pid that isn't bare digits is no holder, where bash's builtin kill also takes a signed or blank-padded live pid
