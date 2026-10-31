@@ -45,7 +45,6 @@ pub fn frontmatter_get(text: &str, key: &str) -> Option<String> {
 /// tilde runs of 3+, indented 0-3; only a run of the same character at least as long closes. A
 /// backtick info string holding a backtick is prose, never an opener; a fence inside an
 /// HTML comment is disabled.
-#[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 pub fn extract_blocks(text: &str) -> Vec<String> {
     let mut blocks: Vec<String> = Vec::new();
     // (fence char, run length, opener indent, kept)

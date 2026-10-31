@@ -2,16 +2,14 @@ mod cron;
 mod doc;
 #[cfg_attr(not(test), expect(dead_code, reason = "stage 4 (run --due) wires it"))]
 mod due;
-#[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 mod lock;
-#[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 mod record;
-#[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 mod run;
 mod setup;
 mod state;
 mod status;
 mod sync_ci;
+mod sys;
 
 use std::process::ExitCode;
 
@@ -47,18 +45,25 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             0
         }
-        ["status", ..] => match state::now() {
-            Ok(now) => {
-                let (dir, states, _) = state::roots();
-                status::status(&dir, &states, now);
-                0
+        ["run"] | ["run", ""] => {
+            eprint!("{USAGE}");
+            64
+        }
+        [v @ ("status" | "run"), rest @ ..] if *v == "status" || rest[0] != "--due" => {
+            match state::now() {
+                Ok(now) if *v == "run" => run::run(rest[0], now),
+                Ok(now) => {
+                    let (dir, states, _) = state::roots();
+                    status::status(&dir, &states, now);
+                    0
+                }
+                // bash evaluates it as arithmetic; an error there names the script's own line
+                Err(v) => {
+                    eprintln!("routine: ROUTINE_NOW={v} is not an integer");
+                    64
+                }
             }
-            // bash evaluates it as arithmetic; an error there names the script's own line
-            Err(v) => {
-                eprintln!("routine: ROUTINE_NOW={v} is not an integer");
-                64
-            }
-        },
+        }
         ["sync-ci", ..] => {
             sync_ci::sync_ci();
             0

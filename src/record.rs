@@ -62,7 +62,7 @@ pub fn degrade(dir: &Path, now: i64) {
 /// The run's record: `last-run.json` renamed into place (a crash mid-write never leaves an
 /// empty record, read as never run), the same line appended to `runs.jsonl`. A clean exit
 /// clears `degraded` before stamping, so the record and the marker never disagree.
-pub fn record(dir: &Path, started: i64, finished: i64, rc: u8) {
+pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
     let _ = fs::create_dir_all(dir);
     if rc == 0 {
         let _ = fs::remove_file(dir.join("degraded"));

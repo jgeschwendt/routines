@@ -33,5 +33,5 @@ description = "render every Claude Design artboard under docs/figures/project/ t
 run = "sh docs/figures/export.sh"
 
 [tasks."test:rust"]
-description = "the bash suite with every verb the Rust port has landed (status, sync-ci) sent to target/debug/routine"
+description = "the bash suite with every verb the Rust port has landed (run <name>, status, sync-ci) sent to target/debug/routine"
 run = "cargo build && ROUTINE_RUST=$PWD/target/debug/routine /bin/bash test/routine.test.sh"
