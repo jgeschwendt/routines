@@ -8,37 +8,37 @@
     },
     "catch-retry": {
       "file": "bin/routine",
-      "line": 367,
+      "line": 369,
       "node": "bin"
     },
     "dark-wake-gate": {
       "file": "bin/routine",
-      "line": 565,
+      "line": 567,
       "node": "bin"
     },
     "due-derivation": {
       "file": "bin/routine",
-      "line": 192,
+      "line": 194,
       "node": "bin"
     },
     "due-tick": {
       "file": "bin/routine",
-      "line": 580,
+      "line": 582,
       "node": "bin"
     },
     "last-run-contract": {
       "file": "bin/routine",
-      "line": 248,
+      "line": 250,
       "node": "bin"
     },
     "no-process-substitution": {
       "file": "bin/routine",
-      "line": 532,
+      "line": 534,
       "node": "bin"
     },
     "parallel-due": {
       "file": "bin/routine",
-      "line": 607,
+      "line": 609,
       "node": "bin"
     }
   },
@@ -81,7 +81,7 @@
           "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -89,11 +89,11 @@
           "enforced_by": null,
           "id": "catch-retry",
           "kind": "invariant",
-          "resolved": "bin/routine:367",
+          "resolved": "bin/routine:369",
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -101,11 +101,11 @@
           "enforced_by": null,
           "id": "dark-wake-gate",
           "kind": "invariant",
-          "resolved": "bin/routine:565",
+          "resolved": "bin/routine:567",
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -113,11 +113,11 @@
           "enforced_by": null,
           "id": "due-derivation",
           "kind": "invariant",
-          "resolved": "bin/routine:192",
+          "resolved": "bin/routine:194",
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -125,11 +125,11 @@
           "enforced_by": null,
           "id": "due-tick",
           "kind": "invariant",
-          "resolved": "bin/routine:580",
+          "resolved": "bin/routine:582",
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -137,11 +137,11 @@
           "enforced_by": null,
           "id": "last-run-contract",
           "kind": "invariant",
-          "resolved": "bin/routine:248",
+          "resolved": "bin/routine:250",
           "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -149,11 +149,11 @@
           "enforced_by": null,
           "id": "no-process-substitution",
           "kind": "hazard",
-          "resolved": "bin/routine:532",
+          "resolved": "bin/routine:534",
           "text": "no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         },
         {
@@ -161,11 +161,11 @@
           "enforced_by": null,
           "id": "parallel-due",
           "kind": "invariant",
-          "resolved": "bin/routine:607",
+          "resolved": "bin/routine:609",
           "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         }
       ],
@@ -195,7 +195,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "5af4190588678abd04d2e50d57dcc56a2fecf4ae"
+            "sha": "42851f81893ff04bf7efdaea3ad4f826c082e55d"
           }
         }
       ],
@@ -228,7 +228,7 @@
       },
       "id": "src",
       "kind": "container",
-      "purpose": "the Rust port of bin/routine — doc, cron, state, status (byte-identical) and sync-ci ported; run's lock, record, gates, catch prompt and run --due's sweep unwired; bin/routine runs until cutover"
+      "purpose": "the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap) ported; run's lock, record, gates, catch prompt and due sweep unwired; bin/routine runs until cutover"
     },
     "test": {
       "budget": null,
@@ -265,7 +265,7 @@
       },
       "id": "tests",
       "kind": "container",
-      "purpose": "end-to-end suite — `routine.rs` diffs the built binary's help, its status over fixture homes and its sync-ci, against `bin/routine`; the pure core's tables live in src"
+      "purpose": "end-to-end suite — `routine.rs` diffs the built binary's help, status, sync-ci and tick plist against `bin/routine`, and drives setup and upgrade through stubs; the pure core's tables live in src"
     }
   },
   "version": 2

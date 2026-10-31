@@ -10,7 +10,7 @@ use std::{
 };
 
 /// bash `${VAR:-}`: unset and empty alike are absent.
-fn var(name: &str) -> Option<OsString> {
+pub fn var(name: &str) -> Option<OsString> {
     env::var_os(name).filter(|v| !v.is_empty())
 }
 
@@ -18,14 +18,15 @@ fn var(name: &str) -> Option<OsString> {
 /// paths from `$PWD` (through a symlink where getcwd resolves one) with any doubled `/`, where
 /// `join` and `current_dir` normalise them — the catch prompt's doc path and the lock refusal's
 /// state dir print differently.
-fn root(name: &str, default: PathBuf) -> PathBuf {
+pub fn root(name: &str, default: PathBuf) -> PathBuf {
     env::current_dir()
         .unwrap_or_default()
         .join(var(name).map_or(default, PathBuf::from))
 }
 
-/// `(ROUTINE_DIR, ROUTINE_STATE)`, both derived from `ROUTINE_HOME` unless overridden.
-pub fn roots() -> (PathBuf, PathBuf) {
+/// `(ROUTINE_DIR, ROUTINE_STATE, ROUTINE_HOME)`, the first two derived from the last unless
+/// overridden.
+pub fn roots() -> (PathBuf, PathBuf, PathBuf) {
     let home = root(
         "ROUTINE_HOME",
         PathBuf::from(var("HOME").unwrap_or_else(|| "/tmp".into())).join(".routines"),
@@ -33,6 +34,7 @@ pub fn roots() -> (PathBuf, PathBuf) {
     (
         root("ROUTINE_DIR", home.clone()),
         root("ROUTINE_STATE", home.join(".state")),
+        home,
     )
 }
 

@@ -8,6 +8,10 @@ license = "PolyForm-Noncommercial-1.0.0"
 readme = "README.md"
 repository = "https://github.com/jgeschwendt/routines"
 
+# The `upgrade` verb: drain, swap, smoke, settle or roll back (gigantic.dev/hotswap/).
+[dependencies]
+hotswap = { git = "https://github.com/jgeschwendt/hotswap", rev = "1a0bc70a3bf07f0d36337f28bc08db23135d5227" }
+
 # Maximalist opt-out (the house lint discipline, verbatim): turn on the whole
 # strict, *stable* set (clippy::pedantic), then opt out the few we disagree
 # with, each with a reason. `cargo clippy -- -D warnings` promotes all of this
