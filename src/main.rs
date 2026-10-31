@@ -1,6 +1,5 @@
 mod cron;
 mod doc;
-#[cfg_attr(not(test), expect(dead_code, reason = "stage 4 (run --due) wires it"))]
 mod due;
 mod lock;
 mod record;
@@ -49,8 +48,9 @@ fn main() -> ExitCode {
             eprint!("{USAGE}");
             64
         }
-        [v @ ("status" | "run"), rest @ ..] if *v == "status" || rest[0] != "--due" => {
+        [v @ ("status" | "run"), rest @ ..] => {
             match state::now() {
+                Ok(now) if *v == "run" && rest[0] == "--due" => due::due(now),
                 Ok(now) if *v == "run" => run::run(rest[0], now),
                 Ok(now) => {
                     let (dir, states, _) = state::roots();
@@ -83,7 +83,7 @@ fn main() -> ExitCode {
         }
         ["upgrade", ..] => setup::upgrade(&args[1..]),
         [verb, ..] => {
-            eprintln!("routine: {verb} is not ported yet — use bin/routine");
+            eprint!("routine: unknown command {verb}\n{USAGE}");
             64
         }
     };

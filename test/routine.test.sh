@@ -108,7 +108,7 @@ runr() { # verb + args
     if [ -n "$RNOW" ]; then export ROUTINE_NOW="$RNOW"; else unset ROUTINE_NOW; fi
     for kv in $EXPORTS; do export "$kv"; done
     cd "$RCWD" || exit 1
-    case "${1:-}:${2:-}" in run:--due) ;; run:*|status:*|sync-ci:*) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac # the Rust port takes its verbs when set
+    case "${1:-}" in run|status|sync-ci) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac # the Rust port takes its verbs when set
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
@@ -125,7 +125,7 @@ runr_home() { # $1=home, then verb + args
     export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
     export ROUTINE_PMSET="$PMSET"
     cd "$RCWD" || exit 1
-    case "${1:-}:${2:-}" in run:--due) ;; run:*|status:*|sync-ci:*) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac
+    case "${1:-}" in run|status|sync-ci) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
@@ -935,7 +935,7 @@ for n in terma termb; do
   doc "$SANDBOX/r-term/$n.md" 'schedule: "* * * * *"\non_error: fail' "echo \$\$ > \"$SANDBOX/$n.pid\"; sleep 30"
 done
 ( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$SANDBOX/r-term" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET"
-  exec "$RUNNER" run --due ) >/dev/null 2>&1 & DUEP=$!
+  exec "${ROUTINE_RUST:-$RUNNER}" run --due ) >/dev/null 2>&1 & DUEP=$!
 wait_grep "$SANDBOX/terma.pid" ""; wait_grep "$SANDBOX/termb.pid" ""
 kill -TERM "$DUEP"; wait "$DUEP"
 for n in terma termb; do

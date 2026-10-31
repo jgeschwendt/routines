@@ -1,7 +1,8 @@
 //! The port's one unsafe surface, decision `port-signals` A′ (2026-10-27): `sigaction` gives
 //! HUP, INT and TERM a handler that only `write`s the signal number to a pipe, a thread reads
 //! it, and `kill` signals a pid or a process group — the watchdog's stop. The mask is never
-//! touched: a caught disposition resets to default at exec, so a block gets default TERM.
+//! touched: a caught disposition resets to default at exec, so a block gets default TERM. A
+//! tick's routine is bash's `&` child: INT and QUIT ignored from its exec on.
 #![expect(
     unsafe_code,
     reason = "std cannot catch a signal; three libc calls, as std itself links libc"
@@ -10,14 +11,16 @@
 use std::{
     ffi::c_int,
     io::{self, Read},
-    os::fd::AsRawFd,
-    process, ptr,
+    os::{fd::AsRawFd, unix::process::CommandExt},
+    process::{self, Command},
+    ptr,
     sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed},
     thread,
 };
 
 pub const HUP: c_int = 1;
 pub const INT: c_int = 2;
+const QUIT: c_int = 3;
 pub const KILL: c_int = 9;
 pub const TERM: c_int = 15;
 
@@ -93,8 +96,40 @@ pub fn catch(on: impl FnOnce(c_int) + Send + 'static) {
     });
 }
 
+/// `cmd &` without job control: INT and QUIT ignored in the child, a disposition exec keeps.
+pub fn background(cmd: &mut Command) -> &mut Command {
+    // SAFETY: between fork and exec only sigaction runs, async-signal-safe.
+    unsafe { cmd.pre_exec(ignore) }
+}
+
+#[expect(clippy::unnecessary_wraps, reason = "pre_exec's signature")]
+fn ignore() -> io::Result<()> {
+    let ign = Action {
+        handler: SIG_IGN,
+        ..Action::default()
+    };
+    for sig in [INT, QUIT] {
+        action(sig, &raw const ign);
+    }
+    Ok(())
+}
+
 /// `kill(2)`: true when delivered — `sig` 0 probes; a negative `pid` names its process group.
 pub fn signal(pid: c_int, sig: c_int) -> bool {
     // SAFETY: plain integers in, an integer out.
     unsafe { kill(pid, sig) == 0 }
+}
+
+#[cfg(test)]
+mod tests {
+    // the pre_exec half runs past the profiler's reach; the dispositions it sets, here
+    #[test]
+    fn ignore_sets_sig_ign() {
+        use super::{Action, INT, QUIT, SIG_IGN, action, ignore};
+        assert!(ignore().is_ok());
+        let dfl = Action::default();
+        for sig in [INT, QUIT] {
+            assert_eq!(action(sig, &raw const dfl).handler, SIG_IGN);
+        }
+    }
 }
