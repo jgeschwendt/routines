@@ -8,6 +8,7 @@ mod lock;
 mod record;
 #[cfg_attr(not(test), expect(dead_code, reason = "stage 3 (run <name>) wires it"))]
 mod run;
+mod setup;
 mod state;
 mod status;
 mod sync_ci;
@@ -22,48 +23,64 @@ const USAGE: &str = "routine — executable markdown on rails
   routine status         schedule × due? × last run, one row per routine
   routine install        install the launchd tick agent (dev.gigantic.routines.due)
   routine uninstall      remove it
+  routine setup          install plus the hotswap upgrade agent; --remove undoes both (Rust port)
+  routine upgrade        swap to mise's latest release; --check, --back, --retry (Rust port)
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text
 
 exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed or state unwritable ·
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
       else the failing block's code · run --due 1 when any routine failed ·
-      install 1 when the plist cannot land or bootstrap fails
+      install/setup 1 when a plist cannot land or bootstrap fails · upgrade 1 red, 2 unable to try
 
 env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
      ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_PMSET
 ";
 
 fn main() -> ExitCode {
-    match std::env::args_os()
-        .nth(1)
-        .as_deref()
-        .map(std::ffi::OsStr::to_string_lossy)
-        .as_deref()
-    {
-        None | Some("" | "help" | "-h" | "--help") => {
+    let args: Vec<_> = std::env::args_os()
+        .skip(1)
+        .map(|a| a.to_string_lossy().into_owned())
+        .collect();
+    let code = match &args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+        [] | ["" | "help" | "-h" | "--help", ..] => {
             print!("{USAGE}");
-            ExitCode::SUCCESS
+            0
         }
-        Some("status") => match state::now() {
+        ["status", ..] => match state::now() {
             Ok(now) => {
-                let (dir, states) = state::roots();
+                let (dir, states, _) = state::roots();
                 status::status(&dir, &states, now);
-                ExitCode::SUCCESS
+                0
             }
             // bash evaluates it as arithmetic; an error there names the script's own line
             Err(v) => {
                 eprintln!("routine: ROUTINE_NOW={v} is not an integer");
-                ExitCode::from(64)
+                64
             }
         },
-        Some("sync-ci") => {
+        ["sync-ci", ..] => {
             sync_ci::sync_ci();
-            ExitCode::SUCCESS
+            0
         }
-        Some(verb) => {
+        [v @ ("install" | "uninstall"), ..] | [v @ "setup"] | [v @ "setup", "--remove"] => {
+            setup::setup(*v == "uninstall" || args.len() > 1 && *v == "setup").map_or_else(
+                |e| {
+                    eprintln!("routine: {e}");
+                    1
+                },
+                |()| 0,
+            )
+        }
+        ["setup", ..] => {
+            eprint!("{USAGE}");
+            64
+        }
+        ["upgrade", ..] => setup::upgrade(&args[1..]),
+        [verb, ..] => {
             eprintln!("routine: {verb} is not ported yet — use bin/routine");
-            ExitCode::from(64)
+            64
         }
-    }
+    };
+    ExitCode::from(u8::try_from(code).unwrap_or(1))
 }

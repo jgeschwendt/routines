@@ -2,7 +2,7 @@
 
 ```stele
 kind: container
-purpose: the Rust port of bin/routine — doc, cron, state, status (byte-identical) and sync-ci ported; run's lock, record, gates, catch prompt and run --due's sweep unwired; bin/routine runs until cutover
+purpose: the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap) ported; run's lock, record, gates, catch prompt and due sweep unwired; bin/routine runs until cutover
 ```
 
 Accepted divergences from bin/routine:
@@ -17,6 +17,7 @@ Accepted divergences from bin/routine:
 - `requires: --` reads getenv, where macOS `printenv --` prints the whole environment and passes
 - pmset output holding a NUL is read as text, where BSD grep calls it binary and the tick defers — real pmset writes none
 - sync-ci's failed write warns `routine: <path>: <io error>`, where bash's redirection names its own line; a failed mkdir or a dir named `routines.yml` passes silently, where bash's mkdir and rm warn; in a deleted working directory it writes (or warns) under `PWD`, else `.`, where bash's heredoc fails, an empty `PWD` aims it at `/` and an unset one exits 1 (`PWD` unbound)
+- `install`/`uninstall` are `setup`/`setup --remove`, which also write or boot out the upgrade agent and boot out the legacy `com.routines.due` whether or not its plist exists; both need `HOME`, where bash's uninstall runs without it; the tick's `exec` single-quotes the runner's path, where bash's `printf %q` escapes it bare
 - the lock's minute and the logs' 14 days are elapsed whole seconds from std's clock, as macOS find floors them; GNU find agrees on `-mtime`, and sub-second boundaries may differ
 
 <!-- @stele -->

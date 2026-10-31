@@ -27,7 +27,7 @@ fn help_is_bin_routines_and_other_verbs_wait() {
     }
     // a non-UTF-8 verb is bash's 64 too, never a panic
     for (verb, shown) in [
-        (OsStr::new("install"), "install"),
+        (OsStr::new("run"), "run"),
         (OsStr::from_bytes(b"\xff"), "\u{fffd}"),
     ] {
         assert_eq!(
@@ -220,4 +220,107 @@ fn sync_ci_is_bin_routines() {
             )
         );
     }
+}
+
+// `routine setup` writes bin/routine's tick byte for byte, bar the runner's path, beside hotswap's
+// upgrade agent on the `routine` shim; `upgrade` swaps under the manifest through stubbed mise and
+// launchctl, its drain refusing while a routine holds its lock; `setup --remove` undoes both.
+#[test]
+fn setup_and_upgrade() {
+    use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink, path::Path};
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("setup &<>");
+    let (agents, bin) = (tmp.join("Library/LaunchAgents"), tmp.join("bin"));
+    let shims = tmp.join(".local/share/mise/shims");
+    let mode = |p: &Path, m| fs::set_permissions(p, fs::Permissions::from_mode(m));
+    let _ = mode(&agents, 0o755);
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&shims).unwrap();
+    fs::create_dir_all(&bin).unwrap();
+    let exe = env!("CARGO_BIN_EXE_routine");
+    symlink(exe, shims.join("routine")).unwrap();
+    let ls =
+        r#"{"packslip:jgeschwendt/routines":[{"active":true,"installed":true,"version":"1"}]}"#;
+    let log = tmp.join("log");
+    let stub = format!(
+        "#!/bin/sh\necho \"${{0##*/}} $*\" >> '{}'\n[ \"$1\" != ls ] || echo '{ls}'\n",
+        log.display()
+    );
+    for n in ["launchctl", "mise"] {
+        fs::write(bin.join(n), &stub).unwrap();
+        mode(&bin.join(n), 0o755).unwrap();
+    }
+    let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
+    // exit code, stdout, stderr, then the stubs' log
+    let run = |prog: &str, args: &[&str], env: &[(&str, &str)]| {
+        let mut c = Command::new(prog);
+        for k in
+            "MISE_DATA_DIR XDG_DATA_HOME ROUTINE_AGENTS_DIR ROUTINE_DIR ROUTINE_STATE".split(' ')
+        {
+            c.env_remove(k);
+        }
+        let o = (c.args(args).env("HOME", &tmp).current_dir(&tmp))
+            .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+            .env("ROUTINE_HOME", tmp.join("home"))
+            .env("ROUTINE_LAUNCHCTL", bin.join("launchctl"))
+            .envs(env.iter().copied())
+            .output()
+            .unwrap();
+        let calls = fs::read_to_string(&log).unwrap_or_default();
+        let _ = fs::remove_file(&log);
+        let out = String::from_utf8([o.stdout, o.stderr].concat()).unwrap();
+        format!("{}\n{out}{calls}", o.status.code().unwrap())
+            .replace(&format!("gui/{}", uid.trim()), "gui/$UID")
+    };
+    let (due, up) = (
+        agents.join("dev.gigantic.routines.due.plist"),
+        agents.join("dev.gigantic.routines.upgrade.plist"),
+    );
+    let (d, u) = (due.display(), up.display());
+    let bash = concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine");
+    assert!(run(bash, &["install"], &[]).starts_with("0\n"));
+    let read = |p: &Path| fs::read_to_string(p).unwrap();
+    let tick = read(&due);
+    let outs = "launchctl bootout gui/$UID/com.routines.due\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
+                launchctl bootout gui/$UID/dev.gigantic.routines.upgrade\n";
+    let boot =
+        format!("{outs}launchctl bootstrap gui/$UID {d}\nlaunchctl bootstrap gui/$UID {u}\n");
+    assert_eq!(
+        run(exe, &["setup"], &[]),
+        format!("0\ninstalled {d}\ninstalled {u}\n{boot}")
+    );
+    assert_eq!(read(&due).replace(&format!("'{exe}'"), bash), tick);
+    assert!(read(&up).contains("/shims/routine</string>"));
+    let key = "packslip:jgeschwendt/routines";
+    let look =
+        format!("mise ls --json\nmise latest {key}\nmise upgrade --bump {key}\nmise ls --json\n");
+    let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
+    let green = format!("0\nroutines 1: green, 1 smoke probes\n{look}{boot}{kick}");
+    assert_eq!(run(exe, &["upgrade"], &[]), green);
+    let rec = tmp.join(".local/state/hotswap/routines.json");
+    assert!(rec.exists());
+    let removed = format!("0\nremoved {d}\nremoved {u}\n{outs}");
+    assert_eq!(run(exe, &["setup", "--remove"], &[]), removed);
+    assert!(!due.exists() && !up.exists() && !rec.exists());
+    fs::create_dir_all(tmp.join("home/.state/a/lock")).unwrap();
+    let refused = run(exe, &["upgrade"], &[]);
+    assert!(
+        refused.starts_with("1\n")
+            && refused.ends_with(&format!(" refused; nothing swapped\n{look}"))
+    );
+    let usage = run(exe, &["help"], &[]).replacen('0', "64", 1);
+    assert_eq!(run(exe, &["setup", "--x"], &[]), usage);
+    let fail = |args, env| run(exe, args, &[env]);
+    assert_eq!(
+        fail(&["setup"], ("HOME", "")),
+        "1\nroutine: HOME unset — the tick PATH needs ~/.local/bin\n"
+    );
+    let lctl = ("ROUTINE_LAUNCHCTL", "/usr/bin/false");
+    assert_eq!(
+        fail(&["install"], lctl),
+        "1\nroutine: launchctl bootstrap failed\n"
+    );
+    mode(&agents, 0o555).unwrap();
+    let blocked = run(exe, &["setup"], &[]);
+    mode(&agents, 0o755).unwrap();
+    assert_eq!(blocked, format!("1\nroutine: cannot write {d}\n"));
 }
