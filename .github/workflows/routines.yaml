@@ -1,6 +1,6 @@
 # Written by `routine sync-ci` (jgeschwendt/routines), which compiles this file in: a repo's copy
-# changes when it runs `routine sync-ci` again — the owner's .routines repo does after the first
-# release; until then its copy fails, fetching a bash runner main no longer carries.
+# changes when it runs `routine sync-ci` again. The owner's ~/.routines repo carries no copy —
+# it is private, and its only tick is launchd's dev.gigantic.routines.due on the Mac.
 name: routines
 
 on:
