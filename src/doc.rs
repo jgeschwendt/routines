@@ -1,4 +1,4 @@
-//! The document: frontmatter and fenced blocks — `fm_get` and `extract_blocks` of bin/routine.
+//! The document: frontmatter and fenced blocks.
 
 /// Up to `n` leading spaces off `line`.
 fn dedent(line: &str, n: usize) -> &str {
@@ -89,7 +89,7 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{extract_blocks, frontmatter_get};
-    use std::{fs, path::PathBuf, process::Command};
+    use std::{fs, path::PathBuf};
 
     /// A fresh, empty dir `name.<pid>` beside the test binary: two runs of it never share one.
     pub(crate) fn scratch(name: &str) -> PathBuf {
@@ -101,40 +101,8 @@ pub(crate) mod tests {
         dir
     }
 
-    /// Each case's text in file `<i>` of a scratch dir named for the first of `funcs`, then one
-    /// bash there with bin/routine's own `funcs` (space-separated) sliced out running `each` per
-    /// case (`$f` the file, `$a` its arg, `$0` bin/routine); its NUL-ended outputs, in case order.
-    /// A one-line function's slice runs on to the next `}` line: name it before the function there.
-    pub(crate) fn bash(funcs: &str, each: &str, cases: &[(&str, &str)]) -> (PathBuf, Vec<String>) {
-        let dir = scratch(funcs.split(' ').next().unwrap());
-        for (i, (text, _)) in cases.iter().enumerate() {
-            fs::write(dir.join(i.to_string()), text).unwrap();
-        }
-        let sed: String = funcs
-            .split(' ')
-            .flat_map(|f| ["/^", f, "()/,/^}/{p;d;};"])
-            .collect();
-        let script = format!(
-            r#"export LC_ALL=C; eval "$(sed -n '{sed}' "$0")"
-            i=0; for a; do f=$((i++)); {each}; printf '\0'; done"#
-        );
-        let out = Command::new("/bin/bash")
-            .args([
-                "-c",
-                &script,
-                concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"),
-            ])
-            .args(cases.iter().map(|c| c.1))
-            .current_dir(&dir)
-            .output()
-            .unwrap()
-            .stdout;
-        let out = String::from_utf8(out).unwrap();
-        (dir, out.split_terminator('\0').map(str::to_owned).collect())
-    }
-
     #[test]
-    fn frontmatter_matches_the_table_and_bash() {
+    fn frontmatter_matches_the_table() {
         let cases = [
             (
                 "---\nschedule: 0 * * * *\n---\n",
@@ -175,17 +143,12 @@ pub(crate) mod tests {
             ("---\0\nk: v\n---\n", "k", Some("v")),
         ];
         let ours: Vec<_> = cases.iter().map(|c| frontmatter_get(c.0, c.1)).collect();
-        let pairs: Vec<_> = cases.iter().map(|c| (c.0, c.1)).collect();
-        let theirs: Vec<_> = (bash("fm_get", r#"fm_get "$f" "$a""#, &pairs).1)
-            .into_iter()
-            .map(|v| v.strip_suffix('\n').map(str::to_owned))
-            .collect();
         let want: Vec<_> = cases.iter().map(|c| c.2.map(str::to_owned)).collect();
-        assert_eq!((&ours, &theirs), (&want, &want));
+        assert_eq!(ours, want);
     }
 
     #[test]
-    fn blocks_match_the_table_and_bash() {
+    fn blocks_match_the_table() {
         let cases = [
             // the suite's fences.md: a ~~~ and a ```` fence hold a ``` line, an inline span
             // opens nothing, an indented fence runs dedented
@@ -220,23 +183,10 @@ pub(crate) mod tests {
             ("```sh\0\nx\n```\n", &["x\n"]),
         ];
         let ours: Vec<_> = cases.iter().map(|c| extract_blocks(c.0)).collect();
-        let texts: Vec<_> = cases.iter().map(|c| (c.0, "")).collect();
-        let (dir, counts) = bash(
-            "extract_blocks",
-            r#"mkdir "$f.d"; extract_blocks "$f" "$f.d""#,
-            &texts,
-        );
-        let theirs: Vec<Vec<_>> = (counts.iter().enumerate())
-            .map(|(i, n)| {
-                (1..=n.trim_end().parse().unwrap())
-                    .map(|k: u32| fs::read_to_string(dir.join(format!("{i}.d/{k:03}.sh"))).unwrap())
-                    .collect()
-            })
-            .collect();
         let want: Vec<Vec<_>> = cases
             .iter()
             .map(|c| c.1.iter().map(|&b| b.to_owned()).collect())
             .collect();
-        assert_eq!((&ours, &theirs), (&want, &want));
+        assert_eq!(ours, want);
     }
 }

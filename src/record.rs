@@ -1,5 +1,5 @@
-//! What a run leaves behind and how it stays bounded: `keep_tail`, `tick_log`, `degrade`,
-//! `on_exit`'s record and `cmd_run`'s log name and pruning of bin/routine.
+//! What a run leaves behind and how it stays bounded: the tail kept, the tick journal, the
+//! degraded marker, the record, the log's name and its pruning.
 
 use crate::{cron::iso, state};
 use std::{
@@ -102,7 +102,7 @@ pub fn log_file(dir: &Path, started: i64) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{degrade, keep_tail, log_file, record, tick_log};
-    use crate::doc::tests::{bash, scratch};
+    use crate::doc::tests::scratch;
     use std::{
         fs,
         os::unix::fs::symlink,
@@ -111,7 +111,7 @@ mod tests {
     };
 
     #[test]
-    fn keep_tail_matches_the_table_and_bash() {
+    fn keep_tail_matches_the_table() {
         let cases = [
             ("a\nb\nc\nd\n", "l 3 2", "c\nd\n"),
             ("a\nb\nc\n", "l 3 2", "a\nb\nc\n"), // at max, untouched
@@ -122,8 +122,7 @@ mod tests {
             ("a", "c 0 5", "a"),
             ("", "l 0 1", ""),
         ];
-        let pairs: Vec<_> = cases.iter().map(|c| (c.0, c.1)).collect();
-        let (dir, theirs) = bash("keep_tail", r#"keep_tail "$f" $a; cat "$f""#, &pairs);
+        let dir = scratch("keep_tail");
         let ours: Vec<_> = (cases.iter().enumerate())
             .map(|(i, c)| {
                 let f = dir.join(format!("{i}.rs"));
@@ -139,41 +138,45 @@ mod tests {
             })
             .collect();
         let want: Vec<_> = cases.iter().map(|c| c.2.to_owned()).collect();
-        assert_eq!((&ours, &theirs), (&want, &want));
+        assert_eq!(ours, want);
         keep_tail(&dir.join("missing"), true, 0, 1);
         assert!(!dir.join("missing").exists());
     }
 
-    // on_exit's record, run from bin/routine itself: (exit code, degraded before) per case
+    // (exit code, degraded before) → the record, twice (last-run.json, runs.jsonl), and the dir
     #[test]
-    fn record_matches_bash() {
-        let cases = [("", "0 0"), ("", "0 1"), ("", "3 1"), ("", "3 0")];
-        let each = r#"set -- $a; mkdir "$f.d"; [ "$2" = 0 ] || : > "$f.d/degraded"
-            (STATE_DIR=$f.d STARTED_EPOCH=1786698000 STARTED_ISO=$(iso 1786698000) WRITE_LAST=1 ROUTINE_NOW=1786698065
-             (exit $1); on_exit)
-            cat "$f.d/last-run.json" "$f.d/runs.jsonl"; ls "$f.d""#;
-        let (dir, theirs) = bash("on_exit keep_tail iso now civil", each, &cases);
-        let ours: Vec<_> = (cases.iter().enumerate())
-            .map(|(i, c)| {
-                let d = dir.join(format!("{i}.rs"));
-                fs::create_dir(&d).unwrap();
-                if c.1.ends_with('1') {
-                    fs::write(d.join("degraded"), "").unwrap();
-                }
-                record(&d, 1_786_698_000, 1_786_698_065, c.1[..1].parse().unwrap());
-                let mut names: Vec<_> = (fs::read_dir(&d).unwrap())
-                    .map(|e| e.unwrap().file_name().into_string().unwrap() + "\n")
-                    .collect();
-                names.sort();
+    fn record_clears_degraded_on_success() {
+        let dir = scratch("record");
+        for (i, (rc, before, after)) in [
+            (0, false, false),
+            (0, true, false),
+            (3, true, true),
+            (3, false, false),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let d = dir.join(i.to_string());
+            fs::create_dir(&d).unwrap();
+            if before {
+                fs::write(d.join("degraded"), "").unwrap();
+            }
+            record(&d, 1_786_698_000, 1_786_698_065, rc);
+            let mut names: Vec<_> = (fs::read_dir(&d).unwrap())
+                .map(|e| e.unwrap().file_name().into_string().unwrap() + "\n")
+                .collect();
+            names.sort();
+            let line = format!(
+                "{{\"started\":\"2026-08-14T09:00:00Z\",\"started_epoch\":1786698000,\"finished\":\"2026-08-14T09:01:05Z\",\"exit\":{rc},\"duration\":65,\"degraded\":{after}}}\n"
+            );
+            let held = if after { "degraded\n" } else { "" };
+            assert_eq!(
                 fs::read_to_string(d.join("last-run.json")).unwrap()
                     + &fs::read_to_string(d.join("runs.jsonl")).unwrap()
-                    + &names.concat()
-            })
-            .collect();
-        assert_eq!(ours, theirs);
-        assert!(ours[2].starts_with(
-            "{\"started\":\"2026-08-14T09:00:00Z\",\"started_epoch\":1786698000,\"finished\":\"2026-08-14T09:01:05Z\",\"exit\":3,\"duration\":65,\"degraded\":true}\n"
-        ));
+                    + &names.concat(),
+                format!("{line}{line}{held}last-run.json\nruns.jsonl\n")
+            );
+        }
     }
 
     #[test]

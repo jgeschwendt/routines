@@ -1,45 +1,35 @@
 {
   "adrs": {},
   "landmarks": {
-    "bash-3-2": {
-      "file": "bin/routine",
-      "line": 3,
-      "node": "bin"
-    },
     "catch-retry": {
-      "file": "bin/routine",
-      "line": 369,
-      "node": "bin"
+      "file": "src/run.rs",
+      "line": 293,
+      "node": "src"
     },
     "dark-wake-gate": {
-      "file": "bin/routine",
-      "line": 567,
-      "node": "bin"
+      "file": "src/due.rs",
+      "line": 111,
+      "node": "src"
     },
     "due-derivation": {
-      "file": "bin/routine",
-      "line": 194,
-      "node": "bin"
+      "file": "src/status.rs",
+      "line": 24,
+      "node": "src"
     },
     "due-tick": {
-      "file": "bin/routine",
-      "line": 582,
-      "node": "bin"
+      "file": "src/due.rs",
+      "line": 22,
+      "node": "src"
     },
     "last-run-contract": {
-      "file": "bin/routine",
-      "line": 250,
-      "node": "bin"
-    },
-    "no-process-substitution": {
-      "file": "bin/routine",
-      "line": 534,
-      "node": "bin"
+      "file": "src/run.rs",
+      "line": 163,
+      "node": "src"
     },
     "parallel-due": {
-      "file": "bin/routine",
-      "line": 609,
-      "node": "bin"
+      "file": "src/due.rs",
+      "line": 43,
+      "node": "src"
     }
   },
   "nodes": {
@@ -48,13 +38,11 @@
       "claims": [],
       "commands": {
         "check": "mise run check",
-        "test": "/bin/bash test/routine.test.sh"
+        "test": "cargo test"
       },
       "contains": [
-        "bin",
         "routines",
         "src",
-        "test",
         "tests"
       ],
       "declared": {
@@ -67,121 +55,7 @@
       },
       "id": "/",
       "kind": "system",
-      "purpose": "Executable markdown routines in $ROUTINE_HOME (default ~/.routines) — bin/routine runs a doc's sh blocks under schedule, lock, timeout; claude repairs failures; launchd and CI tick into run --due."
-    },
-    "bin": {
-      "budget": null,
-      "claims": [
-        {
-          "anchor": "※ bash-3-2",
-          "enforced_by": null,
-          "id": "bash-3-2",
-          "kind": "hazard",
-          "resolved": "bin/routine:3",
-          "text": "macOS /bin/bash is frozen at 3.2.57 — no mapfile, declare -A, ${var,,}, negative substrings, or wait -n anywhere in this script",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ catch-retry",
-          "enforced_by": null,
-          "id": "catch-retry",
-          "kind": "invariant",
-          "resolved": "bin/routine:369",
-          "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ dark-wake-gate",
-          "enforced_by": null,
-          "id": "dark-wake-gate",
-          "kind": "invariant",
-          "resolved": "bin/routine:567",
-          "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ due-derivation",
-          "enforced_by": null,
-          "id": "due-derivation",
-          "kind": "invariant",
-          "resolved": "bin/routine:194",
-          "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ due-tick",
-          "enforced_by": null,
-          "id": "due-tick",
-          "kind": "invariant",
-          "resolved": "bin/routine:582",
-          "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ last-run-contract",
-          "enforced_by": null,
-          "id": "last-run-contract",
-          "kind": "invariant",
-          "resolved": "bin/routine:250",
-          "text": "last-run.json is written on every exit path via the EXIT trap, and a 75 lock refusal never clobbers the owner's state",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ no-process-substitution",
-          "enforced_by": null,
-          "id": "no-process-substitution",
-          "kind": "hazard",
-          "resolved": "bin/routine:534",
-          "text": "no process substitution — Seatbelt (the shift sandbox) denies the /dev/fd paths >(…) opens, so the run log tees through fifos in RUN_TMP",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        },
-        {
-          "anchor": "※ parallel-due",
-          "enforced_by": null,
-          "id": "parallel-due",
-          "kind": "invariant",
-          "resolved": "bin/routine:609",
-          "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
-          "verified": {
-            "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
-          }
-        }
-      ],
-      "commands": {},
-      "contains": [],
-      "declared": {
-        "allow": [],
-        "decided_by": [],
-        "depends": []
-      },
-      "extracted": {
-        "imports": []
-      },
-      "id": "bin",
-      "kind": "container",
-      "purpose": "The only runner — one bash-3.2-safe, zero-dependency script; every scheduler (launchd tick, CI cron, a shell) ends at routine run."
+      "purpose": "Executable markdown routines in $ROUTINE_HOME (default ~/.routines) — `routine` runs a doc's sh blocks under schedule, lock, timeout; claude repairs failures; launchd and CI tick into run --due."
     },
     "routines": {
       "budget": null,
@@ -195,7 +69,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "3d6fed1498f77fda50b88970cc4bd9b53e462e1c"
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
           }
         }
       ],
@@ -215,7 +89,80 @@
     },
     "src": {
       "budget": null,
-      "claims": [],
+      "claims": [
+        {
+          "anchor": "※ catch-retry",
+          "enforced_by": null,
+          "id": "catch-retry",
+          "kind": "invariant",
+          "resolved": "src/run.rs:293",
+          "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
+          "verified": {
+            "digest": "d28e651bb427988b8a2c3d43bb2f70830bc048908b182f7c4b9a5cfdd4ac1309",
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
+          }
+        },
+        {
+          "anchor": "※ dark-wake-gate",
+          "enforced_by": null,
+          "id": "dark-wake-gate",
+          "kind": "invariant",
+          "resolved": "src/due.rs:111",
+          "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
+          "verified": {
+            "digest": "63863113cc138715e7b7704b8525f754271e65145a8e63214c5ae28462d4519d",
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
+          }
+        },
+        {
+          "anchor": "※ due-derivation",
+          "enforced_by": null,
+          "id": "due-derivation",
+          "kind": "invariant",
+          "resolved": "src/status.rs:24",
+          "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
+          "verified": {
+            "digest": "f0fa60f9304aa8de8f7ef255080867ffd644d8970da7cee52a35d326b313ba6f",
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
+          }
+        },
+        {
+          "anchor": "※ due-tick",
+          "enforced_by": null,
+          "id": "due-tick",
+          "kind": "invariant",
+          "resolved": "src/due.rs:22",
+          "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
+          "verified": {
+            "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
+          }
+        },
+        {
+          "anchor": "※ last-run-contract",
+          "enforced_by": null,
+          "id": "last-run-contract",
+          "kind": "invariant",
+          "resolved": "src/run.rs:163",
+          "text": "last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state",
+          "verified": {
+            "digest": "52583432f8d732ae268c1dcf666bd76ffee5d99d53256ccc92a8d1df66633070",
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
+          }
+        },
+        {
+          "anchor": "※ parallel-due",
+          "enforced_by": null,
+          "id": "parallel-due",
+          "kind": "invariant",
+          "resolved": "src/due.rs:43",
+          "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
+          "verified": {
+            "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
+            "sha": "db0f512ce6e699a50000443588a3e4475579213b"
+          }
+        }
+      ],
       "commands": {},
       "contains": [],
       "declared": {
@@ -228,27 +175,7 @@
       },
       "id": "src",
       "kind": "container",
-      "purpose": "the Rust port of bin/routine — doc, cron, state, status, sync-ci, setup, upgrade (hotswap), run <name> and run --due ported; unsafe only in src/sys.rs; bin/routine runs until cutover"
-    },
-    "test": {
-      "budget": null,
-      "claims": [],
-      "commands": {
-        "cover": "/bin/bash test/cover.sh --min",
-        "test": "/bin/bash test/routine.test.sh"
-      },
-      "contains": [],
-      "declared": {
-        "allow": [],
-        "decided_by": [],
-        "depends": []
-      },
-      "extracted": {
-        "imports": []
-      },
-      "id": "test",
-      "kind": "container",
-      "purpose": "Hermetic contract suite — sandboxed state dirs, stubbed claude and launchctl, runs under /bin/bash 3.2 in about thirty seconds, nearly all of it timeout and watchdog-grace sleeps."
+      "purpose": "the runner — doc, cron, state, status, run <name>, run --due, sync-ci, setup and upgrade (hotswap); one binary crate, std plus hotswap, unsafe only in src/sys.rs"
     },
     "tests": {
       "budget": null,
@@ -265,7 +192,7 @@
       },
       "id": "tests",
       "kind": "container",
-      "purpose": "end-to-end suite — `routine.rs` diffs the built binary's help, status, run <name> (gates, catch, signals, timeouts), run --due, sync-ci and tick plist against `bin/routine`; setup and upgrade on stubs"
+      "purpose": "end-to-end suite — `routine.rs` runs the built binary on every verb against sandboxed homes and stubbed claude, launchctl, mise and pmset, asserting exit codes, output and state literally"
     }
   },
   "version": 2

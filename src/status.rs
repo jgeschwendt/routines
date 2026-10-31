@@ -1,10 +1,9 @@
-//! `routine status` — schedule × due? × last run, one row per routine: `cells`, `cmd_status`,
-//! `next_fire_of` and `is_due` of bin/routine.
+//! `routine status` — schedule × due? × last run, one row per routine.
 
 use crate::{cron, doc, state};
 use std::{fs, path::Path};
 
-/// Pads each text by display width as bin/routine counts it under `LC_ALL=C`: bytes, but `—`
+/// Pads each text by display width as `LC_ALL=C` counts it: bytes, but `—`
 /// as one column. The last text is unpadded.
 fn cells(texts: [&str; 6]) -> String {
     let mut row = String::new();
@@ -22,6 +21,7 @@ pub fn schedule(dir: &Path, name: &str) -> String {
     doc::frontmatter_get(&String::from_utf8_lossy(&text), "schedule").unwrap_or_default()
 }
 
+// ※ due-derivation
 /// When `name` next fires: after its last start, or 0 (due now) when it never ran or its record
 /// is stamped ahead of the clock; `None` for no schedule or one the parser rejects.
 pub fn next_fire_of(states: &Path, name: &str, sched: &str, now: i64) -> Option<i64> {

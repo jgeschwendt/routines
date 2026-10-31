@@ -1,5 +1,5 @@
-//! The run's lock, `<dir>/lock`: `started_at`, `take_lock`, `acquire_lock`, `stale`, `on_exit`'s
-//! release and `cmd_run`'s lock-blocked ledger of bin/routine. A lock outlives a SIGKILL or a
+//! The run's lock, `<dir>/lock`: taken, reaped when stale, released, and the lock-blocked ledger.
+//! A lock outlives a SIGKILL or a
 //! power cut, and after a reboot its pid may belong to any process: alive is the pid AND its
 //! start time, wherever both can be read.
 

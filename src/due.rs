@@ -1,5 +1,4 @@
-//! `routine run --due` — `cmd_due`, `due_stop` and `dark_wake` of bin/routine: due.log's
-//! rotation, the sweep and its tick line, the dark-wake gate, then every due routine at once,
+//! `routine run --due` — due.log's rotation, the sweep and its tick line, the dark-wake gate, then every due routine at once,
 //! each a `routine run <name>` child, waited for in turn.
 
 use crate::{cron, record, state, status, sys};
@@ -20,7 +19,8 @@ fn kids() -> std::sync::MutexGuard<'static, (Vec<i32>, Option<i32>)> {
     KIDS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// `cmd_due`: 1 when any due routine failed. launchd stops the tick with a TERM to it alone,
+// ※ due-tick
+/// 1 when any due routine failed. launchd stops the tick with a TERM to it alone,
 /// then KILLs its group, so a HUP, INT or TERM forwards TERM to every routine — a background
 /// child ignores INT — dispatches no more, and exits 128 + the signal once all are reaped.
 pub fn due(now: i64) -> i32 {
@@ -40,6 +40,7 @@ pub fn due(now: i64) -> i32 {
         return 0;
     }
     let exe = env::current_exe().unwrap_or_default();
+    // ※ parallel-due
     // spawned under the lock: a signal either sees the pid or stops the spawn
     let runs: Vec<_> = (due.iter())
         .filter_map(|name| {
@@ -107,6 +108,7 @@ fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
     due
 }
 
+// ※ dark-wake-gate
 /// A Power Nap dark wake: `pmset -g systemstate` lists the capabilities and Graphics is not
 /// among them. No such line — the probe missing, failing or unparseable — fails open.
 fn dark_wake(pmset: &OsStr) -> bool {
