@@ -1,5 +1,5 @@
 //! `routine run --due`'s sweep short of dispatch: `cmd_due`'s due.log rotation, its tick line
-//! and `dark_wake` of bin/routine. Dispatch waits on stage 3b's `run <name>`.
+//! and `dark_wake` of bin/routine. Dispatch is stage 4b.
 
 use crate::{cron, record, state, status};
 use std::{

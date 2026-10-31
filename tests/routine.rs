@@ -1,7 +1,7 @@
 use std::{ffi::OsStr, os::unix::ffi::OsStrExt, process::Command};
 
 // The usage text is the runner's own: every help spelling prints it byte for byte,
-// and every verb not yet ported refuses with 64.
+// and every verb not yet ported (`run --due`) refuses with 64.
 #[test]
 fn help_is_bin_routines_and_other_verbs_wait() {
     fn run(args: impl IntoIterator<Item = impl AsRef<OsStr>>) -> (Option<i32>, String, String) {
@@ -26,12 +26,12 @@ fn help_is_bin_routines_and_other_verbs_wait() {
         assert_eq!(run(args), (Some(0), usage.clone(), String::new()));
     }
     // a non-UTF-8 verb is bash's 64 too, never a panic
-    for (verb, shown) in [
-        (OsStr::new("run"), "run"),
-        (OsStr::from_bytes(b"\xff"), "\u{fffd}"),
+    for (args, shown) in [
+        (&[OsStr::new("run"), OsStr::new("--due")][..], "run"),
+        (&[OsStr::from_bytes(b"\xff")], "\u{fffd}"),
     ] {
         assert_eq!(
-            run([verb]),
+            run(args),
             (
                 Some(64),
                 String::new(),
@@ -323,4 +323,375 @@ fn setup_and_upgrade() {
     let blocked = run(exe, &["setup"], &[]);
     mode(&agents, 0o755).unwrap();
     assert_eq!(blocked, format!("1\nroutine: cannot write {d}\n"));
+}
+
+const BASH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine");
+const PORT: &str = env!("CARGO_BIN_EXE_routine");
+
+/// A fresh dir under the target's tmp, with the claude stub every run calls: `MODE` hangs the
+/// auth probe (`hang`), logs out (`out`), outlives the deadline past its TERM-ignoring probe
+/// into a TERM-honouring agent (`gap`), repairs (`fix`) or fails the agent (`fails`).
+fn sandbox(name: &str) -> std::path::PathBuf {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let _ = Command::new("chmod")
+        .arg("-R")
+        .arg("u+w")
+        .arg(&tmp)
+        .output();
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+    let stub = r#"#!/bin/sh
+if [ "$1" = auth ]; then
+  case "${MODE:-}" in
+    hang) exec sleep 30 ;;
+    gap) trap '' TERM; until ls "$TMPDIR"/*/timedout >/dev/null 2>&1; do sleep 0.1; done ;;
+    out) exit 1 ;;
+  esac
+  exit 0
+fi
+cat > /dev/null
+case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;; fails) exit 1 ;; esac
+"#;
+    fs::write(tmp.join("claude"), stub).unwrap();
+    fs::set_permissions(tmp.join("claude"), fs::Permissions::from_mode(0o755)).unwrap();
+    tmp
+}
+
+/// `<home>/<name>.md`: the frontmatter lines, then one sh block unless `None`.
+fn routine_doc(home: &std::path::Path, name: &str, fm: &str, block: Option<&str>) {
+    let fm = if fm.is_empty() {
+        String::new()
+    } else {
+        format!("---\n{fm}\n---\n")
+    };
+    let block = block.map_or(String::new(), |b| format!("```sh\n{b}\n```\n"));
+    std::fs::create_dir_all(home.join("tmp")).unwrap();
+    std::fs::write(home.join(format!("{name}.md")), fm + "prose\n" + &block).unwrap();
+}
+
+/// `routine <args>` under `prog` against `home`, the clock frozen, claude the sandbox's stub
+/// and `TMPDIR` the home's own.
+fn routine_cmd(
+    prog: &str,
+    home: &std::path::Path,
+    args: &[&str],
+    env: &[(&str, String)],
+) -> Command {
+    let mut c = Command::new(if prog == BASH { "/bin/bash" } else { prog });
+    if prog == BASH {
+        c.arg(BASH);
+    }
+    for k in "ROUTINE_DIR ROUTINE_STATE MODE".split(' ') {
+        c.env_remove(k);
+    }
+    c.args(args)
+        .env("ROUTINE_HOME", home)
+        .env("ROUTINE_NOW", "1786698000")
+        .env("ROUTINE_CLAUDE", home.parent().unwrap().join("claude"))
+        .env("TMPDIR", home.join("tmp"))
+        .envs(env.iter().map(|(k, v)| (k, v)));
+    c
+}
+
+/// `b` with `home` as `<h>`, bash's own error lines dropped and each elapsed second (`· 3s`,
+/// `elapsed=3s`) as `N`: bash's `$SECONDS` and std's clock may straddle a second apart.
+fn masked(b: &[u8], home: &std::path::Path) -> String {
+    // bash's `cd` names its line and mktemp its template; src/AGENTS.md lists both
+    let s = String::from_utf8_lossy(b).replace(&*home.to_string_lossy(), "<h>");
+    let s: String = (s
+        .split_inclusive('\n')
+        .filter(|l| !l.starts_with(BASH) && !l.starts_with("mktemp:")))
+    .collect();
+    let (mut out, mut digits) = (String::new(), String::new());
+    for c in s.chars() {
+        if c.is_ascii_digit() {
+            digits.push(c);
+            continue;
+        }
+        if c == 's' && !digits.is_empty() && out.ends_with([' ', '=']) {
+            digits = "N".into();
+        }
+        out += &digits;
+        digits.clear();
+        out.push(c);
+    }
+    out + &digits
+}
+
+/// Whether `pid` (in `file`) still runs, given three seconds to go.
+fn alive(file: &std::path::Path) -> bool {
+    let p = std::fs::read_to_string(file).unwrap();
+    (0..30).all(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        Command::new("kill")
+            .args(["-0", p.trim()])
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    })
+}
+
+/// (name, frontmatter, block, extra env) for a home at `h`: each gate, a pass, a fail, each
+/// catch outcome, a runaway block, a leftover child, no document, no name.
+type Case = (
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    Vec<(&'static str, String)>,
+);
+
+fn run_cases(h: &str) -> [Case; 18] {
+    let fail = "on_error: fail";
+    let fixed = r#"[ -f "$ROUTINE_STATE_DIR/fixed" ] || exit 7"#;
+    let leak = r#"sleep 30 & echo $! > "$ROUTINE_STATE_DIR/leak.pid""#;
+    [
+        (
+            "ok",
+            fail,
+            Some("echo out; echo err >&2; pwd; echo \"$LC_ALL $ROUTINE_NAME\""),
+            vec![],
+        ),
+        ("fail", fail, Some("echo x; exit 3"), vec![]),
+        ("none", fail, None, vec![]),
+        ("onerr", "on_error: Fail", Some("true"), vec![]),
+        (
+            "req",
+            "requires: LC_ALL ROUTINE_PMSET NOPE_X\non_error: fail",
+            Some("true"),
+            vec![],
+        ),
+        (
+            "nohome",
+            fail,
+            Some("true"),
+            vec![
+                ("ROUTINE_HOME", format!("{h}/gone")),
+                ("ROUTINE_DIR", h.into()),
+                ("ROUTINE_STATE", format!("{h}/.state")),
+            ],
+        ),
+        (
+            "notmp",
+            fail,
+            Some("true"),
+            vec![("TMPDIR", format!("{h}/gone"))],
+        ),
+        ("ro", fail, Some("true"), vec![]),
+        ("held", fail, Some("true"), vec![]),
+        ("Bad_Name", fail, Some("true"), vec![]),
+        (
+            "unavail",
+            "",
+            Some("exit 5"),
+            vec![("ROUTINE_CLAUDE", format!("{h}/no-claude"))],
+        ),
+        (
+            "loggedout",
+            "",
+            Some("exit 5"),
+            vec![("MODE", "out".into())],
+        ),
+        ("repair", "", Some(fixed), vec![("MODE", "fix".into())]),
+        (
+            "unrepaired",
+            "",
+            Some("exit 7"),
+            vec![("MODE", "fails".into())],
+        ),
+        (
+            "big",
+            fail,
+            Some("head -c 1100000 /dev/zero | tr '\\0' x"),
+            vec![],
+        ),
+        ("leak", fail, Some(leak), vec![]),
+        ("gone", "", None, vec![]),
+        ("", "", None, vec![]),
+    ]
+}
+
+// `routine run <name>` is bin/routine's: exit code, stdout (each elapsed second masked), stderr,
+// the record, the degraded marker, what the state dir holds and the tick journal — for every
+// gate, a pass, a fail, each catch outcome and a runaway block's cut copy.
+#[test]
+fn run_is_bin_routines() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let tmp = sandbox("run");
+    let sides = [BASH, PORT].map(|prog| {
+        let home = tmp.join(if prog == BASH { "sh" } else { "rs" });
+        let h = home.to_string_lossy().into_owned();
+        let cases = run_cases(&h);
+        let st = home.join(".state");
+        cases
+            .map(|(name, fm, block, env)| {
+                if !matches!(name, "gone" | "") {
+                    routine_doc(&home, name, fm, block);
+                }
+                let ro = |m| fs::set_permissions(st.join("ro"), fs::Permissions::from_mode(m));
+                match name {
+                    "ro" => {
+                        fs::create_dir_all(st.join("ro")).unwrap();
+                        ro(0o555).unwrap();
+                    }
+                    "held" => {
+                        fs::create_dir_all(st.join("held/lock")).unwrap();
+                        fs::write(st.join("held/lock/pid"), "1\n").unwrap(); // EPERM: alive
+                    }
+                    "repair" | "unrepaired" => {
+                        fs::create_dir_all(st.join(name)).unwrap();
+                        fs::write(st.join(name).join("degraded"), "x\n").unwrap();
+                    }
+                    _ => {}
+                }
+                let args: &[&str] = if name.is_empty() {
+                    &["run"]
+                } else {
+                    &["run", name]
+                };
+                let o = routine_cmd(prog, &home, args, &env).output().unwrap();
+                let _ = ro(0o755);
+                if name == "leak" {
+                    assert!(
+                        !alive(&st.join("leak/leak.pid")),
+                        "{prog}: a block's leftover dies with it"
+                    );
+                }
+                let mut names: Vec<_> = (fs::read_dir(st.join(name)).into_iter().flatten())
+                    .map(|e| e.unwrap().file_name().into_string().unwrap())
+                    .filter(|n| n != "leak.pid")
+                    .collect();
+                names.sort();
+                (
+                    name,
+                    o.status.code(),
+                    masked(&o.stdout, &home),
+                    masked(&o.stderr, &home),
+                    fs::read_to_string(st.join(name).join("last-run.json")).ok(),
+                    names,
+                    fs::read_dir(home.join("tmp")).unwrap().count(),
+                )
+            })
+            .into_iter()
+            .chain([(
+                "tick.log",
+                None,
+                masked(&fs::read(st.join("tick.log")).unwrap(), &home),
+                String::new(),
+                None,
+                vec![],
+                0,
+            )])
+            .collect::<Vec<_>>()
+    });
+    for (sh, rs) in sides[0].iter().zip(&sides[1]) {
+        assert_eq!(sh, rs);
+    }
+    let rs = |i: usize| &sides[1][i];
+    assert_eq!(
+        (rs(0).1, rs(1).1, rs(4).1, rs(8).1, rs(12).1),
+        (Some(0), Some(3), Some(78), Some(75), Some(0))
+    );
+    assert!(rs(0).2.contains("\nout\nerr\n<h>\nC ok\n"));
+    assert!(
+        rs(14)
+            .2
+            .contains("… 51424 bytes cut — the last 1048576 follow\n")
+    );
+    assert_eq!(
+        rs(13).5,
+        ["degraded", "last-run.json", "logs", "runs.jsonl"][..]
+    );
+}
+
+// A HUP, INT or TERM to a running `routine run` records 129, 130 or 143 as bin/routine does,
+// stops the block's group — its TERM-ignoring member KILLed two seconds on — and releases the
+// lock; a second TERM half a second in cuts nothing short.
+#[test]
+fn run_stops_on_a_signal() {
+    use std::{fs, thread, time::Duration};
+    let tmp = sandbox("signal");
+    let block =
+        r#"sh -c 'trap "" TERM; echo $$ > "$ROUTINE_STATE_DIR/member.pid"; exec sleep 30' & wait"#;
+    thread::scope(|s| {
+        for prog in [BASH, PORT] {
+            for (sig, code) in [("HUP", 129), ("INT", 130), ("TERM", 143)] {
+                let home = tmp.join(format!("{}-{sig}", prog.len()));
+                routine_doc(&home, "sig", "on_error: fail", Some(block));
+                s.spawn(move || {
+                    let mut c = routine_cmd(prog, &home, &["run", "sig"], &[])
+                        .stdout(std::process::Stdio::null())
+                        .spawn()
+                        .unwrap();
+                    let st = home.join(".state/sig");
+                    while !st.join("member.pid").exists() {
+                        thread::sleep(Duration::from_millis(50));
+                    }
+                    let pid = c.id().to_string();
+                    let kill = |sig: &str| {
+                        Command::new("kill")
+                            .args([&format!("-{sig}"), &pid])
+                            .status()
+                    };
+                    kill(sig).unwrap();
+                    if sig == "TERM" {
+                        thread::sleep(Duration::from_millis(500));
+                        let _ = kill(sig);
+                    }
+                    let rc = c.wait().unwrap().code();
+                    let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
+                    assert_eq!(rc, Some(code), "{prog} {sig}");
+                    assert!(rec.contains(&format!("\"exit\":{code},")), "{prog} {sig}");
+                    assert!(!st.join("lock").exists() && !alive(&st.join("member.pid")));
+                });
+            }
+        }
+    });
+}
+
+// Past `timeout` the watchdog TERMs the block (124, its output and exit divider kept), KILLs a
+// TERM-ignoring member ten seconds on, ends a hung auth probe as a timeout (no degraded marker),
+// and TERMs an agent forked past the deadline, skipping the retry — bin/routine alike.
+#[test]
+fn run_times_out() {
+    use std::{fs, thread};
+    let tmp = sandbox("timeout");
+    let stubborn =
+        r#"sh -c 'trap "" TERM; echo $$ > "$ROUTINE_STATE_DIR/member.pid"; exec sleep 30' & wait"#;
+    // (name, block, MODE, what the output must hold)
+    let cases = [
+        ("slow", "echo SLOW; sleep 30", "", "SLOW\n"),
+        ("stubborn", stubborn, "", "escalating to KILL"),
+        ("late", "exit 3", "hang", "watchdog: deadline reached"),
+        ("gap", "exit 3", "gap", "claude exit=143"),
+    ];
+    thread::scope(|s| {
+        for prog in [BASH, PORT] {
+            for (name, block, mode, want) in cases {
+                let home = tmp.join(format!("{}-{name}", prog.len()));
+                routine_doc(&home, name, "timeout: 1", Some(block));
+                s.spawn(move || {
+                    let env = [("MODE", mode.to_owned())];
+                    let o = routine_cmd(prog, &home, &["run", name], &env)
+                        .output()
+                        .unwrap();
+                    let out = String::from_utf8_lossy(&o.stdout);
+                    let st = home.join(".state").join(name);
+                    let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
+                    assert_eq!(o.status.code(), Some(124), "{prog} {name}");
+                    assert!(
+                        out.contains(want) && rec.contains("\"exit\":124,"),
+                        "{prog} {name}: {out}"
+                    );
+                    assert!(
+                        !st.join("degraded").exists() && !out.contains("retry"),
+                        "{prog} {name}"
+                    );
+                    assert!(name != "slow" || out.contains("block 1 · exit 143"));
+                    assert!(name != "stubborn" || !alive(&st.join("member.pid")));
+                });
+            }
+        }
+    });
 }

@@ -108,7 +108,7 @@ runr() { # verb + args
     if [ -n "$RNOW" ]; then export ROUTINE_NOW="$RNOW"; else unset ROUTINE_NOW; fi
     for kv in $EXPORTS; do export "$kv"; done
     cd "$RCWD" || exit 1
-    case "${1:-}" in status|sync-ci) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac # the Rust port takes its verbs when set
+    case "${1:-}:${2:-}" in run:--due) ;; run:*|status:*|sync-ci:*) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac # the Rust port takes its verbs when set
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
@@ -125,7 +125,7 @@ runr_home() { # $1=home, then verb + args
     export ROUTINE_AGENTS_DIR="$RAGENTS" ROUTINE_LAUNCHCTL="$LCTL" ROUTINE_CLAUDE="$CLAUDE"
     export ROUTINE_PMSET="$PMSET"
     cd "$RCWD" || exit 1
-    case "${1:-}" in status|sync-ci) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac
+    case "${1:-}:${2:-}" in run:--due) ;; run:*|status:*|sync-ci:*) RUNNER=${ROUTINE_RUST:-$RUNNER} ;; esac
     exec "$RUNNER" "$@"
   ) > "$O" 2> "$E"
   RC=$?
@@ -314,7 +314,8 @@ EOF
 bgr stubborn; STUBBORN=$!
 bgr slow; SLOW=$!
 EXPORTS="TMPDIR=$SANDBOX/gaptmp ROUTINE_CLAUDE=$SANDBOX/bin/claude-gap" bgr gap; GAP=$!
-mkdir -p "$SANDBOX/orphantmp"; EXPORTS="TMPDIR=$SANDBOX/orphantmp" bgr orphan; wait_grep "$SANDBOX/orphan.pid" ""; kill -9 "$(cat "$RSTATE/orphan/lock/pid")"
+# bin/routine's alone: the port's watchdog is a thread, so a runner killed -9 takes it along
+mkdir -p "$SANDBOX/orphantmp"; ROUTINE_RUST= EXPORTS="TMPDIR=$SANDBOX/orphantmp" bgr orphan; wait_grep "$SANDBOX/orphan.pid" ""; kill -9 "$(cat "$RSTATE/orphan/lock/pid")"
 
 # ─── usage & dispatch ─────────────────────────────────────────────────────────
 
@@ -466,7 +467,7 @@ rm -rf "$RSTATE/locked/lock"
 printf '#!/bin/bash\n[ "$1" != %s ] || [ -e "$0.n" ] || { : > "$0.n"; rm -rf "${1%%/pid}"; exit 1; }; exec /bin/cat "$@"\n' \
   "$RSTATE/locked/lock/pid" | mkfix "$SANDBOX/relcat/cat"; chmod +x "$SANDBOX/relcat/cat"
 mkdir "$RSTATE/locked/lock"; echo 1 > "$RSTATE/locked/lock/pid"
-EXPORTS="PATH=$SANDBOX/relcat:$PATH" runr run locked
+ROUTINE_RUST= EXPORTS="PATH=$SANDBOX/relcat:$PATH" runr run locked # bin/routine's alone: the port reads lock/pid, no cat
 assert "a lock released as this run first reads it is taken, not waited on" [ $RC = 0 ]
 
 # the block hands its lock to pid 1 — launchd, which kill -0 refuses a user with EPERM —
@@ -788,10 +789,10 @@ RDIR="$SANDBOX/r-quiet" RNOW=1835404263 EXPORTS="PATH=$SANDBOX/shim:$PATH" runr 
 assert "a watched second forks no date" [ "$RC/$(nlines "$SANDBOX/date.calls")" = 0/0 ]
 
 # bash 3.2 times read -t by SIGALRM: a nap built on it never wakes under a caller that blocks it
-printf '#!/bin/bash\nexec perl -MPOSIX -e %q "%s" "$@"\n' 'sigprocmask(SIG_BLOCK, POSIX::SigSet->new(SIGALRM)); exec @ARGV' "$RUNNER" | mkfix "$SANDBOX/alrm/routine"
+printf '#!/bin/bash\nexec perl -MPOSIX -e %q "%s" "$@"\n' 'sigprocmask(SIG_BLOCK, POSIX::SigSet->new(SIGALRM)); exec @ARGV' "${ROUTINE_RUST:-$RUNNER}" | mkfix "$SANDBOX/alrm/routine"
 chmod +x "$SANDBOX/alrm/routine"
 doc "$SANDBOX/r-alrm/alrm.md" "timeout: 1" "/bin/sleep 5"
-RDIR="$SANDBOX/r-alrm" RUNNER="$SANDBOX/alrm/routine" runr run alrm
+RDIR="$SANDBOX/r-alrm" RUNNER="$SANDBOX/alrm/routine" ROUTINE_RUST= runr run alrm
 assert "a caller blocking SIGALRM still times out 124" [ "$RC" -eq 124 ]
 
 mkfix "$RDIR/comment.md" <<EOF
@@ -856,7 +857,7 @@ printf 'a\nb\n'; sleep 1
 \`\`\`
 EOF
 ( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET"
-  exec "$RUNNER" run pipe ) 2>/dev/null | head -1 > /dev/null
+  exec "${ROUTINE_RUST:-$RUNNER}" run pipe ) 2>/dev/null | head -1 > /dev/null
 wait_grep "$RSTATE/pipe/last-run.json" '"exit":0'
 assert "a reader that leaves early stops no block" [ -f "$SANDBOX/pipe.marker" ]
 assert "and the record stays JSON" has '"exit":0' "$(lastrun pipe)"
@@ -891,7 +892,7 @@ printf '#!/bin/bash\necho > "%s"; sleep 3; exec /bin/ps "$@"\n' "$SANDBOX/ps.slo
 chmod +x "$SANDBOX/slowps/ps"
 LOCKED_BEFORE=$(lastrun locked); hold locked
 ( export ROUTINE_HOME="$RHOME" ROUTINE_DIR="$RDIR" ROUTINE_STATE="$RSTATE" ROUTINE_PMSET="$PMSET" PATH="$SANDBOX/slowps:$PATH"
-  exec "$RUNNER" run locked ) >/dev/null 2>&1 & LP=$!
+  exec "${ROUTINE_RUST:-$RUNNER}" run locked ) >/dev/null 2>&1 & LP=$!
 assert "the loser is still judging the lock when signalled" wait_grep "$SANDBOX/ps.slow" ""
 kill -TERM "$LP"; wait "$LP"
 assert "a run signalled while it loses the lock leaves the holder's record alone" [ "$(lastrun locked)" = "$LOCKED_BEFORE" ]
