@@ -1,5 +1,5 @@
-//! `routine sync-ci` — `cmd_sync_ci` of bin/routine. The workflow is bin/routine's own heredoc,
-//! compiled in, so the two cannot drift; the cutover moves the text here.
+//! `routine sync-ci` — writes this repo's own CI tick, compiled in, so every repo's copy is the
+//! one this repo runs.
 
 use std::{
     env,
@@ -9,12 +9,12 @@ use std::{
     path::{Path, PathBuf},
 };
 
-const SRC: &str = include_str!("../bin/routine");
+const WORKFLOW: &str = include_str!("../.github/workflows/routines.yaml");
 
-/// bash's `$PWD`: the inherited `PWD` when absolute and naming the working directory — a
+/// A shell's `$PWD`: the inherited `PWD` when absolute and naming the working directory — a
 /// symlinked path, a trailing `/`, stays as given — else the resolved one. With no working
-/// directory to resolve (deleted), bash keeps `PWD` as inherited; with none of that either, `.`,
-/// never an empty prefix that would put the workflow under `/`.
+/// directory to resolve (deleted), the inherited `PWD`; with none of that either, `.`, never an
+/// empty prefix that would put the workflow under `/`.
 fn pwd() -> OsString {
     let id = |p: &Path| fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
     let pwd = env::var_os("PWD").filter(|p| !p.is_empty());
@@ -29,16 +29,15 @@ fn pwd() -> OsString {
 }
 
 /// Writes `.github/workflows/routines.yaml` under the working directory and drops the pre-.yaml
-/// `routines.yml`, which would double-tick. A failed write warns and still exits 0, as bash's.
+/// `routines.yml`, which would double-tick. A failed write warns and still exits 0.
 pub fn sync_ci() {
     let mut dir = pwd();
-    dir.push("/.github/workflows"); // appended as bash does: `$PWD/` doubles a trailing slash
+    dir.push("/.github/workflows"); // appended as a shell does: a trailing `/` doubles
     let dir = PathBuf::from(dir);
     let wf = dir.join("routines.yaml");
-    let body = SRC.split_once("cat > \"$wf\" <<'EOF'\n").unwrap().1;
     let _ = fs::create_dir_all(&dir);
     let _ = fs::remove_file(dir.join("routines.yml"));
-    if let Err(e) = fs::write(&wf, &body[..=body.find("\nEOF\n").unwrap()]) {
+    if let Err(e) = fs::write(&wf, WORKFLOW) {
         eprintln!("routine: {}: {e}", wf.display());
     }
     println!("wrote {}", wf.display());

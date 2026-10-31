@@ -12,7 +12,13 @@ mod sys;
 
 use std::process::ExitCode;
 
-// Byte-identical to `bin/routine help` — tests/routine.rs diffs the two.
+/// The release's `YYYY.M.N`, stamped through `ROUTINE_VERSION` by the release workflow, else the
+/// crate's.
+const VERSION: &str = match option_env!("ROUTINE_VERSION") {
+    Some(v) => v,
+    None => env!("CARGO_PKG_VERSION"),
+};
+
 const USAGE: &str = "routine — executable markdown on rails
 
   routine run <name>     run one routine document
@@ -20,10 +26,10 @@ const USAGE: &str = "routine — executable markdown on rails
   routine status         schedule × due? × last run, one row per routine
   routine install        install the launchd tick agent (dev.gigantic.routines.due)
   routine uninstall      remove it
-  routine setup          install plus the hotswap upgrade agent; --remove undoes both (Rust port)
-  routine upgrade        swap to mise's latest release; --check, --back, --retry (Rust port)
+  routine setup          install plus the hotswap upgrade agent; --remove undoes both
+  routine upgrade        swap to mise's latest release; --check, --back, --retry
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
-  routine help           this text
+  routine help           this text · --version the release, YYYY.M.N
 
 exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed or state unwritable ·
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
@@ -44,26 +50,27 @@ fn main() -> ExitCode {
             print!("{USAGE}");
             0
         }
+        ["--version" | "-V", ..] => {
+            println!("routine {VERSION}");
+            0
+        }
         ["run"] | ["run", ""] => {
             eprint!("{USAGE}");
             64
         }
-        [v @ ("status" | "run"), rest @ ..] => {
-            match state::now() {
-                Ok(now) if *v == "run" && rest[0] == "--due" => due::due(now),
-                Ok(now) if *v == "run" => run::run(rest[0], now),
-                Ok(now) => {
-                    let (dir, states, _) = state::roots();
-                    status::status(&dir, &states, now);
-                    0
-                }
-                // bash evaluates it as arithmetic; an error there names the script's own line
-                Err(v) => {
-                    eprintln!("routine: ROUTINE_NOW={v} is not an integer");
-                    64
-                }
+        [v @ ("status" | "run"), rest @ ..] => match state::now() {
+            Ok(now) if *v == "run" && rest[0] == "--due" => due::due(now),
+            Ok(now) if *v == "run" => run::run(rest[0], now),
+            Ok(now) => {
+                let (dir, states, _) = state::roots();
+                status::status(&dir, &states, now);
+                0
             }
-        }
+            Err(v) => {
+                eprintln!("routine: ROUTINE_NOW={v} is not an integer");
+                64
+            }
+        },
         ["sync-ci", ..] => {
             sync_ci::sync_ci();
             0

@@ -1,4 +1,4 @@
-//! Five-field cron in UTC — `civil`, `iso`, `isnum`, `expand` and `next_fire_after` of bin/routine.
+//! Five-field cron in UTC: the civil calendar, field expansion and the next fire.
 
 /// `(year, month, day, weekday)` of `epoch` in UTC, weekday 0 = Sunday — Hinnant's `civil_from_days`.
 pub fn civil(epoch: i64) -> (i64, i64, i64, i64) {
@@ -111,7 +111,6 @@ pub fn next_fire_after(start: i64, expr: &str) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::{civil, iso, next_fire_after};
-    use std::{io::Write, process::Command};
 
     #[test]
     fn civil_and_iso() {
@@ -126,8 +125,8 @@ mod tests {
         }
     }
 
-    // (start, schedule, next fire) — every case is also run through the bash functions
-    // sliced out of bin/routine, so the table is the runner's own answer, not a recollection.
+    // (start, schedule, next fire) — each answer is the bash runner's, which the port replaced
+    // after diffing every case against it, not a recollection
     const CASES: &[(i64, &str, Option<i64>)] = &[
         (1_786_698_300, "0 * * * *", Some(1_786_701_600)), // Fri 2026-08-14T09:05Z → 10:00Z
         (1_786_698_900, "0 * * * *", Some(1_786_701_600)),
@@ -181,26 +180,9 @@ mod tests {
     ];
 
     #[test]
-    fn next_fire_after_matches_the_table_and_bash() {
-        let mut bash = Command::new("/bin/bash")
-            .args(["-c", r#"export LC_ALL=C; eval "$(sed -n '/^civil()/,/^}/p;/^inset()/p;/^isnum()/p;/^expand()/,/^}/p;/^next_fire_after()/,/^}/p' bin/routine)"
-                while IFS='|' read -r -d '' t e; do next_fire_after "$t" "$e" || echo none; done"#])
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        for (t, e, _) in CASES {
-            write!(bash.stdin.as_ref().unwrap(), "{t}|{e}\0").unwrap();
+    fn next_fire_after_matches_the_table() {
+        for &(t, e, want) in CASES {
+            assert_eq!(next_fire_after(t, e), want, "{t} {e:?}");
         }
-        drop(bash.stdin.take());
-        let out = String::from_utf8(bash.wait_with_output().unwrap().stdout).unwrap();
-        let theirs: Vec<_> = out.lines().map(|l| l.parse().ok()).collect();
-        let ours: Vec<_> = CASES
-            .iter()
-            .map(|&(t, e, _)| next_fire_after(t, e))
-            .collect();
-        let want: Vec<_> = CASES.iter().map(|c| c.2).collect();
-        assert_eq!((&ours, &theirs), (&want, &want));
     }
 }

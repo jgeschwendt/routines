@@ -7,13 +7,11 @@ hk = "2.5.0"
 rust = "1.94.0"
 
 [tasks.check]
-description = "the gate hk's pre-push runs: fmt, clippy, 100 % line coverage of the crate and of bin/routine, the suite against the Rust port, the stele graph"
+description = "the gate hk's pre-push runs: fmt, clippy, the suite at 100 % line coverage, the stele graph"
 run = [
   "cargo fmt --check",
   "cargo clippy --all-targets -- -D warnings",
   { task = "cover" },
-  "/bin/bash test/cover.sh --min",
-  { task = "test:rust" },
   "stele check",
   "stele emit --check",
 ]
@@ -24,14 +22,6 @@ description = "the crate's tests under llvm-cov; anything under 100 % of lines f
 # unremapped object reports another worktree's source paths (73 % here).
 run = "cargo llvm-cov --remap-path-prefix --fail-under-lines 100"
 
-[tasks."cover:sh"]
-description = "line coverage of bin/routine under the suite — lists every executable line never hit; --min fails below 100 %"
-run = "/bin/bash test/cover.sh"
-
 [tasks.figures]
 description = "render every Claude Design artboard under docs/figures/project/ to its PNG (agent-browser, 2×)"
 run = "sh docs/figures/export.sh"
-
-[tasks."test:rust"]
-description = "the bash suite with every verb the Rust port has landed (run, status, sync-ci) sent to target/debug/routine"
-run = "cargo build && ROUTINE_RUST=$PWD/target/debug/routine /bin/bash test/routine.test.sh"

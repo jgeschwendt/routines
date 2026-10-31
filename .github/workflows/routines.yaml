@@ -1,3 +1,6 @@
+# Written by `routine sync-ci` (jgeschwendt/routines), which compiles this file in: a repo's copy
+# changes when it runs `routine sync-ci` again — the owner's .routines repo does after the first
+# release; until then its copy fails, fetching a bash runner main no longer carries.
 name: routines
 
 on:
@@ -30,8 +33,16 @@ jobs:
           path: routines/.state
           key: routines-state-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: routines-state-
-      - run: '[ -x bin/routine ] || (mkdir -p bin && curl -fsSL https://raw.githubusercontent.com/jgeschwendt/routines/main/bin/routine -o bin/routine && chmod +x bin/routine)'
-      - run: bin/routine run --due
+      # mise alone, no tools: the runner is jgeschwendt/routines' latest packslip release, which mise
+      # verifies against its signed packslip; mise-action exports GITHUB_TOKEN to every later step,
+      # so env drops it before a block runs
+      - uses: jdx/mise-action@c37c93293d6b742fc901e1406b8f764f6fb19dac # v2.4.4
+        with:
+          install: false
+      # mise hides a release under 24 h old; this one is the owner's own, attested by its workflow
+      - env:
+          MISE_MINIMUM_RELEASE_AGE_EXCLUDES: packslip:jgeschwendt/routines
+        run: mise x packslip:jgeschwendt/routines@latest -- env -u GITHUB_TOKEN routine run --due
       # actions/cache saves only on success; one red routine would roll every
       # other routine's state back and re-run it each tick
       - id: save

@@ -1,5 +1,4 @@
-//! What the runner reads back: its roots, its clock, `last-run.json` and the routine
-//! listing — the environment block, `now`, `json_get` and `routines` of bin/routine.
+//! What the runner reads back: its roots, its clock, `last-run.json` and the routine listing.
 
 use std::{
     env,
@@ -87,7 +86,7 @@ pub fn slug(n: &str) -> bool {
             .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-'))
 }
 
-/// A file's text as bash 3.2's `$(cat …)` holds it: NUL bytes dropped, empty when unreadable.
+/// A file's text as a shell's `$(cat …)` holds it: NUL bytes dropped, empty when unreadable.
 pub fn read(file: &Path) -> String {
     String::from_utf8_lossy(&fs::read(file).unwrap_or_default()).replace('\0', "")
 }

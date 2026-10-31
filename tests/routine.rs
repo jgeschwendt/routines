@@ -1,52 +1,62 @@
-use std::{ffi::OsStr, os::unix::ffi::OsStrExt, process::Command};
+#![expect(
+    clippy::too_many_lines,
+    reason = "a test is one table of literal expectations"
+)]
 
-// The usage text is the runner's own: every help spelling prints it byte for byte, and an
-// unknown verb names itself above it on stderr with bash's 64.
-#[test]
-fn help_is_bin_routines() {
-    fn run(args: &[&OsStr], bash: bool) -> (Option<i32>, String, String) {
-        let mut c = Command::new(if bash { "/bin/bash" } else { PORT });
-        let o = (if bash { c.arg(BASH) } else { &mut c })
-            .args(args)
-            .output()
-            .unwrap();
-        (
-            o.status.code(),
-            String::from_utf8(o.stdout).unwrap(),
-            String::from_utf8_lossy(&o.stderr).into_owned(),
-        )
-    }
-    let usage = run(&[], true).1;
-    assert!(usage.starts_with("routine — "));
-    for args in [
-        &[][..],
-        &[""],
-        &["help"],
-        &["-h"],
-        &["--help"],
-        &["bogus", "x"],
-    ] {
-        let args: Vec<_> = args.iter().map(OsStr::new).collect();
-        assert_eq!(run(&args, false), run(&args, true));
-    }
-    // a non-UTF-8 verb reads lossily, never a panic
-    let ff = run(&[OsStr::from_bytes(b"\xff")], false);
-    assert_eq!(
-        ff,
-        (
-            Some(64),
-            String::new(),
-            format!("routine: unknown command \u{fffd}\n{usage}")
-        )
-    );
+use std::{
+    ffi::OsStr,
+    os::unix::ffi::OsStrExt,
+    path::Path,
+    process::{Command, Output},
+};
+
+const EXE: &str = env!("CARGO_BIN_EXE_routine");
+
+/// Exit code, stdout, stderr.
+fn out(o: Output) -> (Option<i32>, String, String) {
+    (
+        o.status.code(),
+        String::from_utf8(o.stdout).unwrap(),
+        String::from_utf8_lossy(&o.stderr).into_owned(),
+    )
 }
 
-// `routine status` is bin/routine's byte for byte — stdout, stderr and exit code — for every
-// fixture home: missing, empty, and one holding each kind of row and each skipped name.
+/// `label` ruled out to 80 columns: bytes, a `·` one column — the runner's divider.
+fn rule(label: &str) -> String {
+    let n = 70_usize.saturating_sub(label.len() - label.matches('·').count());
+    format!("──────── {label} {}\n", "─".repeat(n))
+}
+
+// Every help spelling prints the usage; an unknown verb names itself above it on stderr with 64,
+// a non-UTF-8 one lossily; `--version` names the release.
 #[test]
-fn status_is_bin_routines() {
+fn help() {
+    let run = |args: &[&[u8]]| {
+        out(Command::new(EXE)
+            .args(args.iter().map(|a| OsStr::from_bytes(a)))
+            .output()
+            .unwrap())
+    };
+    let usage = run(&[]).1;
+    assert!(usage.starts_with("routine — executable markdown on rails\n"));
+    for args in [&[&b""[..]][..], &[b"help"], &[b"-h"], &[b"--help"]] {
+        assert_eq!(run(args), (Some(0), usage.clone(), String::new()));
+    }
+    for (verb, shown) in [(&b"bogus"[..], "bogus"), (b"\xff", "\u{fffd}")] {
+        let err = format!("routine: unknown command {shown}\n{usage}");
+        assert_eq!(run(&[verb, b"x"]), (Some(64), String::new(), err));
+    }
+    let version = option_env!("ROUTINE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    let v = (Some(0), format!("routine {version}\n"), String::new());
+    assert_eq!((run(&[b"--version"]), run(&[b"-V"])), (v.clone(), v));
+}
+
+// `routine status` — stdout, stderr and exit code — for every fixture home: missing, empty, and
+// one holding each kind of row and each skipped name.
+#[test]
+fn status() {
     use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
-    let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("status");
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("status");
     let lock = |mode| fs::set_permissions(tmp.join("locked"), Permissions::from_mode(mode));
     let _ = lock(0o700);
     let _ = fs::remove_dir_all(&tmp);
@@ -74,10 +84,10 @@ fn status_is_bin_routines() {
         ("full/.state/ahead/last-run.json", &ahead),
         ("full/two.md", "no frontmatter\n"),
         ("full/.state/two/last-run.json", &two),
-        ("full/.state/two/degraded", "since —\0 then\n\0\n"), // bash's $(…) drops NUL
+        ("full/.state/two/degraded", "since —\0 then\n\0\n"), // a NUL drops out
         ("locked/a.md", &hourly),
         ("full/bad.md", &sched("@daily")),
-        ("full/nul.md", "---\nschedule: 0 * * * *\0 5\n---\n"), // awk cuts at the NUL
+        ("full/nul.md", "---\nschedule: 0 * * * *\0 5\n---\n"), // the line ends at the NUL
         ("full/blank.md", &sched("")),
         ("full/AGENTS.md", &hourly),
         ("full/-flag.md", &hourly),
@@ -93,80 +103,92 @@ fn status_is_bin_routines() {
     symlink("nowhere", tmp.join("full/dangling.md")).unwrap();
     lock(0o600).unwrap(); // readable, unsearchable: a.md fails [ -e ] and [ -L ] alike
     let full = tmp.join("full").to_string_lossy().into_owned();
-    let status = |prog: &str, env: &[(&str, &str)]| {
-        let mut c = Command::new(prog);
-        if prog == "/bin/bash" {
-            c.arg(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"));
-        }
+    let status = |env: &[(&str, &str)]| {
+        let mut c = Command::new(EXE);
         for k in "HOME ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW".split(' ') {
             c.env_remove(k);
         }
-        let o = c
+        out(c
             .arg("status")
             .envs(env.iter().copied())
             .current_dir(&tmp)
             .output()
-            .unwrap();
-        (
-            o.status.code(),
-            String::from_utf8(o.stdout).unwrap(),
-            String::from_utf8(o.stderr).unwrap(),
-        )
+            .unwrap())
     };
     let now = ("ROUTINE_NOW", "1786699830"); // Fri 2026-08-14T09:30:30Z
-    for env in [
-        &[("ROUTINE_HOME", "missing"), now][..],
-        &[("ROUTINE_HOME", "empty"), now],
-        &[("ROUTINE_HOME", "full"), ("ROUTINE_NOW", " \t1786699830\n")],
-        &[("ROUTINE_HOME", &full)],
-        &[("ROUTINE_HOME", "locked"), now],
-        &[
-            ("HOME", ""),
-            ("ROUTINE_DIR", "full"),
-            ("ROUTINE_STATE", "full/.state"),
-            now,
-        ],
+    let head = "NAME                 SCHEDULE         DUE  EXIT  FINISHED              SECS\n";
+    // without ROUTINE_NOW the clock is real, long past recent's next fire
+    let rows = |recent: &str| {
+        format!(
+            "{head}a-routine-name-past-21-columns0 * * * *        due  —     —                     —
+ahead                0 * * * *        due  0     2026-08-14T09:00:05Z  5
+bad                  @daily           bad  —     —                     —
+blank                —                n/a  —     —                     —
+dir                  —                n/a  —     —                     —
+never                0 * * * *        due  —     —                     —
+nul                  0 * * * *        due  —     —                     —
+past                 0 * * * *        due  0     2026-08-14T09:00:05Z  5
+recent               0 * * * *        {recent}0     2026-08-14T09:00:05Z  5
+two                  —                n/a  \n9    —                     3 · degraded since since — then
+"
+        )
+    };
+    let skips = "routine: skip -flag.md: name not a slug\nroutine: skip AGENTS.md: name not a slug\n\
+                 routine: skip dangling.md: dangling symlink\n";
+    for (env, want) in [
+        (&[("ROUTINE_HOME", "missing"), now][..], None),
+        (&[("ROUTINE_HOME", "empty"), now], None),
+        (
+            &[("ROUTINE_HOME", "full"), ("ROUTINE_NOW", " \t1786699830\n")],
+            Some("—    "),
+        ),
+        (&[("ROUTINE_HOME", &full)], Some("due  ")),
+        (&[("ROUTINE_HOME", "locked"), now], None),
+        (
+            &[
+                ("HOME", ""),
+                ("ROUTINE_DIR", "full"),
+                ("ROUTINE_STATE", "full/.state"),
+                now,
+            ],
+            Some("—    "),
+        ),
     ] {
-        let rust = status(env!("CARGO_BIN_EXE_routine"), env);
-        assert_eq!(rust, status("/bin/bash", env), "{env:?}");
-        assert!(
-            rust.1.lines().count() > 1 || !env[0].1.contains("full"),
-            "{env:?}"
-        );
+        let want = want.map_or((head.to_owned(), ""), |r| (rows(r), skips));
+        assert_eq!(status(env), (Some(0), want.0, want.1.to_owned()), "{env:?}");
     }
     lock(0o700).unwrap();
-    // bash fails these too, naming its own line: only space, tab and newline are its blanks
+    // only space, tab and newline are blanks
     for v in ["x", "\u{a0}5", "\u{b}5", "\u{c}5", "5\r"] {
         let err = format!("routine: ROUTINE_NOW={v} is not an integer\n");
-        let rust = status(env!("CARGO_BIN_EXE_routine"), &[("ROUTINE_NOW", v)]);
-        assert_eq!(rust, (Some(64), String::new(), err));
+        assert_eq!(
+            status(&[("ROUTINE_NOW", v)]),
+            (Some(64), String::new(), err)
+        );
     }
 }
 
-// `routine sync-ci` is bin/routine's: the same workflow in the working directory, the legacy
-// `.yml` gone, the same `wrote` line — a symlinked `PWD` kept as given, a trailing `/` too — and exit 0 when the
-// write fails (a dir in its place).
+// `routine sync-ci` writes this repo's own tick in the working directory, the legacy `.yml` gone,
+// and names it — a symlinked `PWD` kept as given, a trailing `/` too — exiting 0 when the write
+// fails (a dir in its place).
 #[test]
-fn sync_ci_is_bin_routines() {
+fn sync_ci() {
     use std::{fs, os::unix::fs::symlink};
-    let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("sync-ci");
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sync-ci");
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(tmp.join("real")).unwrap();
     symlink("real", tmp.join("link")).unwrap();
-    let run = |prog: &str, blocked: bool, pwd: Option<&str>| {
-        let name = format!("{}-{blocked}-{pwd:?}", prog.len());
+    let run = |blocked: bool, pwd: Option<&str>| {
+        let name = format!("{blocked}-{pwd:?}");
         let wfs = tmp.join("real").join(&name).join(".github/workflows");
         fs::create_dir_all(&wfs).unwrap();
         fs::write(wfs.join("routines.yml"), "").unwrap();
         if blocked {
             fs::create_dir(wfs.join("routines.yaml")).unwrap();
         }
-        let mut c = Command::new(prog);
-        if prog == "/bin/bash" {
-            c.arg(concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine"));
-        }
+        let mut c = Command::new(EXE);
         let cwd = tmp.join("link").join(&name);
-        // without a matching PWD, both fall back to the resolved path
+        // without a matching PWD, the resolved path
         let shown = pwd.map_or_else(
             || cwd.canonicalize().unwrap().display().to_string(),
             |suffix| format!("{}{suffix}", cwd.display()),
@@ -188,15 +210,12 @@ fn sync_ci_is_bin_routines() {
         (false, Some("/")),
         (false, None),
     ] {
-        let rust = run(env!("CARGO_BIN_EXE_routine"), blocked, pwd);
-        assert_eq!(rust, run("/bin/bash", blocked, pwd));
-        assert_eq!(rust.1, "wrote <cwd>/.github/workflows/routines.yaml\n");
-        assert_eq!(
-            rust.2.is_some_and(|w| w.starts_with("name: routines\n")),
-            !blocked
-        );
+        let wrote = "wrote <cwd>/.github/workflows/routines.yaml\n".into();
+        let wf = include_str!("../.github/workflows/routines.yaml");
+        let want = (Some(0), wrote, (!blocked).then(|| wf.into()), false);
+        assert_eq!(run(blocked, pwd), want);
     }
-    // a deleted working directory: the inherited PWD as bash keeps it, else `.` — never `/`
+    // a deleted working directory: the inherited PWD, else `.` — never `/`
     for (env, shown) in [("", "<cwd>"), ("-u PWD", ".")] {
         let gone = tmp.join(format!("gone{}", env.len()));
         fs::create_dir(&gone).unwrap();
@@ -206,7 +225,7 @@ fn sync_ci_is_bin_routines() {
             .arg(format!(
                 "cd {g} && rmdir {g} && exec env {env} \"$0\" sync-ci"
             ))
-            .arg(env!("CARGO_BIN_EXE_routine"))
+            .arg(EXE)
             .output()
             .unwrap();
         let out = String::from_utf8(o.stdout)
@@ -222,28 +241,30 @@ fn sync_ci_is_bin_routines() {
     }
 }
 
-// `routine setup` writes bin/routine's tick byte for byte, bar the runner's path, beside hotswap's
-// upgrade agent on the `routine` shim; `upgrade` swaps under the manifest through stubbed mise and
-// launchctl, its drain refusing while a routine holds its lock; `setup --remove` undoes both.
+// `routine setup` refuses without mise's shim, links `~/.local/bin/routine` to it, writes the tick
+// on the shim beside hotswap's upgrade agent and loads both, then reloads a changed tick and
+// leaves current ones be; `upgrade` swaps under the manifest through stubbed mise and launchctl,
+// its drain refusing while a routine holds its lock; `setup --remove` undoes it all.
 #[test]
 fn setup_and_upgrade() {
-    use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink, path::Path};
+    use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("setup &<>");
     let (agents, bin) = (tmp.join("Library/LaunchAgents"), tmp.join("bin"));
-    let shims = tmp.join(".local/share/mise/shims");
+    let (shims, local) = (tmp.join(".local/share/mise/shims"), tmp.join(".local/bin"));
     let mode = |p: &Path, m| fs::set_permissions(p, fs::Permissions::from_mode(m));
     let _ = mode(&agents, 0o755);
+    let _ = mode(&local, 0o755);
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(&shims).unwrap();
     fs::create_dir_all(&bin).unwrap();
-    let exe = env!("CARGO_BIN_EXE_routine");
-    symlink(exe, shims.join("routine")).unwrap();
     let ls =
         r#"{"packslip:jgeschwendt/routines":[{"active":true,"installed":true,"version":"1"}]}"#;
-    let log = tmp.join("log");
+    let (log, loaded) = (tmp.join("log"), tmp.join("loaded"));
     let stub = format!(
-        "#!/bin/sh\necho \"${{0##*/}} $*\" >> '{}'\n[ \"$1\" != ls ] || echo '{ls}'\n",
-        log.display()
+        "#!/bin/sh\necho \"${{0##*/}} $*\" >> '{}'\n[ \"$1\" != ls ] || echo '{ls}'\n\
+         [ \"$1\" != print ] || [ -e '{}' ]\n",
+        log.display(),
+        loaded.display()
     );
     for n in ["launchctl", "mise"] {
         fs::write(bin.join(n), &stub).unwrap();
@@ -251,8 +272,8 @@ fn setup_and_upgrade() {
     }
     let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
     // exit code, stdout, stderr, then the stubs' log
-    let run = |prog: &str, args: &[&str], env: &[(&str, &str)]| {
-        let mut c = Command::new(prog);
+    let run = |args: &[&str], env: &[(&str, &str)]| {
+        let mut c = Command::new(EXE);
         for k in
             "MISE_DATA_DIR XDG_DATA_HOME ROUTINE_AGENTS_DIR ROUTINE_DIR ROUTINE_STATE".split(' ')
         {
@@ -271,69 +292,135 @@ fn setup_and_upgrade() {
         format!("{}\n{out}{calls}", o.status.code().unwrap())
             .replace(&format!("gui/{}", uid.trim()), "gui/$UID")
     };
+    let (shim, link) = (shims.join("routine"), local.join("routine"));
+    assert_eq!(
+        run(&["setup"], &[]),
+        format!(
+            "1\nroutine: no mise shim at {}: mise use -g packslip:jgeschwendt/routines first\n",
+            shim.display()
+        )
+    );
+    symlink(EXE, &shim).unwrap();
     let (due, up) = (
         agents.join("dev.gigantic.routines.due.plist"),
         agents.join("dev.gigantic.routines.upgrade.plist"),
     );
     let (d, u) = (due.display(), up.display());
-    let bash = concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine");
-    assert!(run(bash, &["install"], &[]).starts_with("0\n"));
-    let read = |p: &Path| fs::read_to_string(p).unwrap();
-    let tick = read(&due);
-    let outs = "launchctl bootout gui/$UID/com.routines.due\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
-                launchctl bootout gui/$UID/dev.gigantic.routines.upgrade\n";
-    let boot =
-        format!("{outs}launchctl bootstrap gui/$UID {d}\nlaunchctl bootstrap gui/$UID {u}\n");
-    assert_eq!(
-        run(exe, &["setup"], &[]),
-        format!("0\ninstalled {d}\ninstalled {u}\n{boot}")
+    let linked = format!("linked {} → {}\n", link.display(), shim.display());
+    let (old, print) = (
+        "launchctl bootout gui/$UID/com.routines.due\n",
+        "launchctl print gui/$UID/dev.gigantic.routines.",
     );
-    assert_eq!(read(&due).replace(&format!("'{exe}'"), bash), tick);
-    assert!(read(&up).contains("/shims/routine</string>"));
+    assert_eq!(
+        run(&["setup"], &[]),
+        format!(
+            "0\n{linked}loaded {d}\nloaded {u}\n{old}{print}due\nlaunchctl bootstrap gui/$UID {d}\n\
+             {print}upgrade\nlaunchctl bootstrap gui/$UID {u}\n"
+        )
+    );
+    let read = |p: &Path| fs::read_to_string(p).unwrap();
+    let esc = |p: &Path| {
+        let p = p.display().to_string().replace('&', "&amp;");
+        p.replace('<', "&lt;").replace('>', "&gt;")
+    };
+    let (t, s) = (esc(&tmp), esc(&shims));
+    assert_eq!(
+        read(&due),
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.gigantic.routines.due</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{s}/routine</string>
+    <string>run</string>
+    <string>--due</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key><string>{t}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>ROUTINE_HOME</key><string>{t}/home</string>
+    <key>ROUTINE_DIR</key><string>{t}/home</string>
+    <key>ROUTINE_STATE</key><string>{t}/home/.state</string>
+  </dict>
+  <key>StartInterval</key><integer>60</integer>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>{t}/home/.state/due.log</string>
+  <key>StandardErrorPath</key><string>{t}/home/.state/due.log</string>
+</dict>
+</plist>
+"#
+        )
+    );
+    assert!(read(&up).contains(&format!("<string>{s}/routine</string>")));
+    assert_eq!(fs::read_link(&link).unwrap(), shim);
+    // a checkout's tick, loaded: booted out and bootstrapped on the shim; the rest stays put
+    fs::write(&loaded, "").unwrap();
+    fs::write(&due, "exec bin/routine run --due").unwrap();
+    let reload = format!(
+        "0\n{linked}reloaded {d}\ncurrent {u}\n{old}{print}due\n\
+         launchctl bootout gui/$UID/dev.gigantic.routines.due\nlaunchctl bootstrap gui/$UID {d}\n\
+         {print}upgrade\n"
+    );
+    assert_eq!(run(&["install"], &[]), reload);
+    let probes = format!("{old}{print}due\n{print}upgrade\n");
+    let current = format!("{linked}current {d}\ncurrent {u}\n{probes}");
+    assert_eq!(run(&["setup"], &[]), format!("0\n{current}"));
     let key = "packslip:jgeschwendt/routines";
     let look =
         format!("mise ls --json\nmise latest {key}\nmise upgrade --bump {key}\nmise ls --json\n");
     let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
-    let green = format!("0\nroutines 1: green, 1 smoke probes\n{look}{boot}{kick}");
-    assert_eq!(run(exe, &["upgrade"], &[]), green);
+    let green = format!("0\nroutines 1: green, 1 smoke probes\n{look}{probes}{kick}");
+    assert_eq!(run(&["upgrade"], &[]), green);
     let rec = tmp.join(".local/state/hotswap/routines.json");
     assert!(rec.exists());
-    let removed = format!("0\nremoved {d}\nremoved {u}\n{outs}");
-    assert_eq!(run(exe, &["setup", "--remove"], &[]), removed);
-    assert!(!due.exists() && !up.exists() && !rec.exists());
+    let removed = format!(
+        "0\nremoved {d}\nremoved {u}\n{old}launchctl bootout gui/$UID/dev.gigantic.routines.due\n\
+         launchctl bootout gui/$UID/dev.gigantic.routines.upgrade\n"
+    );
+    assert_eq!(run(&["uninstall"], &[]), removed);
+    assert!(!due.exists() && !up.exists() && !rec.exists() && !link.exists());
     fs::create_dir_all(tmp.join("home/.state/a/lock")).unwrap();
-    let refused = run(exe, &["upgrade"], &[]);
+    let refused = run(&["upgrade"], &[]);
     assert!(
         refused.starts_with("1\n")
             && refused.ends_with(&format!(" refused; nothing swapped\n{look}"))
     );
-    let usage = run(exe, &["help"], &[]).replacen('0', "64", 1);
-    assert_eq!(run(exe, &["setup", "--x"], &[]), usage);
-    let fail = |args, env| run(exe, args, &[env]);
+    let usage = run(&["help"], &[]).replacen('0', "64", 1);
+    assert_eq!(run(&["setup", "--x"], &[]), usage);
+    let fail = |args, env| run(args, &[env]);
     assert_eq!(
-        fail(&["setup"], ("HOME", "")),
+        fail(&["setup", "--remove"], ("HOME", "")),
         "1\nroutine: HOME unset — the tick PATH needs ~/.local/bin\n"
     );
     let lctl = ("ROUTINE_LAUNCHCTL", "/usr/bin/false");
     assert_eq!(
-        fail(&["install"], lctl),
-        "1\nroutine: launchctl bootstrap failed\n"
+        fail(&["setup"], lctl),
+        format!("1\n{linked}routine: launchctl bootstrap failed\n")
     );
     mode(&agents, 0o555).unwrap();
-    let blocked = run(exe, &["setup"], &[]);
+    let blocked = run(&["setup"], &[]);
     mode(&agents, 0o755).unwrap();
-    assert_eq!(blocked, format!("1\nroutine: cannot write {d}\n"));
+    assert_eq!(
+        blocked,
+        format!("1\n{linked}routine: cannot write {d}\n{old}")
+    );
+    mode(&local, 0o555).unwrap();
+    let unlinked = run(&["setup"], &[]);
+    mode(&local, 0o755).unwrap();
+    let err = format!("cannot link {}: File exists (os error 17)", link.display());
+    assert_eq!(unlinked, format!("1\nroutine: {err}\n{old}"));
 }
-
-const BASH: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/bin/routine");
-const PORT: &str = env!("CARGO_BIN_EXE_routine");
 
 /// A fresh dir under the target's tmp, with the claude stub every run calls: `MODE` hangs the
 /// auth probe (`hang`), logs out (`out`), outlives the deadline past its TERM-ignoring probe
 /// into a TERM-honouring agent (`gap`), repairs (`fix`) or fails the agent (`fails`).
 fn sandbox(name: &str) -> std::path::PathBuf {
     use std::{fs, os::unix::fs::PermissionsExt};
-    let tmp = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
+    let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     let _ = Command::new("chmod")
         .arg("-R")
         .arg("u+w")
@@ -359,7 +446,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
 }
 
 /// `<home>/<name>.md`: the frontmatter lines, then one sh block unless `None`.
-fn routine_doc(home: &std::path::Path, name: &str, fm: &str, block: Option<&str>) {
+fn routine_doc(home: &Path, name: &str, fm: &str, block: Option<&str>) {
     let fm = if fm.is_empty() {
         String::new()
     } else {
@@ -370,18 +457,10 @@ fn routine_doc(home: &std::path::Path, name: &str, fm: &str, block: Option<&str>
     std::fs::write(home.join(format!("{name}.md")), fm + "prose\n" + &block).unwrap();
 }
 
-/// `routine <args>` under `prog` against `home`, the clock frozen, claude the sandbox's stub
-/// and `TMPDIR` the home's own.
-fn routine_cmd(
-    prog: &str,
-    home: &std::path::Path,
-    args: &[&str],
-    env: &[(&str, String)],
-) -> Command {
-    let mut c = Command::new(if prog == BASH { "/bin/bash" } else { prog });
-    if prog == BASH {
-        c.arg(BASH);
-    }
+/// `routine <args>` against `home`, the clock frozen, claude the sandbox's stub and `TMPDIR` the
+/// home's own.
+fn routine_cmd(home: &Path, args: &[&str], env: &[(&str, String)]) -> Command {
+    let mut c = Command::new(EXE);
     for k in "ROUTINE_DIR ROUTINE_STATE MODE".split(' ') {
         c.env_remove(k);
     }
@@ -394,15 +473,9 @@ fn routine_cmd(
     c
 }
 
-/// `b` with `home` as `<h>`, bash's own error lines dropped and each elapsed second (`· 3s`,
-/// `elapsed=3s`) as `N`: bash's `$SECONDS` and std's clock may straddle a second apart.
-fn masked(b: &[u8], home: &std::path::Path) -> String {
-    // bash's `cd` names its line and mktemp its template; src/AGENTS.md lists both
+/// `b` with `home` as `<h>` and each elapsed second (`· 3s`, `elapsed=3s`) as `N`.
+fn masked(b: &[u8], home: &Path) -> String {
     let s = String::from_utf8_lossy(b).replace(&*home.to_string_lossy(), "<h>");
-    let s: String = (s
-        .split_inclusive('\n')
-        .filter(|l| !l.starts_with(BASH) && !l.starts_with("mktemp:")))
-    .collect();
     let (mut out, mut digits) = (String::new(), String::new());
     for c in s.chars() {
         if c.is_ascii_digit() {
@@ -420,7 +493,7 @@ fn masked(b: &[u8], home: &std::path::Path) -> String {
 }
 
 /// Whether `pid` (in `file`) still runs, given three seconds to go.
-fn alive(file: &std::path::Path) -> bool {
+fn alive(file: &Path) -> bool {
     let p = std::fs::read_to_string(file).unwrap();
     (0..30).all(|_| {
         std::thread::sleep(std::time::Duration::from_millis(100));
@@ -512,101 +585,221 @@ fn run_cases(h: &str) -> [Case; 18] {
     ]
 }
 
-// `routine run <name>` is bin/routine's: exit code, stdout (each elapsed second masked), stderr,
-// the record, the degraded marker, what the state dir holds and the tick journal — for every
-// gate, a pass, a fail, each catch outcome and a runaway block's cut copy.
+// `routine run <name>`: exit code, stdout (each elapsed second masked), stderr, the record, what
+// the state dir holds and the temp dirs left — for every gate, a pass, a fail, each catch outcome
+// and a runaway block's cut copy — then the tick journal's refusals.
 #[test]
-fn run_is_bin_routines() {
+fn run() {
     use std::{fs, os::unix::fs::PermissionsExt};
     let tmp = sandbox("run");
-    let sides = [BASH, PORT].map(|prog| {
-        let home = tmp.join(if prog == BASH { "sh" } else { "rs" });
-        let h = home.to_string_lossy().into_owned();
-        let cases = run_cases(&h);
-        let st = home.join(".state");
-        cases
-            .map(|(name, fm, block, env)| {
-                if !matches!(name, "gone" | "") {
-                    routine_doc(&home, name, fm, block);
-                }
-                let ro = |m| fs::set_permissions(st.join("ro"), fs::Permissions::from_mode(m));
-                match name {
-                    "ro" => {
-                        fs::create_dir_all(st.join("ro")).unwrap();
-                        ro(0o555).unwrap();
-                    }
-                    "held" => {
-                        fs::create_dir_all(st.join("held/lock")).unwrap();
-                        fs::write(st.join("held/lock/pid"), "1\n").unwrap(); // EPERM: alive
-                    }
-                    "repair" | "unrepaired" => {
-                        fs::create_dir_all(st.join(name)).unwrap();
-                        fs::write(st.join(name).join("degraded"), "x\n").unwrap();
-                    }
-                    _ => {}
-                }
-                let args: &[&str] = if name.is_empty() {
-                    &["run"]
-                } else {
-                    &["run", name]
-                };
-                let o = routine_cmd(prog, &home, args, &env).output().unwrap();
-                let _ = ro(0o755);
-                if name == "leak" {
-                    assert!(
-                        !alive(&st.join("leak/leak.pid")),
-                        "{prog}: a block's leftover dies with it"
-                    );
-                }
-                let mut names: Vec<_> = (fs::read_dir(st.join(name)).into_iter().flatten())
-                    .map(|e| e.unwrap().file_name().into_string().unwrap())
-                    .filter(|n| n != "leak.pid")
-                    .collect();
-                names.sort();
-                (
-                    name,
-                    o.status.code(),
-                    masked(&o.stdout, &home),
-                    masked(&o.stderr, &home),
-                    fs::read_to_string(st.join(name).join("last-run.json")).ok(),
-                    names,
-                    fs::read_dir(home.join("tmp")).unwrap().count(),
-                )
-            })
-            .into_iter()
-            .chain([(
-                "tick.log",
-                None,
-                masked(&fs::read(st.join("tick.log")).unwrap(), &home),
-                String::new(),
-                None,
-                vec![],
-                0,
-            )])
-            .collect::<Vec<_>>()
+    let home = tmp.join("home");
+    let h = home.to_string_lossy().into_owned();
+    let st = home.join(".state");
+    let usage = String::from_utf8(Command::new(EXE).output().unwrap().stdout).unwrap();
+    let got = run_cases(&h).map(|(name, fm, block, env)| {
+        if !matches!(name, "gone" | "") {
+            routine_doc(&home, name, fm, block);
+        }
+        let ro = |m| fs::set_permissions(st.join("ro"), fs::Permissions::from_mode(m));
+        match name {
+            "ro" => {
+                fs::create_dir_all(st.join("ro")).unwrap();
+                ro(0o555).unwrap();
+            }
+            "held" => {
+                fs::create_dir_all(st.join("held/lock")).unwrap();
+                fs::write(st.join("held/lock/pid"), "1\n").unwrap(); // EPERM: alive
+            }
+            "repair" | "unrepaired" => {
+                fs::create_dir_all(st.join(name)).unwrap();
+                fs::write(st.join(name).join("degraded"), "x\n").unwrap();
+            }
+            _ => {}
+        }
+        let args: &[&str] = if name.is_empty() {
+            &["run"]
+        } else {
+            &["run", name]
+        };
+        let o = routine_cmd(&home, args, &env).output().unwrap();
+        let _ = ro(0o755);
+        if name == "leak" {
+            assert!(
+                !alive(&st.join("leak/leak.pid")),
+                "a block's leftover dies with it"
+            );
+        }
+        let mut names: Vec<_> = (fs::read_dir(st.join(name)).into_iter().flatten())
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .filter(|n| n != "leak.pid")
+            .collect();
+        names.sort();
+        (
+            name,
+            o.status.code(),
+            masked(&o.stdout, &home),
+            masked(&o.stderr, &home),
+            fs::read_to_string(st.join(name).join("last-run.json")).ok(),
+            names.join(" "),
+            fs::read_dir(home.join("tmp")).unwrap().count(),
+        )
     });
-    for (sh, rs) in sides[0].iter().zip(&sides[1]) {
-        assert_eq!(sh, rs);
+    let rec = |exit: i32, degraded: bool| {
+        Some(format!(
+            "{{\"started\":\"2026-08-14T09:00:00Z\",\"started_epoch\":1786698000,\"finished\":\
+             \"2026-08-14T09:00:00Z\",\"exit\":{exit},\"duration\":0,\"degraded\":{degraded}}}\n"
+        ))
+    };
+    // a run's dividers around `body`, which ends in block 1's own
+    let ran = |name: &str, body: &str, exit: i32| {
+        let open = rule(&format!("routine {name} · 2026-08-14T09:00:00Z"));
+        let close = rule(&format!("routine {name} · exit {exit}"));
+        (
+            format!("{open}{}{body}{close}", rule("block 1")),
+            String::new(),
+        )
+    };
+    let exit = |n: i32| rule(&format!("block 1 · exit {n} · Ns"));
+    let caught = |n: i32| rule(&format!("block 1 · caught exit {n} · Ns"));
+    let catch = |agent: i32, n: i32| {
+        format!(
+            "{}{}catch: claude exit={agent} elapsed=Ns\n{}{}",
+            exit(7),
+            rule("block 1 · catch"),
+            rule("block 1 · retry"),
+            caught(n)
+        )
+    };
+    let degraded = |why: &str| format!("{}catch degraded: claude {why}\n{}", exit(5), caught(5));
+    let big = format!(
+        "… 51424 bytes cut — the last 1048576 follow\n{}{}",
+        "x".repeat(1_048_576),
+        exit(0)
+    );
+    let refused = |e: &str| (String::new(), format!("routine: {e}\n"));
+    let (all, deg) = (
+        "last-run.json logs runs.jsonl",
+        "degraded last-run.json logs runs.jsonl",
+    );
+    let want = [
+        (
+            "ok",
+            0,
+            ran("ok", &format!("out\nerr\n<h>\nC ok\n{}", exit(0)), 0),
+            rec(0, false),
+            all,
+        ),
+        (
+            "fail",
+            3,
+            ran("fail", &format!("x\n{}{}", exit(3), caught(3)), 3),
+            rec(3, false),
+            all,
+        ),
+        (
+            "none",
+            64,
+            refused("no sh or bash blocks in <h>/none.md"),
+            rec(64, false),
+            all,
+        ),
+        (
+            "onerr",
+            64,
+            refused("on_error Fail is neither claude nor fail in <h>/onerr.md"),
+            rec(64, false),
+            all,
+        ),
+        (
+            "req",
+            78,
+            refused("req missing required env: NOPE_X"),
+            rec(78, false),
+            "last-run.json runs.jsonl",
+        ),
+        (
+            "nohome",
+            64,
+            refused("no routines home <h>/gone"),
+            rec(64, false),
+            all,
+        ),
+        (
+            "notmp",
+            73,
+            refused("mktemp failed under <h>/gone"),
+            rec(73, false),
+            all,
+        ),
+        ("ro", 73, refused("cannot write <h>/.state/ro"), None, ""),
+        (
+            "held",
+            75,
+            refused("held already running (pid 1)"),
+            None,
+            "lock lock-blocked.log",
+        ),
+        (
+            "Bad_Name",
+            64,
+            refused("invalid routine name: Bad_Name"),
+            None,
+            "",
+        ),
+        (
+            "unavail",
+            5,
+            ran("unavail", &degraded("unavailable"), 5),
+            rec(5, true),
+            deg,
+        ),
+        (
+            "loggedout",
+            5,
+            ran("loggedout", &degraded("not logged in"), 5),
+            rec(5, true),
+            deg,
+        ),
+        (
+            "repair",
+            0,
+            ran("repair", &catch(0, 0), 0),
+            rec(0, false),
+            "fixed last-run.json logs runs.jsonl",
+        ),
+        (
+            "unrepaired",
+            7,
+            ran("unrepaired", &catch(1, 7), 7),
+            rec(7, true),
+            deg,
+        ),
+        ("big", 0, ran("big", &big, 0), rec(0, false), all),
+        ("leak", 0, ran("leak", &exit(0), 0), rec(0, false), all),
+        ("gone", 64, refused("no routine gone"), None, ""),
+        (
+            "",
+            64,
+            (String::new(), usage),
+            None,
+            "big fail held leak loggedout nohome none notmp ok onerr repair req ro tick.log \
+             unavail unrepaired",
+        ),
+    ];
+    for (got, (name, code, (stdout, stderr), rec, names)) in got.iter().zip(want) {
+        let want = (name, Some(code), stdout, stderr, rec, names.to_owned(), 0);
+        assert_eq!(got, &want, "{name}");
     }
-    let rs = |i: usize| &sides[1][i];
     assert_eq!(
-        (rs(0).1, rs(1).1, rs(4).1, rs(8).1, rs(12).1),
-        (Some(0), Some(3), Some(78), Some(75), Some(0))
-    );
-    assert!(rs(0).2.contains("\nout\nerr\n<h>\nC ok\n"));
-    assert!(
-        rs(14)
-            .2
-            .contains("… 51424 bytes cut — the last 1048576 follow\n")
-    );
-    assert_eq!(
-        rs(13).5,
-        ["degraded", "last-run.json", "logs", "runs.jsonl"][..]
+        masked(&fs::read(st.join("tick.log")).unwrap(), &home),
+        "2026-08-14T09:00:00Z run req refused: missing required env: NOPE_X\n\
+         2026-08-14T09:00:00Z run ro refused: <h>/.state/ro not writable\n\
+         2026-08-14T09:00:00Z run refused: invalid routine name: Bad_Name\n\
+         2026-08-14T09:00:00Z run refused: no routine gone (<h>/gone.md)\n"
     );
 }
 
-// A HUP, INT or TERM to a running `routine run` records 129, 130 or 143 as bin/routine does,
-// stops the block's group — its TERM-ignoring member KILLed two seconds on — and releases the
+// A HUP, INT or TERM to a running `routine run` records 129, 130 or 143, stops the block's group — its TERM-ignoring member KILLed two seconds on — and releases the
 // lock; a second TERM half a second in cuts nothing short.
 #[test]
 fn run_stops_on_a_signal() {
@@ -615,44 +808,42 @@ fn run_stops_on_a_signal() {
     let block =
         r#"sh -c 'trap "" TERM; echo $$ > "$ROUTINE_STATE_DIR/member.pid"; exec sleep 30' & wait"#;
     thread::scope(|s| {
-        for prog in [BASH, PORT] {
-            for (sig, code) in [("HUP", 129), ("INT", 130), ("TERM", 143)] {
-                let home = tmp.join(format!("{}-{sig}", prog.len()));
-                routine_doc(&home, "sig", "on_error: fail", Some(block));
-                s.spawn(move || {
-                    let mut c = routine_cmd(prog, &home, &["run", "sig"], &[])
-                        .stdout(std::process::Stdio::null())
-                        .spawn()
-                        .unwrap();
-                    let st = home.join(".state/sig");
-                    while !st.join("member.pid").exists() {
-                        thread::sleep(Duration::from_millis(50));
-                    }
-                    let pid = c.id().to_string();
-                    let kill = |sig: &str| {
-                        Command::new("kill")
-                            .args([&format!("-{sig}"), &pid])
-                            .status()
-                    };
-                    kill(sig).unwrap();
-                    if sig == "TERM" {
-                        thread::sleep(Duration::from_millis(500));
-                        let _ = kill(sig);
-                    }
-                    let rc = c.wait().unwrap().code();
-                    let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
-                    assert_eq!(rc, Some(code), "{prog} {sig}");
-                    assert!(rec.contains(&format!("\"exit\":{code},")), "{prog} {sig}");
-                    assert!(!st.join("lock").exists() && !alive(&st.join("member.pid")));
-                });
-            }
+        for (sig, code) in [("HUP", 129), ("INT", 130), ("TERM", 143)] {
+            let home = tmp.join(sig);
+            routine_doc(&home, "sig", "on_error: fail", Some(block));
+            s.spawn(move || {
+                let mut c = routine_cmd(&home, &["run", "sig"], &[])
+                    .stdout(std::process::Stdio::null())
+                    .spawn()
+                    .unwrap();
+                let st = home.join(".state/sig");
+                while !st.join("member.pid").exists() {
+                    thread::sleep(Duration::from_millis(50));
+                }
+                let pid = c.id().to_string();
+                let kill = |sig: &str| {
+                    Command::new("kill")
+                        .args([&format!("-{sig}"), &pid])
+                        .status()
+                };
+                kill(sig).unwrap();
+                if sig == "TERM" {
+                    thread::sleep(Duration::from_millis(500));
+                    let _ = kill(sig);
+                }
+                let rc = c.wait().unwrap().code();
+                let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
+                assert_eq!(rc, Some(code), "{sig}");
+                assert!(rec.contains(&format!("\"exit\":{code},")), "{sig}");
+                assert!(!st.join("lock").exists() && !alive(&st.join("member.pid")));
+            });
         }
     });
 }
 
 // Past `timeout` the watchdog TERMs the block (124, its output and exit divider kept), KILLs a
 // TERM-ignoring member ten seconds on, ends a hung auth probe as a timeout (no degraded marker),
-// and TERMs an agent forked past the deadline, skipping the retry — bin/routine alike.
+// and TERMs an agent forked past the deadline, skipping the retry.
 #[test]
 fn run_times_out() {
     use std::{fs, thread};
@@ -667,38 +858,34 @@ fn run_times_out() {
         ("gap", "exit 3", "gap", "claude exit=143"),
     ];
     thread::scope(|s| {
-        for prog in [BASH, PORT] {
-            for (name, block, mode, want) in cases {
-                let home = tmp.join(format!("{}-{name}", prog.len()));
-                routine_doc(&home, name, "timeout: 1", Some(block));
-                s.spawn(move || {
-                    let env = [("MODE", mode.to_owned())];
-                    let o = routine_cmd(prog, &home, &["run", name], &env)
-                        .output()
-                        .unwrap();
-                    let out = String::from_utf8_lossy(&o.stdout);
-                    let st = home.join(".state").join(name);
-                    let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
-                    assert_eq!(o.status.code(), Some(124), "{prog} {name}");
-                    assert!(
-                        out.contains(want) && rec.contains("\"exit\":124,"),
-                        "{prog} {name}: {out}"
-                    );
-                    assert!(
-                        !st.join("degraded").exists() && !out.contains("retry"),
-                        "{prog} {name}"
-                    );
-                    assert!(name != "slow" || out.contains("block 1 · exit 143"));
-                    assert!(name != "stubborn" || !alive(&st.join("member.pid")));
-                });
-            }
+        for (name, block, mode, want) in cases {
+            let home = tmp.join(name);
+            routine_doc(&home, name, "timeout: 1", Some(block));
+            s.spawn(move || {
+                let env = [("MODE", mode.to_owned())];
+                let o = routine_cmd(&home, &["run", name], &env).output().unwrap();
+                let out = String::from_utf8_lossy(&o.stdout);
+                let st = home.join(".state").join(name);
+                let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
+                assert_eq!(o.status.code(), Some(124), "{name}");
+                assert!(
+                    out.contains(want) && rec.contains("\"exit\":124,"),
+                    "{name}: {out}"
+                );
+                assert!(
+                    !st.join("degraded").exists() && !out.contains("retry"),
+                    "{name}"
+                );
+                assert!(name != "slow" || out.contains("block 1 · exit 143"));
+                assert!(name != "stubborn" || !alive(&st.join("member.pid")));
+            });
         }
     });
 }
 
 /// What a tick leaves in `home`'s state: tick.log, then each entry's name, and for a routine
 /// its record and what its dir holds.
-fn due_state(home: &std::path::Path) -> Vec<String> {
+fn due_state(home: &Path) -> Vec<String> {
     use std::fs;
     let st = home.join(".state");
     let mut out = vec![masked(&fs::read(st.join("tick.log")).unwrap(), home)];
@@ -725,7 +912,7 @@ fn due_state(home: &std::path::Path) -> Vec<String> {
 /// A tick's home: `docs` a line per routine, `name|schedule|block` (an empty block `true`);
 /// `later` and `yearly` ran at 09:00, `ahead` past the clock, `c`'s lock is held, and a dark
 /// home holds a NUL schedule, a non-doc, a dangling link and a due.log past 5 MB.
-fn due_home(home: &std::path::Path, docs: &str) {
+fn due_home(home: &Path, docs: &str) {
     use std::{fs, os::unix::fs::symlink};
     let st = home.join(".state");
     for doc in docs.lines() {
@@ -759,13 +946,13 @@ fn due_home(home: &std::path::Path, docs: &str) {
     }
 }
 
-// `routine run --due` is bin/routine's: exit code, stdout and stderr (line by line, the
-// routines being concurrent), tick.log, and each routine's record and state — an empty home,
-// nothing due, one due under a full wake, several with one failing and one held under a pmset
-// that fails open, and a dark wake that defers, over every kind of skipped, bad and
-// unscheduled doc and a due.log past 5 MB.
+// `routine run --due`: exit code, stdout and stderr (sorted by line, the routines being
+// concurrent), tick.log, and each routine's record and state — an empty home, nothing due, one due
+// under a full wake, several with one failing and one held under a pmset that fails open, and a
+// dark wake that defers, over every kind of skipped, bad and unscheduled doc and a due.log past
+// 5 MB.
 #[test]
-fn due_is_bin_routines() {
+fn due() {
     use std::{fs, os::unix::fs::PermissionsExt};
     let tmp = sandbox("due");
     let pmset = |name: &str, body: &str| {
@@ -781,103 +968,176 @@ fn due_is_bin_routines() {
         pmset("open", "echo 'Current Power State: 4'; exit 1"),
     );
     let t = "2026-08-14T09:00:00Z";
-    // (case, pmset, docs, what tick.log must hold)
+    let ran = |name: &str, exit: i32| {
+        let r = format!(
+            "<h>/.state/{name} 0 [\"last-run.json\", \"logs\", \"runs.jsonl\"] {{\"started\":\"{t}\",\
+             \"started_epoch\":1786698000,\"finished\":\"{t}\",\"exit\":{exit},\"duration\":0,\
+             \"degraded\":false}}\n"
+        );
+        let lines = [
+            format!("routine {name} · {t}"),
+            "block 1".into(),
+            format!("block 1 · exit {exit} · Ns"),
+            format!("routine {name} · exit {exit}"),
+        ];
+        (lines.map(|l| rule(&l)).to_vec(), r)
+    };
+    let (ra, mut rb, hourly) = (ran("a", 0), ran("b", 3), ran("hourly", 0));
+    rb.0.push(rule("block 1 · caught exit 3 · Ns"));
+    let (empty, last) = (
+        |n: &str, size| format!("<h>/.state/{n} {size} [] "),
+        |n: &str, e| format!("<h>/.state/{n} 0 [\"last-run.json\"] {{\"started_epoch\":{e}}}\n"),
+    );
+    // (case, pmset, docs, exit, stdout, stderr, tick.log, each state entry)
     let cases = [
-        ("empty", &dark, "", " due=- ".into()),
+        (
+            "empty",
+            &dark,
+            "",
+            0,
+            vec![],
+            "",
+            format!("{t} tick docs=0 due=- next=-\n"),
+            vec![empty("tick.log", 46)],
+        ),
         (
             "none",
             &dark,
             "manual||\nlater|0 0 1 1 *|",
-            " due=- ".into(),
+            0,
+            vec![],
+            "",
+            format!("{t} tick docs=2 due=- next=later@2027-01-01T00:00:00Z,manual@unscheduled\n"),
+            vec![last("later", 1_786_698_000), empty("tick.log", 90)],
         ),
         (
             "one",
             &lit,
             "hourly|0 * * * *|echo out; echo err >&2",
-            "dispatched hourly exit=0\n".into(),
+            0,
+            [hourly.0, vec!["out\n".into(), "err\n".into()]].concat(),
+            "",
+            format!(
+                "{t} tick docs=1 due=hourly next=-\n{t} dispatch hourly\n\
+                 {t} dispatched hourly exit=0\n"
+            ),
+            vec![hourly.1, empty("tick.log", 134)],
         ),
         (
             "several",
             &open,
             "a|0 * * * *|echo a\nb|0 * * * *|exit 3\nc|0 * * * *|",
-            format!("dispatched b exit=3\n{t} dispatched c exit=75\n"),
+            1,
+            [ra.0, vec!["a\n".into()], rb.0].concat(),
+            "routine: c already running (pid 1)\n",
+            format!(
+                "{t} tick docs=3 due=a,b,c next=-\n{t} dispatch a\n{t} dispatch b\n{t} dispatch c\n\
+                 {t} dispatched a exit=0\n{t} dispatched b exit=3\n{t} dispatched c exit=75\n"
+            ),
+            vec![
+                ra.1,
+                rb.1,
+                "<h>/.state/c 0 [\"lock\", \"lock-blocked.log\"] ".into(),
+                empty("tick.log", 270),
+            ],
         ),
         (
             "dark",
             &dark,
-            "hourly|0 * * * *|\nyearly|0 0 1 1 *|\nahead|0 0 1 1 *|\nbad|@daily|\nblank||\nNot_Slug|0 * * * *|",
+            "hourly|0 * * * *|\nyearly|0 0 1 1 *|\nahead|0 0 1 1 *|\nbad|@daily|\nblank||\n\
+             Not_Slug|0 * * * *|",
+            0,
+            vec![],
+            "",
             format!(
-                " due=ahead,hourly,nul next=bad@bad,blank@unscheduled,yearly@2027-01-01T00:00:00Z\n\
-                 {t} defer dark-wake due=ahead,hourly,nul\n"
+                "{t} skip Not_Slug.md: name not a slug\n{t} skip dangling.md: dangling symlink\n\
+                 {t} tick docs=6 due=ahead,hourly,nul next=bad@bad,blank@unscheduled,\
+                 yearly@2027-01-01T00:00:00Z\n{t} defer dark-wake due=ahead,hourly,nul\n"
             ),
+            vec![
+                last("ahead", 1_786_699_999),
+                empty("due.log", 0),
+                empty("due.log.1", 5_242_881),
+                empty("tick.log", 282),
+                last("yearly", 1_786_698_000),
+            ],
         ),
     ];
-    for (case, pmset, docs, want) in cases {
-        let [sh, rs] = [BASH, PORT].map(|prog| {
-            let home = tmp.join(format!("{case}-{}", prog.len()));
-            due_home(&home, docs);
-            let env = [("ROUTINE_PMSET", pmset.clone())];
-            let o = routine_cmd(prog, &home, &["run", "--due"], &env)
-                .output()
-                .unwrap();
-            let lines = |b: &[u8]| {
-                let mut l: Vec<_> = masked(b, &home).lines().map(String::from).collect();
-                l.sort();
-                l
-            };
-            (
-                o.status.code(),
-                lines(&o.stdout),
-                lines(&o.stderr),
-                due_state(&home),
-            )
-        });
-        assert_eq!(sh, rs, "{case}");
-        assert_eq!(rs.0, Some(i32::from(case == "several")), "{case}");
-        assert!(rs.3[0].contains(&want), "{case}: {}", rs.3[0]);
+    for (case, pmset, docs, code, mut stdout, stderr, tick, state) in cases {
+        let home = tmp.join(format!("home-{case}"));
+        due_home(&home, docs);
+        let env = [("ROUTINE_PMSET", pmset.clone())];
+        let o = routine_cmd(&home, &["run", "--due"], &env)
+            .output()
+            .unwrap();
+        let lines = |b: &[u8]| {
+            let mut l: Vec<_> = (masked(b, &home).split_inclusive('\n'))
+                .map(String::from)
+                .collect();
+            l.sort();
+            l
+        };
+        stdout.sort();
+        let stderr = stderr.split_inclusive('\n').map(String::from).collect();
+        let got = (
+            o.status.code(),
+            lines(&o.stdout),
+            lines(&o.stderr),
+            due_state(&home),
+        );
+        let want = (Some(code), stdout, stderr, [vec![tick], state].concat());
+        assert_eq!(got, want, "{case}");
     }
 }
 
 // A TERM to the tick alone (launchd's stop), or an INT to its whole group (a ^C), reaches each
 // running routine as TERM — a background routine ignores INT — which records 143 and kills its
-// block; the tick exits 143 or 130 with no `dispatched` line, as bin/routine does.
+// block; the tick exits 143 or 130 with no `dispatched` line.
 #[test]
 fn due_stops_on_a_signal() {
     use std::{os::unix::process::CommandExt, thread, time::Duration};
     let tmp = sandbox("due-signal");
     let block = r#"echo $$ > "$ROUTINE_STATE_DIR/pid"; exec sleep 30"#;
-    let sides = [BASH, PORT].map(|prog| {
-        [("TERM", false, 143), ("INT", true, 130)].map(|(sig, group, code)| {
-            let home = tmp.join(format!("{}-{sig}", prog.len()));
-            for n in ["a", "b"] {
-                routine_doc(
-                    &home,
-                    n,
-                    "schedule: \"* * * * *\"\non_error: fail",
-                    Some(block),
-                );
-            }
-            let mut c = routine_cmd(prog, &home, &["run", "--due"], &[])
-                .process_group(0)
-                .stdout(std::process::Stdio::null())
-                .spawn()
-                .unwrap();
-            let st = home.join(".state");
-            while !(st.join("a/pid").exists() && st.join("b/pid").exists()) {
-                thread::sleep(Duration::from_millis(50));
-            }
-            let pid = format!("{}{}", if group { "-" } else { "" }, c.id());
-            Command::new("kill")
-                .args([&format!("-{sig}"), "--", &pid])
-                .status()
-                .unwrap();
-            assert_eq!(c.wait().unwrap().code(), Some(code), "{prog} {sig}");
-            assert!(!alive(&st.join("a/pid")) && !alive(&st.join("b/pid")));
-            let state = due_state(&home);
-            assert!(state[1].contains("\"exit\":143,") && state[2].contains("\"exit\":143,"));
-            state
-        })
-    });
-    assert_eq!(sides[0], sides[1]);
-    assert!(!sides[1][0][0].contains("dispatched"));
+    let t = "2026-08-14T09:00:00Z";
+    let stopped = |n: &str| {
+        format!(
+            "<h>/.state/{n} 0 [\"last-run.json\", \"logs\", \"runs.jsonl\"] {{\"started\":\"{t}\",\
+             \"started_epoch\":1786698000,\"finished\":\"{t}\",\"exit\":143,\"duration\":0,\
+             \"degraded\":false}}\n"
+        )
+    };
+    let want = [
+        format!("{t} tick docs=2 due=a,b next=-\n{t} dispatch a\n{t} dispatch b\n"),
+        stopped("a"),
+        stopped("b"),
+        "<h>/.state/tick.log 112 [] ".into(),
+    ];
+    for (sig, group, code) in [("TERM", false, 143), ("INT", true, 130)] {
+        let home = tmp.join(sig);
+        for n in ["a", "b"] {
+            routine_doc(
+                &home,
+                n,
+                "schedule: \"* * * * *\"\non_error: fail",
+                Some(block),
+            );
+        }
+        let mut c = routine_cmd(&home, &["run", "--due"], &[])
+            .process_group(0)
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let st = home.join(".state");
+        while !(st.join("a/pid").exists() && st.join("b/pid").exists()) {
+            thread::sleep(Duration::from_millis(50));
+        }
+        let pid = format!("{}{}", if group { "-" } else { "" }, c.id());
+        Command::new("kill")
+            .args([&format!("-{sig}"), "--", &pid])
+            .status()
+            .unwrap();
+        assert_eq!(c.wait().unwrap().code(), Some(code), "{sig}");
+        assert!(!alive(&st.join("a/pid")) && !alive(&st.join("b/pid")));
+        assert_eq!(due_state(&home), want, "{sig}");
+    }
 }

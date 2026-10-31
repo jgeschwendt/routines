@@ -1,4 +1,4 @@
-//! The port's one unsafe surface, decision `port-signals` A′ (2026-10-27): `sigaction` gives
+//! The runner's one unsafe surface, decision `port-signals` A′ (2026-10-27): `sigaction` gives
 //! HUP, INT and TERM a handler that only `write`s the signal number to a pipe, a thread reads
 //! it, and `kill` signals a pid or a process group — the watchdog's stop. The mask is never
 //! touched: a caught disposition resets to default at exec, so a block gets default TERM. A
