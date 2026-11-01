@@ -24,9 +24,7 @@ const USAGE: &str = "routine — executable markdown on rails
   routine run <name>     run one routine document
   routine run --due      run every due routine (silent when none are)
   routine status         schedule × due? × last run, one row per routine
-  routine install        install the launchd tick agent (dev.gigantic.routines.due)
-  routine uninstall      remove it
-  routine setup          install plus the hotswap upgrade agent; --remove undoes both
+  routine setup          link the shim, write the tick and upgrade agents; --remove undoes it (install/uninstall alias)
   routine upgrade        swap to mise's latest release; --check, --back, --retry
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text · --version the release, YYYY.M.N
@@ -34,7 +32,7 @@ const USAGE: &str = "routine — executable markdown on rails
 exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed or state unwritable ·
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
       else the failing block's code · run --due 1 when any routine failed ·
-      install/setup 1 when a plist cannot land or bootstrap fails · upgrade 1 red, 2 unable to try
+      setup 1 when a plist cannot land or bootstrap fails · upgrade 1 red, 2 unable to try
 
 env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_AGENTS_DIR
      ROUTINE_LAUNCHCTL ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_PMSET
