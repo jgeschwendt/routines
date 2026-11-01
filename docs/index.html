@@ -62,7 +62,6 @@
     <a class="pill" href="#figure">the figure</a>
     <a class="pill" href="#verbs">verbs</a>
     <a class="pill" href="#contracts">exit codes · contracts</a>
-    <a class="pill" href="#migration">migration</a>
     <a class="pill" href="#rejected">rejected</a>
   </nav>
 </header>
@@ -72,7 +71,7 @@
     <h2 class="h2">Layout — a routines home, and the tool</h2>
     <p class="docs-note">The documents live in a <b>routines home</b> —
       <code class="code">$ROUTINE_HOME</code>, default <code class="code">~/.routines</code> —
-      and this repo is only the tool.</p>
+      and this repo is only the tool: personal routines never enter it.</p>
   </header>
   <figure class="snippet-figure">
 <pre class="snippet"><b>~/.routines/&lt;name&gt;.md</b>            <i># the routine: frontmatter + prose + ```sh blocks</i>
@@ -84,7 +83,7 @@
 <b>.github/workflows/release.yaml</b>   <i># a packslip release per merge to main</i>
 <b>.github/workflows/routines.yaml</b>  <i># the CI tick `routine sync-ci` writes</i>
 <b>docs/</b>                            <i># this page + its figures</i></pre>
-    <figcaption>Personal routines never enter the public tool repo. Install: <code class="code">mise use -g packslip:jgeschwendt/routines</code>, then <code class="code">routine setup</code> — it links <code class="code">~/.local/bin/routine</code> to mise's shim and loads the tick and hotswap's upgrade agent, which runs <code class="code">routine upgrade</code> every 900 s and keeps its record at <code class="code">~/.local/state/hotswap/routines.json</code> (<a href="https://gigantic.dev/hotswap/">gigantic.dev/hotswap/</a>). Each merge to main releases <code class="code">YYYY.M.N</code> for aarch64-apple-darwin and x86_64-unknown-linux-gnu, signed by packslip; <code class="code">routine --version</code> names it.</figcaption>
+    <figcaption>Install: <code class="code">mise use -g packslip:jgeschwendt/routines</code>, then <code class="code">routine setup</code> — it links <code class="code">~/.local/bin/routine</code> to mise's shim and loads the tick and hotswap's upgrade agent, which runs <code class="code">routine upgrade</code> every 900 s and keeps its record at <code class="code">~/.local/state/hotswap/routines.json</code> (<a href="https://gigantic.dev/hotswap/">gigantic.dev/hotswap/</a>). Each merge to main releases <code class="code">YYYY.M.N</code> for aarch64-apple-darwin and x86_64-unknown-linux-gnu, signed by packslip; <code class="code">routine --version</code> names it.</figcaption>
   </figure>
   <ul class="stack" role="list">
     <li data-anchor="home"><strong><code class="code">ROUTINE_HOME</code> is the only anchor</strong> — <code class="code">ROUTINE_DIR</code> (documents) and <code class="code">ROUTINE_STATE</code> (run state) derive from it and are overridable individually; <code class="code">setup</code> pins all three into the launchd agent, so re-run it after moving any.</li>
@@ -95,13 +94,9 @@
 <section class="docs-section" id="document" data-component="document">
   <header>
     <h2 class="h2">The document — <code class="code">$ROUTINE_HOME/&lt;name&gt;.md</code></h2>
-    <p class="docs-note">Documents and run state live in a <b>routines home</b> —
-      <code class="code">$ROUTINE_HOME</code>, default <code class="code">~/.routines</code>,
-      with state under its <code class="code">.state/</code>; this repo is only the tool,
-      so personal routines never enter it and the runner can move without breaking launchd.
-      One file per routine. Frontmatter is flat
-      <code class="code">key: value</code>, parsed with awk — no yq, no yaml library;
-      one pair of surrounding quotes is stripped; CRLF, trailing blanks and a leading BOM tolerated.
+    <p class="docs-note">One file per routine. Frontmatter is flat
+      <code class="code">key: value</code>, no YAML library: <code class="code"> #</code> starts a comment,
+      one pair of surrounding quotes is stripped, CRLF, trailing blanks and a leading BOM are tolerated.
       Only <code class="code">sh</code> / <code class="code">bash</code> fences execute,
       sequentially, each under <code class="code">bash -e</code>; other fences are
       material for the prose. Fences follow CommonMark (<code class="code">```</code> or
@@ -219,7 +214,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">launchd — <code class="code">dev.gigantic.routines.due</code></div>
       <div class="panel-body">
         <ul role="list">
-          <li><code class="code">routine setup</code> renders it beside the upgrade agent; <code class="code">--remove</code> boots both out; setup retires the pre-2026-10-20 <code class="code">com.routines.due</code> agent first</li>
+          <li><code class="code">routine setup</code> writes it beside the upgrade agent, first booting out the retired <code class="code">com.routines.due</code>; <code class="code">--remove</code> boots both out</li>
           <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running mise's shim, <code class="code">&lt;shims&gt;/routine run --due</code> — a swap needs no rewrite, and a loaded tick whose plist changed is booted out and bootstrapped again — with <code class="code">PATH</code> and the <code class="code">ROUTINE_HOME</code>/<code class="code">ROUTINE_DIR</code>/<code class="code">ROUTINE_STATE</code> anchors stamped (XML-escaped) — no <code class="code">cd</code>, the runner enters the routines home itself</li>
           <li><code class="code">RunAtLoad</code> fires once at load — bootstrap and login; after a sleep the first <code class="code">StartInterval</code> fire (those due while asleep are missed, launchd.plist(5)) runs <code class="code">--due</code>, and derived due-ness catches up whatever fell due</li>
         </ul>
@@ -230,11 +225,12 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-body">
         <ul role="list">
           <li><code class="code">routine sync-ci</code> emits <code class="code">.github/workflows/routines.yaml</code> into the repo it is invoked in</li>
-          <li>cron every 15 min + <code class="code">workflow_dispatch</code>, one tick at a time (a <code class="code">concurrency</code> group: runners share no lock); <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code> dir, restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>, <code class="code">mise x packslip:jgeschwendt/routines@latest</code> fetches the latest release and runs <code class="code">run --due</code> with <code class="code">GITHUB_TOKEN</code> dropped (mise-action exports it), save cache</li>
+          <li>cron every 15 min + <code class="code">workflow_dispatch</code>, one tick at a time (a <code class="code">concurrency</code> group: runners share no lock); <code class="code">ROUTINE_HOME</code> = that repo's <code class="code">routines/</code>; restore <code class="code">routines/.state</code> from <code class="code">actions/cache</code>; mise-action with no tools, then <code class="code">mise x packslip:jgeschwendt/routines@latest -- env -u GITHUB_TOKEN routine run --due</code> — mise verifies the release against its signed packslip, <code class="code">MISE_MINIMUM_RELEASE_AGE_EXCLUDES=packslip:jgeschwendt/routines</code> lets it see one under 24 h old, and <code class="code">env -u</code> drops the token mise-action exports; save the cache</li>
           <li>the save runs under <code class="code">if: always()</code> — <code class="code">actions/cache</code> saves only on success, so one red routine would roll back every other routine's state</li>
           <li>each tick saves a new key, keyed by run and attempt so a re-run never collides with a taken one; once this run's key is listed (a failed save still exits 0) every older <code class="code">routines-state-</code> entry on the same ref is deleted (<code class="code">gh cache delete</code>, <code class="code">actions: write</code>)</li>
           <li>every action is pinned by commit and checkout persists no token (<code class="code">persist-credentials: false</code>): a moved tag cannot run under the job's token, and no block reads it from <code class="code">.git/config</code> — a block that needs git auth brings its own</li>
-          <li>cache eviction just makes everything due once — the idempotency contract absorbs it</li>
+          <li>cache eviction makes everything due once — idempotency absorbs it</li>
+          <li>the private <code class="code">~/.routines</code> repo carries no workflow: its only tick is launchd's</li>
         </ul>
       </div>
     </div>
@@ -268,19 +264,16 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
 <section class="docs-section" id="verbs" data-component="verbs">
   <header>
     <h2 class="h2">Verbs</h2>
-    <p class="docs-note">Eight verbs — the whole surface, plus <code class="code">--version</code>. Every one of them ends at the
-      same runner.</p>
+    <p class="docs-note">The whole surface, plus <code class="code">help</code> and <code class="code">--version</code>.</p>
   </header>
   <div class="table-wrap">
     <table data-table>
       <thead><tr><th>verb</th><th>duty</th></tr></thead>
       <tbody>
         <tr data-verb="run"><td class="table-mono">run &lt;name&gt;</td><td>run one document through the wrapper — gate, lock, timeout, try/catch</td></tr>
-        <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — run every due routine at once and wait for all; silent when none are. Parallel dispatch unblocks routines within one sweep, but the tick lasts as long as its slowest routine and launchd fires no new tick meanwhile, so a long run holds every later sweep; exits 1 when any routine failed</td></tr>
+        <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — each due routine a <code class="code">routine run &lt;name&gt;</code> child ignoring INT and QUIT, all started at once and waited for; silent when none are; exits 1 when any failed</td></tr>
         <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due? (<code class="code">bad</code> for a schedule the parser rejects, which never fires), last exit, duration</td></tr>
-        <tr data-verb="install"><td class="table-mono">install</td><td><code class="code">setup</code>'s alias</td></tr>
-        <tr data-verb="uninstall"><td class="table-mono">uninstall</td><td><code class="code">setup --remove</code>'s alias</td></tr>
-        <tr data-verb="setup"><td class="table-mono">setup [--remove]</td><td>refuse without mise's shim; link <code class="code">~/.local/bin/routine</code> to it; write and load the tick and hotswap's upgrade agent <code class="code">dev.gigantic.routines.upgrade</code> (every 900 s, <code class="code">routine upgrade</code> through the shim) — a loaded tick whose plist changed is reloaded, the upgrade agent never (its bootout would kill the swap running setup); <code class="code">--remove</code> boots both out, deletes them and the link, and forgets the upgrade record</td></tr>
+        <tr data-verb="setup"><td class="table-mono">setup [--remove]</td><td>aliases <code class="code">install</code> · <code class="code">uninstall</code>; refuse without mise's shim; link <code class="code">~/.local/bin/routine</code> to it; write and load the tick and hotswap's upgrade agent <code class="code">dev.gigantic.routines.upgrade</code> (every 900 s, <code class="code">routine upgrade</code> through the shim) — a loaded tick whose plist changed is reloaded, the upgrade agent never (its bootout would kill the swap running setup); <code class="code">--remove</code> boots both out, deletes them and the link, and forgets the upgrade record</td></tr>
         <tr data-verb="upgrade"><td class="table-mono">upgrade [--check | --back | --retry]</td><td><code class="code">hotswap::upgrade</code>: mise moves the version; the drain refuses while any routine holds its <code class="code">lock/</code> (setup's reload and the tick's kickstart would kill it), then <code class="code">routine setup</code>, a kickstart of the tick, and <code class="code">routine status</code> as the smoke probe, 120 s a step — green settles, red rolls back. Exits 0 green or settled, 1 red, 2 unable to try</td></tr>
         <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">./.github/workflows/routines.yaml</code> in the invoking repo</td></tr>
       </tbody>
@@ -309,21 +302,10 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
   </div>
   <ul class="stack" role="list">
     <li data-contract="idempotent"><strong>Blocks are idempotent</strong> — catch-retry, cache eviction, and tick overlap can all double-fire; the lock serializes, idempotency absorbs.</li>
-    <li data-contract="one-binary"><strong>One binary, no runtime dependencies</strong> — std plus the hotswap crate, <code class="code">src/sys.rs</code> the only unsafe code (<code class="code">sigaction</code>, <code class="code">write</code>, <code class="code">kill</code>); claude is needed only when a catch fires or a block calls it.</li>
+    <li data-contract="one-binary"><strong>One binary, no runtime dependencies</strong> — std plus the hotswap crate, <code class="code">src/sys.rs</code> the only unsafe module (<code class="code">sigaction</code> → a pipe, <code class="code">write</code>, <code class="code">kill</code>, under <code class="code">#![expect(unsafe_code)]</code>); claude is needed only when a catch fires or a block calls it.</li>
     <li data-contract="state"><strong><code class="code">$ROUTINE_HOME/.state/</code> is never committed</strong> — CI persists <code class="code">routines/.state</code> through <code class="code">actions/cache</code> only.</li>
   </ul>
   <p class="docs-note plan-coda">Scale: the runner is ~1,600 lines of Rust outside its tests (measured 2026-10-31 · non-blank lines of src/*.rs above each #[cfg(test)]).</p>
-</section>
-
-<section class="docs-section" id="migration" data-component="migration">
-  <header>
-    <h2 class="h2">Migration — a follow-on, not this build</h2>
-    <p class="docs-note">Existing ad-hoc routines port one per document: a scheduled shell
-      command inlines as a single block; an unattended-claude prompt becomes the document's
-      prose plus a claude block, with git tracking its drift once it lives in the repo. A
-      prose procedure paired with a mechanics script is already this shape — the standing
-      proof of the format.</p>
-  </header>
 </section>
 
 <section class="docs-section" id="next-steps" data-component="next">
@@ -331,8 +313,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <h2 class="h2">Next</h2>
   </header>
   <ol class="stack" id="next">
-    <li><strong>The Rust port landed</strong> (2026-10-31) — stages 1–6 done: one binary replaces the bash runner, same CLI, document format, <code class="code">.state</code> files and exit codes, its suite cargo end-to-end tests at 100 % lines; <code class="code">src/sys.rs</code> holds the only unsafe code; each merge to main releases it for aarch64-apple-darwin and x86_64-unknown-linux-gnu, and the CI tick fetches that release.</li>
-    <li><strong>One long run holds every tick</strong> — <code class="code">run --due</code> waits for its slowest; proposal <code class="code">tick-no-wait</code> went back for revision (owner, 2026-10-27) and is still open.</li>
+    <li><strong>One long run holds every tick</strong> — <code class="code">run --due</code> waits for its slowest child, and launchd fires no tick meanwhile; proposal <code class="code">tick-no-wait</code> (docket 5c18bc51) is back for revision (owner, 2026-10-27).</li>
     <li><strong>An old reap guard is passed, not claimed</strong> — two runs meeting a crashed reaper's <code class="code">lock.reap</code> can both reap — reproduced by injection (s-20261027T0645Z); claiming it by rename is still ABA-prone, so it needs guard identity (pid + start).</li>
     <li><strong>hk 2.5.0 → 2.8.1</strong> (<code class="code">mise.toml</code>, <code class="code">hk.pkl</code>): no breaking change listed; the shift sandbox cannot install it.</li>
   </ol>
@@ -349,7 +330,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
     <li data-rejected="async"><strong>An async supervisor</strong> — a 60 s tick and a handful of children need no runtime.</li>
     <li data-rejected="match-now"><strong>"does now match the expr" due-check</strong> — breaks under delayed Actions ticks and machine sleep; derived due-ness handles both with the same code.</li>
   </ul>
-  <p class="docs-note plan-coda">since 2026-08-12 · initial design — user sketch + executable-markdown/try-catch directive · since 2026-08-16 · <code class="code">ROUTINE_HOME</code> decoupling — documents and state leave the framework repo</p>
+  <p class="docs-note plan-coda">since 2026-08-12 · initial design — user sketch + executable-markdown/try-catch directive · since 2026-08-16 · <code class="code">ROUTINE_HOME</code> — documents and state live outside the tool repo</p>
 </section>
 
 <nav class="row link-row" aria-label="links">
