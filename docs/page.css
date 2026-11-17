@@ -62,6 +62,124 @@ ul.exits {
   margin-top: 1rem;
 }
 
+/* the execution-path figure — one inline svg on ui tokens; under its minimum
+   width it scrolls inside its frame, never the page */
+.xpath-frame {
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-lg);
+  overflow-x: auto;
+  padding: var(--ui-space-4);
+}
+
+.xpath-frame > svg {
+  display: block;
+  min-width: 960px;
+  width: 100%;
+}
+
+.xpath text {
+  fill: var(--ui-fg);
+  font-family: var(--ui-font-mono);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.xpath text.note {
+  fill: var(--ui-fg-muted);
+  font-family: var(--ui-font-sans);
+  font-weight: 400;
+}
+
+.xpath text.pill {
+  fill: var(--ui-accent-fg);
+}
+
+.xpath text.sub {
+  fill: var(--ui-fg-muted);
+  font-weight: 400;
+}
+
+.xpath rect.pill {
+  fill: var(--ui-accent);
+}
+
+.xpath .bypass,
+.xpath-key .bypass {
+  stroke: var(--ui-fg-muted);
+  stroke-dasharray: 10 8;
+  stroke-width: 3;
+}
+
+.xpath .catch,
+.xpath-key .catch {
+  stroke: var(--ui-accent);
+  stroke-width: 6;
+}
+
+.xpath .run,
+.xpath-key .run {
+  stroke: var(--ui-fg);
+  stroke-width: 6;
+}
+
+.xpath .tick,
+.xpath-key .tick {
+  stroke: var(--ui-fg-muted);
+  stroke-width: 3;
+}
+
+.xpath circle {
+  fill: var(--ui-surface);
+  stroke: var(--ui-fg);
+  stroke-width: 3;
+}
+
+.xpath circle.catch {
+  stroke: var(--ui-accent);
+  stroke-width: 3;
+}
+
+.xpath circle.tick {
+  stroke: var(--ui-fg-muted);
+  stroke-width: 3;
+}
+
+.xpath path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.xpath-exits {
+  color: var(--ui-fg-muted);
+  font-family: var(--ui-font-mono);
+  font-size: var(--ui-text-sm);
+  margin-top: var(--ui-space-2);
+}
+
+.xpath-key {
+  color: var(--ui-fg-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--ui-text-sm);
+  gap: var(--ui-space-2) var(--ui-space-5);
+  margin-top: var(--ui-space-4);
+}
+
+.xpath-key li {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--ui-space-2);
+}
+
+.xpath-key svg {
+  fill: none;
+  height: 8px;
+  overflow: visible;
+  width: 40px;
+}
+
 .link-row {
   border-top: 1px solid var(--ui-border);
   flex-wrap: wrap;

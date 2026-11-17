@@ -21,7 +21,3 @@ description = "the crate's tests under llvm-cov; anything under 100 % of lines f
 # --remap-path-prefix: mbx shares compiled objects across checkouts, and an
 # unremapped object reports another worktree's source paths (73 % here).
 run = "cargo llvm-cov --remap-path-prefix --fail-under-lines 100"
-
-[tasks.figures]
-description = "render every Claude Design artboard under docs/figures/project/ to its PNG (agent-browser, 2×)"
-run = "sh docs/figures/export.sh"

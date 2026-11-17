@@ -82,12 +82,12 @@
 <b>routines/</b>                        <i># this repo's own routines — the CI convention</i>
 <b>.github/workflows/release.yaml</b>   <i># a packslip release per merge to main</i>
 <b>.github/workflows/routines.yaml</b>  <i># the CI tick `routine sync-ci` writes</i>
-<b>docs/</b>                            <i># this page + its figures</i></pre>
-    <figcaption>Install: <code class="code">mise use -g packslip:jgeschwendt/routines</code>, then <code class="code">routine setup</code> — it links <code class="code">~/.local/bin/routine</code> to mise's shim and loads the tick and hotswap's upgrade agent, which runs <code class="code">routine upgrade</code> every 900 s and keeps its record at <code class="code">~/.local/state/hotswap/routines.json</code> (<a href="https://gigantic.dev/hotswap/">gigantic.dev/hotswap/</a>). Each merge to main releases <code class="code">YYYY.M.N</code> for aarch64-apple-darwin and x86_64-unknown-linux-gnu, signed by packslip; <code class="code">routine --version</code> names it.</figcaption>
+<b>docs/</b>                            <i># this page, its figure drawn in it</i></pre>
+    <figcaption>Install: <code class="code">routine setup</code> — hotswap installs the latest release through packslip, pinned to its signer, into <code class="code">~/.local/share/hotswap/routines/</code>, links <code class="code">~/.local/bin/routine</code> through its <code class="code">current</code>, and setup loads the tick and hotswap's upgrade agent, which runs <code class="code">routine upgrade</code> every 900 s and keeps its record at <code class="code">~/.local/state/hotswap/routines.json</code> (<a href="https://gigantic.dev/hotswap/">gigantic.dev/hotswap/</a>); no mise. Each merge to main releases <code class="code">YYYY.M.N</code> for aarch64-apple-darwin and x86_64-unknown-linux-gnu, signed by packslip; <code class="code">routine --version</code> names it.</figcaption>
   </figure>
   <ul class="stack" role="list">
     <li data-anchor="home"><strong><code class="code">ROUTINE_HOME</code> is the only anchor</strong> — <code class="code">ROUTINE_DIR</code> (documents) and <code class="code">ROUTINE_STATE</code> (run state) derive from it and are overridable individually; <code class="code">setup</code> pins all three into the launchd agent, so re-run it after moving any.</li>
-    <li data-anchor="seams"><strong>Test seams</strong> — <code class="code">ROUTINE_AGENTS_DIR</code>, <code class="code">ROUTINE_LAUNCHCTL</code>, <code class="code">ROUTINE_CLAUDE</code>, <code class="code">ROUTINE_NOW</code>, and <code class="code">ROUTINE_PMSET</code> redirect launchd, claude, the clock, and the dark-wake probe — the seams the test suite runs through.</li>
+    <li data-anchor="seams"><strong>Test seams</strong> — <code class="code">ROUTINE_CLAUDE</code>, <code class="code">ROUTINE_NOW</code> and <code class="code">ROUTINE_PMSET</code> redirect claude, the clock and the dark-wake probe; launchd is reached as hotswap reaches it, <code class="code">launchctl</code> on <code class="code">PATH</code> under <code class="code">$HOME/Library/LaunchAgents</code>, so the suite stubs it there.</li>
   </ul>
 </section>
 
@@ -215,7 +215,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-body">
         <ul role="list">
           <li><code class="code">routine setup</code> writes it beside the upgrade agent, first booting out the retired <code class="code">com.routines.due</code>; <code class="code">--remove</code> boots both out</li>
-          <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running mise's shim, <code class="code">&lt;shims&gt;/routine run --due</code> — a swap needs no rewrite, and a loaded tick whose plist changed is booted out and bootstrapped again — with <code class="code">PATH</code> and the <code class="code">ROUTINE_HOME</code>/<code class="code">ROUTINE_DIR</code>/<code class="code">ROUTINE_STATE</code> anchors stamped (XML-escaped) — no <code class="code">cd</code>, the runner enters the routines home itself</li>
+          <li><code class="code">StartInterval</code> 60 + <code class="code">RunAtLoad</code> true, running <code class="code">~/.local/bin/routine run --due</code>, the link through hotswap's <code class="code">current</code> — a swap needs no rewrite, and a loaded tick whose plist changed is booted out and bootstrapped again — with <code class="code">PATH</code> and the <code class="code">ROUTINE_HOME</code>/<code class="code">ROUTINE_DIR</code>/<code class="code">ROUTINE_STATE</code> anchors stamped (XML-escaped) — no <code class="code">cd</code>, the runner enters the routines home itself</li>
           <li><code class="code">RunAtLoad</code> fires once at load — bootstrap and login; after a sleep the first <code class="code">StartInterval</code> fire (those due while asleep are missed, launchd.plist(5)) runs <code class="code">--due</code>, and derived due-ness catches up whatever fell due</li>
         </ul>
       </div>
@@ -255,9 +255,58 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       the blocks, and the single catch that repairs and retries.</p>
   </header>
   <figure class="figure">
-    <img class="figure-light" src="figures/execution-path.png" alt="One execution path through the runner as a transit map — launchd tick, CI cron and a shell converge on run --due and run &lt;name&gt;; then frontmatter, lock, requires gate, timeout, blocks, last-run.json, exit code and status; the catch loop from blocks through claude to a single retry, and a dashed bypass to the exit code when still failing." />
-    <img class="figure-dark" src="figures/execution-path-dark.png" alt="" aria-hidden="true" loading="lazy" />
-    <figcaption>One execution path, end to end. Source: Claude Design canvas <a href="https://claude.ai/artifact/1qqnmDFdxxBfamSEhUYr1X">routines figures</a>, board execution-path.</figcaption>
+    <div class="xpath-frame">
+      <svg class="xpath" viewBox="0 0 1740 600" role="img" aria-label="One execution path through the runner as a transit map: launchd tick, CI cron and a shell converge on run --due and run &lt;name&gt;; then frontmatter, lock (75), requires gate (78), timeout (124), blocks, last-run.json, exit code and status; the catch loop from blocks through claude to a single retry, and a dashed bypass to the exit code when still failing.">
+        <g aria-hidden="true">
+          <path class="tick" d="M40 60H470V160M40 160H470M40 420H470V300" />
+          <path class="run" d="M470 160V300H1680" />
+          <path class="catch" d="M1090 300V470H1290V300" />
+          <path class="bypass" d="M1290 470H1540V300" />
+          <circle class="tick" cx="40" cy="60" r="9" />
+          <circle class="tick" cx="40" cy="160" r="9" />
+          <circle class="tick" cx="40" cy="420" r="9" />
+          <circle cx="470" cy="160" r="13" />
+          <circle cx="470" cy="300" r="9" />
+          <circle cx="590" cy="300" r="9" />
+          <circle cx="690" cy="300" r="9" />
+          <circle cx="820" cy="300" r="9" />
+          <circle cx="950" cy="300" r="9" />
+          <circle cx="1090" cy="300" r="9" />
+          <circle cx="1370" cy="300" r="9" />
+          <circle cx="1540" cy="300" r="9" />
+          <circle cx="1680" cy="300" r="13" />
+          <circle class="catch" cx="1190" cy="470" r="9" />
+          <circle class="catch" cx="1290" cy="470" r="9" />
+          <rect class="pill" x="1025" y="500" width="330" height="40" rx="20" />
+          <text x="28" y="38">launchd tick · 60s</text>
+          <text x="28" y="138">CI cron · 15m + cache(.state)</text>
+          <text x="28" y="398">shell · manual</text>
+          <text x="496" y="150">run --due</text>
+          <text class="sub" x="496" y="186">due = next-fire-after(last-run, cron)</text>
+          <text x="450" y="308" text-anchor="end">run &lt;name&gt;</text>
+          <text x="590" y="276" text-anchor="middle">frontmatter</text>
+          <text x="690" y="342" text-anchor="middle">lock ·75</text>
+          <text x="820" y="276" text-anchor="middle">requires gate ·78</text>
+          <text x="950" y="342" text-anchor="middle">timeout ·124</text>
+          <text x="1090" y="276" text-anchor="middle">blocks ```sh</text>
+          <text x="1370" y="276" text-anchor="middle">last-run.json</text>
+          <text x="1540" y="276" text-anchor="middle">exit code</text>
+          <text x="1680" y="272" text-anchor="middle">status</text>
+          <text class="pill" x="1190" y="528" text-anchor="middle">claude · handle $error</text>
+          <text x="1372" y="528">retry ×1</text>
+          <text class="note" x="1556" y="394">still failing</text>
+          <text class="note" x="1190" y="588" text-anchor="middle">routine = markdown · prose is the handler's context</text>
+        </g>
+      </svg>
+      <ul class="xpath-key" role="list">
+        <li><svg aria-hidden="true"><path class="tick" d="M2 4H38" /></svg>launchd tick · CI cron · shell</li>
+        <li><svg aria-hidden="true"><path class="run" d="M2 4H38" /></svg>run · the shared wrapper</li>
+        <li><svg aria-hidden="true"><path class="catch" d="M2 4H38" /></svg>catch · claude repairs, retry once</li>
+        <li><svg aria-hidden="true"><path class="bypass" d="M2 4H38" /></svg>bypass · exit with the block's code</li>
+      </ul>
+      <p class="xpath-exits">exit · 64 usage · 75 lock held · 78 requires missing · 124 timeout · else the failing block's code</p>
+    </div>
+    <figcaption>One execution path, end to end: every scheduler ticks into the same wrapper, and a failing block gets one repair and one retry before its own code exits.</figcaption>
   </figure>
 </section>
 
@@ -273,8 +322,8 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
         <tr data-verb="run"><td class="table-mono">run &lt;name&gt;</td><td>run one document through the wrapper — gate, lock, timeout, try/catch</td></tr>
         <tr data-verb="run-due"><td class="table-mono">run --due</td><td>the universal entry — each due routine a <code class="code">routine run &lt;name&gt;</code> child ignoring INT and QUIT, all started at once and waited for; silent when none are; exits 1 when any failed</td></tr>
         <tr data-verb="status"><td class="table-mono">status</td><td>frontmatter × last-run join: schedule, due? (<code class="code">bad</code> for a schedule the parser rejects, which never fires), last exit, duration</td></tr>
-        <tr data-verb="setup"><td class="table-mono">setup [--remove]</td><td>aliases <code class="code">install</code> · <code class="code">uninstall</code>; refuse without mise's shim; link <code class="code">~/.local/bin/routine</code> to it; write and load the tick and hotswap's upgrade agent <code class="code">dev.gigantic.routines.upgrade</code> (every 900 s, <code class="code">routine upgrade</code> through the shim) — a loaded tick whose plist changed is reloaded, the upgrade agent never (its bootout would kill the swap running setup); <code class="code">--remove</code> boots both out, deletes them and the link, and forgets the upgrade record</td></tr>
-        <tr data-verb="upgrade"><td class="table-mono">upgrade [--check | --back | --retry]</td><td><code class="code">hotswap::upgrade</code>: mise moves the version; the drain refuses while any routine holds its <code class="code">lock/</code> (setup's reload and the tick's kickstart would kill it), then <code class="code">routine setup</code>, a kickstart of the tick, and <code class="code">routine status</code> as the smoke probe, 120 s a step — green settles, red rolls back. Exits 0 green or settled, 1 red, 2 unable to try</td></tr>
+        <tr data-verb="setup"><td class="table-mono">setup [--remove]</td><td>aliases <code class="code">install</code> · <code class="code">uninstall</code>; <code class="code">hotswap::ensure</code> first — the latest release installed when none is, <code class="code">~/.local/bin/routine</code> linked through <code class="code">current</code> — then write and load the tick and hotswap's upgrade agent <code class="code">dev.gigantic.routines.upgrade</code>, both on that link — a loaded tick whose plist changed is reloaded, the upgrade agent never (its bootout would kill the swap running setup; hotswap reloads it once the run ends). The agents never run the binary that ran setup, so a checkout's <code class="code">cargo run -- setup</code> wires the installed release, its own plists rendered until the next swap reruns the release's setup. <code class="code">--remove</code> boots both out, deletes them and the link, and <code class="code">hotswap::forget</code> drops the layout and the record</td></tr>
+        <tr data-verb="upgrade"><td class="table-mono">upgrade [--check | --back | --retry]</td><td><code class="code">hotswap::upgrade</code>: packslip installs the release, hotswap repoints <code class="code">current</code>; the drain refuses while any routine holds its <code class="code">lock/</code> (setup's reload and the tick's kickstart would kill it), then <code class="code">routine setup</code>, a kickstart of the tick, and <code class="code">routine status</code> as the smoke probe, 120 s a step — green settles, red rolls back. Exits 0 green or settled, 1 red or refused, 2 unable to try. Off mise: the release before this one bumps mise, then drains; a refused drain strands the host on the new binary through mise's shim, and the next tick's <code class="code">upgrade</code>, run through that shim, lays out every version mise holds, makes the running one current, moves the upgrade agent onto the link and swaps once the drain passes, its setup moving the tick; mise's dirs are left alone</td></tr>
         <tr data-verb="sync-ci"><td class="table-mono">sync-ci</td><td>(re)write <code class="code">./.github/workflows/routines.yaml</code> in the invoking repo</td></tr>
       </tbody>
     </table>
@@ -295,7 +344,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
         <tr data-exit="78"><td class="table-mono">78</td><td><code class="code">requires</code> missing</td></tr>
         <tr data-exit="124"><td class="table-mono">124</td><td>timeout — the watchdog fired</td></tr>
         <tr data-exit="signal"><td class="table-mono">129/130/143</td><td>HUP/INT/TERM — the block's group stopped, the exit recorded; <code class="code">run --due</code> forwards its own as TERM and exits with it</td></tr>
-        <tr data-exit="1"><td class="table-mono">1</td><td><code class="code">run --due</code>: a dispatched routine failed · <code class="code">install</code>/<code class="code">setup</code>: a plist cannot land or <code class="code">launchctl bootstrap</code> failed · <code class="code">upgrade</code>: red</td></tr>
+        <tr data-exit="1"><td class="table-mono">1</td><td><code class="code">run --due</code>: a dispatched routine failed · <code class="code">install</code>/<code class="code">setup</code>: the release cannot install or link, a plist cannot land, or <code class="code">launchctl bootstrap</code> failed · <code class="code">upgrade</code>: red, or refused by the drain or the red hold</td></tr>
         <tr data-exit="else"><td class="table-mono">else</td><td>the failing block's own code, passed through</td></tr>
       </tbody>
     </table>
@@ -335,7 +384,6 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
 
 <nav class="row link-row" aria-label="links">
   <a class="pill" href="https://github.com/jgeschwendt/routines">repo · jgeschwendt/routines</a>
-  <a class="pill" href="https://claude.ai/artifact/1qqnmDFdxxBfamSEhUYr1X">canvas · routines figures</a>
   <span class="docs-note">the repo's structure is a stele graph — <code class="code">AGENTS.md</code> at the root, one per container.</span>
 </nav>
 
