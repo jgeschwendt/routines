@@ -399,21 +399,15 @@ fn mktemp() -> PathBuf {
         })
 }
 
-/// What the runner exports to every child, `ROUTINE_CLAUDE` third: `LC_ALL` and its roots and
+/// What the runner exports to every child, `ROUTINE_CLAUDE` second: `LC_ALL` and its roots and
 /// seams, absolute.
 fn exports(rdir: PathBuf, states: &Path, home: &Path) -> Vec<(&'static str, OsString)> {
     let var = |k, d: &str| state::var(k).unwrap_or_else(|| d.into());
-    let agents = PathBuf::from(var("HOME", "/tmp")).join("Library/LaunchAgents");
     vec![
         ("LC_ALL", "C".into()),
-        (
-            "ROUTINE_AGENTS_DIR",
-            state::root("ROUTINE_AGENTS_DIR", agents).into(),
-        ),
         ("ROUTINE_CLAUDE", var("ROUTINE_CLAUDE", "claude")),
         ("ROUTINE_DIR", rdir.into()),
         ("ROUTINE_HOME", home.into()),
-        ("ROUTINE_LAUNCHCTL", var("ROUTINE_LAUNCHCTL", "launchctl")),
         ("ROUTINE_PMSET", var("ROUTINE_PMSET", "pmset")),
         ("ROUTINE_STATE", states.into()),
     ]
@@ -453,7 +447,7 @@ pub fn run(name: &str, now: i64) -> ! {
         Some(true) => held().owner = Some((dir.clone(), now)),
     }
     let envs = exports(rdir, &states, &home);
-    let claude = envs[2].1.clone();
+    let claude = envs[1].1.clone();
     // the environment the blocks inherit, never the runner's own variables
     let missing = missing(&text, |v| {
         let ours = envs.iter().find(|e| e.0 == v).map(|e| e.1.clone());
