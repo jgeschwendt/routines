@@ -242,10 +242,11 @@ fn sync_ci() {
 }
 
 /// A scratch HOME under the target's tmp, `&<>` in its name for the plists' escaping, holding
-/// `launchctl` and `curl` stubs in `bin/` that log each call to `log`, or to `waiter.log` when
+/// `launchctl`, `curl` and `mise` stubs in `bin/` that log each call to `log`, or to `waiter.log` when
 /// hotswap's reload waiter makes it. `launchctl print` succeeds once `loaded` exists, printing
 /// `print.out`, and fails for a label from its `bootout` to its `bootstrap`; `bootstrap` fails
-/// while `bootstrap.code` exists. curl's `releases/latest` lands on the tag in `tag`.
+/// while `bootstrap.code` exists, `kickstart` once per `kickstart.once`. curl's `releases/latest` lands on the tag in `tag`; `mise use`
+/// writes its version to `active`, which the fake mise's shim execs.
 fn host(name: &str) -> std::path::PathBuf {
     use std::{fs, os::unix::fs::PermissionsExt};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{name} &<>"));
@@ -263,10 +264,12 @@ fn host(name: &str) -> std::path::PathBuf {
          'launchctl bootout') touch \"$p/booted.$l\";;\n\
          'launchctl print') [ ! -e \"$p/booted.$l\" ] && [ -e \"$p/loaded\" ] && {{ cat \"$p/print.out\" 2>/dev/null; :; }};;\n\
          'launchctl bootstrap') l=${{3##*/}}; [ ! -e \"$p/bootstrap.code\" ] && rm -f \"$p/booted.${{l%.plist}}\";;\n\
+         'mise use') echo \"${{3##*@}}\" > \"$p/active\";;\n\
+         'launchctl kickstart') ! rm \"$p/kickstart.once\" 2>/dev/null;;\n\
          esac\n",
         tmp.display()
     );
-    for n in ["curl", "launchctl"] {
+    for n in ["curl", "launchctl", "mise"] {
         fs::write(tmp.join("bin").join(n), &stub).unwrap();
         fs::set_permissions(tmp.join("bin").join(n), fs::Permissions::from_mode(0o755)).unwrap();
     }
@@ -287,6 +290,7 @@ fn launchd(tmp: &Path, exe: &Path, args: &[&str], env: &[(&str, &Path)]) -> Stri
             format!("{}:/usr/bin:/bin", tmp.join("bin").display()),
         )
         .env("ROUTINE_HOME", tmp.join("home"))
+        .env("HOTSWAP_TEST_HOME", tmp)
         .envs(env.iter().copied())
         .output()
         .unwrap();
@@ -339,9 +343,10 @@ fn due_plist(tmp: &Path) -> String {
 }
 
 // `routine setup` on a host hotswap already laid out links `~/.local/bin/routine` through
-// `current`, writes the tick on that link beside hotswap's upgrade agent and loads both, then
-// reloads a changed tick and leaves current ones be; `upgrade` swaps under the manifest, its
-// drain refusing while a routine holds its lock; `setup --remove` undoes it all, layout included.
+// `current`, where hotswap loads its upgrade agent, then writes the tick on that link and loads
+// it, reloads it once changed and leaves it be when current; `upgrade` swaps under the manifest,
+// its drain refusing while a routine holds its lock; with no launchctl on PATH (Linux) setup only
+// links; `setup --remove` undoes it all, the upgrade agent and the layout through hotswap.
 #[test]
 fn setup_and_upgrade() {
     use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
@@ -366,11 +371,12 @@ fn setup_and_upgrade() {
         "launchctl bootout gui/$UID/com.routines.due\n",
         "launchctl print gui/$UID/dev.gigantic.routines.",
     );
+    let load_up = format!("launchctl print-disabled gui/$UID\nlaunchctl bootstrap gui/$UID {u}\n");
     assert_eq!(
         run(&["setup"], &[]),
         format!(
-            "0\n{linked}loaded {d}\nloaded {u}\n{old}{print}upgrade\n{print}due\n\
-             launchctl bootstrap gui/$UID {d}\n{print}upgrade\nlaunchctl bootstrap gui/$UID {u}\n"
+            "0\n{linked}loaded {d}\n{old}{print}upgrade\n{load_up}{print}due\n\
+             launchctl bootstrap gui/$UID {d}\n"
         )
     );
     let read = |p: &Path| fs::read_to_string(p).unwrap();
@@ -380,20 +386,28 @@ fn setup_and_upgrade() {
         fs::read_link(local.join("routine")).unwrap(),
         layout.join("current/routine")
     );
-    // a checkout's tick, loaded: booted out and bootstrapped on the link; the rest stays put
+    // both loaded, the upgrade agent from its plist on the link; a checkout's tick: booted out and
+    // bootstrapped on the link, the upgrade agent left to hotswap
     fs::write(tmp.join("loaded"), "").unwrap();
+    let on_link = format!(
+        "path = {}\nstate = not running\nprogram = {}\n",
+        up.display(),
+        local.join("routine").display()
+    );
+    fs::write(tmp.join("print.out"), on_link).unwrap();
     fs::write(&due, "exec bin/routine run --due").unwrap();
     let probes = format!("{old}{print}upgrade\n{print}due\n");
     assert_eq!(
         run(&["install"], &[]),
         format!(
-            "0\n{linked}reloaded {d}\ncurrent {u}\n{probes}\
-             launchctl bootout gui/$UID/dev.gigantic.routines.due\nlaunchctl bootstrap gui/$UID {d}\n\
-             {print}upgrade\n"
+            "0\n{linked}reloaded {d}\n{probes}\
+             launchctl bootout gui/$UID/dev.gigantic.routines.due\nlaunchctl bootstrap gui/$UID {d}\n"
         )
     );
-    let current = format!("{linked}current {d}\ncurrent {u}\n{probes}{print}upgrade\n");
-    assert_eq!(run(&["setup"], &[]), format!("0\n{current}"));
+    assert_eq!(
+        run(&["setup"], &[]),
+        format!("0\n{linked}current {d}\n{probes}")
+    );
     let latest = "curl -q -fsSIL -o /dev/null -w %{url_effective} https://github.com/jgeschwendt/routines/releases/latest\n";
     let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
     // no record: the drain refuses while a routine holds its lock, then the swap goes green
@@ -406,7 +420,7 @@ fn setup_and_upgrade() {
     fs::remove_dir_all(tmp.join("home/.state/a")).unwrap();
     assert_eq!(
         run(&["upgrade"], &[]),
-        format!("0\nroutines 1: green, 1 smoke probes\n{latest}{probes}{print}upgrade\n{kick}")
+        format!("0\nroutines 1: green, 1 smoke probes\n{latest}{probes}{kick}")
     );
     assert_eq!(
         run(&["upgrade", "--check"], &[]),
@@ -419,12 +433,14 @@ fn setup_and_upgrade() {
         fail(&["setup", "--remove"], ("HOME", Path::new(""))),
         "1\nroutine: HOME unset — the tick PATH needs ~/.local/bin\n"
     );
+    // nothing loaded, every bootstrap failing: hotswap's refused load is one line, the tick's fails setup
     fs::write(tmp.join("bootstrap.code"), "").unwrap();
     fs::remove_file(tmp.join("loaded")).unwrap();
     assert_eq!(
         run(&["setup"], &[]),
         format!(
-            "1\n{linked}routine: launchctl bootstrap failed\n{old}{print}upgrade\n{print}due\n\
+            "1\n{linked}hotswap: gui/$UID/dev.gigantic.routines.upgrade not loaded from {u}: \n\
+             routine: launchctl bootstrap failed\n{old}{print}upgrade\n{load_up}{print}due\n\
              launchctl bootstrap gui/$UID {d}\n"
         )
     );
@@ -434,7 +450,7 @@ fn setup_and_upgrade() {
     mode(&agents, 0o755).unwrap();
     assert_eq!(
         blocked,
-        format!("1\n{linked}routine: cannot write {d}\n{old}{print}upgrade\n")
+        format!("1\n{linked}routine: cannot write {d}\n{old}{print}upgrade\n{load_up}")
     );
     // the link that cannot land stops setup before any agent is written
     mode(&local, 0o555).unwrap();
@@ -446,13 +462,22 @@ fn setup_and_upgrade() {
     );
     let usage = run(&["help"], &[]).replacen('0', "64", 1);
     assert_eq!(run(&["setup", "--x"], &[]), usage);
+    // Linux: no launchctl on PATH, so setup links and writes no agent, and --remove touches none
+    let linux = [("PATH", &*tmp.join("linux"))];
+    fs::remove_file(&due).unwrap();
+    fs::remove_file(&up).unwrap();
+    assert_eq!(run(&["setup"], &linux), format!("0\n{linked}"));
+    assert!(!due.exists() && !up.exists());
+    // the upgrade agent loaded from this HOME's plist: hotswap boots it out
+    fs::write(tmp.join("loaded"), "").unwrap();
     let removed = format!(
-        "0\nremoved {d}\nremoved {u}\n{old}launchctl bootout gui/$UID/dev.gigantic.routines.due\n\
-         launchctl bootout gui/$UID/dev.gigantic.routines.upgrade\n"
+        "0\nremoved {d}\n{old}launchctl bootout gui/$UID/dev.gigantic.routines.due\n\
+         {print}upgrade\nlaunchctl bootout gui/$UID/dev.gigantic.routines.upgrade\n"
     );
     assert_eq!(run(&["uninstall"], &[]), removed);
     assert!(!due.exists() && !up.exists() && !rec.exists() && !layout.exists());
     assert!(local.join("routine").symlink_metadata().is_err());
+    assert_eq!(run(&["setup", "--remove"], &linux), "0\n");
     assert_eq!(
         run(&["upgrade"], &[]),
         "2\nroutines: no version under ~/.local/share/hotswap/routines; run routine setup\n"
@@ -460,15 +485,16 @@ fn setup_and_upgrade() {
 }
 
 // The move off mise. The old release's upgrade agent runs mise's shim; on the first release
-// carrying hotswap's layout it bumps mise to 2, then drains — and a routine holding its lock
-// refuses that drain, so no setup ran: the host runs 2 through the shim with no layout. The next
-// tick, the old agent running 2 through the shim, lays out every version mise holds, makes 2
-// current, links `~/.local/bin/routine`, rewrites the upgrade agent onto it and leaves a waiter to
-// reload it once the tick ends, then meets the held lock itself: nothing swapped, the tick
-// untouched on the shim and still scheduled. The tick after, from the reloaded agent on the link,
-// drains, and its setup moves the tick onto the link, booted out and bootstrapped, then
-// kickstarted. The green path: the old release's drain passed and its setup step, through the
-// shim, ran 2's setup, which moves the host and both agents at once.
+// carrying hotswap's layout it bumps mise to 2, drains, then runs `routine setup` through the shim:
+// 2's setup lays out every version mise holds, makes 2 current, links `~/.local/bin/routine`,
+// moves the tick onto it and leaves hotswap's waiter to reload the upgrade agent once the tick
+// ends. A routine holding its lock refuses that drain instead, so no setup ran: the next tick, the
+// old agent running 2 through the shim, moves the host before its own drain, which the held lock
+// refuses again — nothing swapped, the tick untouched on the shim and still scheduled. The tick
+// after, from the reloaded agent, swaps 2 in and goes red at the tick's kickstart: rolled back
+// onto 1, which predates hotswap, so mise's pin goes back to 1 before 1's setup puts the link and
+// the tick back on the shim, which runs 1. A later release, 3, bumped in by 1, moves the host
+// again through its setup, and its first tick swaps green.
 #[test]
 fn migration() {
     use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink, thread, time::Duration};
@@ -486,13 +512,20 @@ fn migration() {
         agents.join("dev.gigantic.routines.upgrade.plist"),
     );
     let agent_log = tmp.join("Library/Logs/dev.gigantic.routines.upgrade.log");
+    let record = tmp.join(".local/state/hotswap/routines.json");
     let exe = |p: &Path, body: &str| {
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, body).unwrap();
         fs::set_permissions(p, fs::Permissions::from_mode(0o755)).unwrap();
     };
     let put = |name: &str, body: &str| fs::write(tmp.join(name), body).unwrap();
-    // mise's shim execs the active version; 1, the old release, only logs; 2 is this build
+    let read = |p: &Path| fs::read_to_string(p).unwrap();
+    let (mise_tick, mise_up) = (
+        "the tick, on mise's shim\n",
+        "the upgrade agent, on mise's shim\n",
+    );
+    // mise's shim execs the active version; 1, the old release, logs, and its setup puts the link
+    // and both plists back on the shim; 2 and 3 are this build
     exe(
         &shim,
         &format!(
@@ -504,51 +537,59 @@ fn migration() {
     exe(
         &installs.join("1/routine"),
         &format!(
-            "#!/bin/sh\necho \"routine@1 $*\" >> '{}/log'\n",
-            tmp.display()
+            "#!/bin/sh\necho \"routine@1 $*\" >> '{}/log'\n[ \"$1\" = setup ] || exit 0\n\
+             ln -sfn '{}' '{}'\nprintf %s \"{mise_tick}\" > '{}'\nprintf %s \"{mise_up}\" > '{}'\n",
+            tmp.display(),
+            shim.display(),
+            link.display(),
+            due.display(),
+            up.display()
         ),
     );
     fs::create_dir_all(installs.join("2")).unwrap();
     fs::copy(EXE, installs.join("2/routine")).unwrap();
     symlink("./2", installs.join("global")).unwrap();
-    let on_shim = format!(
-        "path = {}\nstate = running\nprogram = {}\n",
-        up.display(),
-        shim.display()
-    );
+    let loaded = |program: &Path, state: &str| {
+        let out = format!(
+            "path = {}\nstate = {state}\nprogram = {}\n",
+            up.display(),
+            program.display()
+        );
+        put("print.out", &out);
+    };
     // the host as the old release left it, mise bumped to 2
     let on_mise = || {
         let _ = fs::remove_dir_all(&layout);
         let _ = fs::remove_file(&link);
+        let _ = fs::remove_file(tmp.join(".local/state/hotswap/routines.mise"));
         fs::create_dir_all(link.parent().unwrap()).unwrap();
         symlink(&shim, &link).unwrap();
         fs::create_dir_all(&agents).unwrap();
-        fs::write(&due, "the tick, on mise's shim\n").unwrap();
-        fs::write(&up, "the upgrade agent, on mise's shim\n").unwrap();
-        let r = r#"{"at":0,"ok":true,"smoke":[],"version":"1"}"#;
-        fs::create_dir_all(tmp.join(".local/state/hotswap")).unwrap();
-        fs::write(tmp.join(".local/state/hotswap/routines.json"), r).unwrap();
+        fs::write(&due, mise_tick).unwrap();
+        fs::write(&up, mise_up).unwrap();
+        fs::create_dir_all(record.parent().unwrap()).unwrap();
+        fs::write(&record, r#"{"at":0,"ok":true,"smoke":[],"version":"1"}"#).unwrap();
         put("active", "2");
         put("tag", "2");
         put("loaded", "");
-        put("print.out", &on_shim);
+        loaded(&shim, "running");
         let _ = fs::write(&agent_log, "");
     };
-    // the waiter's outcome once its job stops running, the agent's log read and emptied
+    // the waiter's outcome once the agent's job stops running, the agent's log read and emptied;
+    // launchd then runs the agent from the link
     let reloaded = || {
-        put("print.out", &on_shim.replace("= running", "= not running"));
+        loaded(&shim, "not running");
         for _ in 0..200 {
             if fs::read_to_string(&agent_log).is_ok_and(|l| !l.is_empty()) {
                 break;
             }
             thread::sleep(Duration::from_millis(50));
         }
-        let out = fs::read_to_string(&agent_log)
-            .unwrap()
-            .replace(&tmp.display().to_string(), "~");
+        let out = read(&agent_log).replace(&tmp.display().to_string(), "~");
         let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
         fs::write(&agent_log, "").unwrap();
         let _ = fs::remove_file(tmp.join("waiter.log"));
+        loaded(&link, "running");
         out.replace(&format!("gui/{}", uid.trim()), "gui/$UID")
     };
     let versions = || {
@@ -562,17 +603,36 @@ fn migration() {
             fs::read_link(layout.join("current")).unwrap().display()
         )
     };
-    let program = |p: &Path| {
-        let s = fs::read_to_string(p).unwrap();
-        s.contains(&format!("{}/.local/bin/routine</string>", esc(&tmp)))
-    };
+    let on_link =
+        |p: &Path| read(p).contains(&format!("{}/.local/bin/routine</string>", esc(&tmp)));
     let xdg_env = [("XDG_DATA_HOME", &*xdg)];
     let print = "launchctl print gui/$UID/dev.gigantic.routines.";
     let latest = "curl -q -fsSIL -o /dev/null -w %{url_effective} https://github.com/jgeschwendt/routines/releases/latest\n";
     let back = "hotswap: gui/$UID/dev.gigantic.routines.upgrade reloaded from ~/Library/LaunchAgents/dev.gigantic.routines.upgrade.plist\n";
-    let (d, u) = (
-        "~/Library/LaunchAgents/dev.gigantic.routines.due.plist",
-        "~/Library/LaunchAgents/dev.gigantic.routines.upgrade.plist",
+    let d = "~/Library/LaunchAgents/dev.gigantic.routines.due.plist";
+    let linked = "linked ~/.local/bin/routine → ~/.local/share/hotswap/routines/current/routine\n";
+    let old = "launchctl bootout gui/$UID/com.routines.due\n";
+    let moved = format!(
+        "{old}{print}upgrade\n{print}due\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
+         launchctl bootstrap gui/$UID {d}\n"
+    );
+    let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
+
+    // green: the old release's setup step, through the shim, runs 2's setup
+    on_mise();
+    assert_eq!(
+        launchd(&tmp, &shim, &["setup"], &xdg_env),
+        format!("0\n{linked}reloaded {d}\n{moved}")
+    );
+    assert_eq!(versions(), "1 2 current → 2");
+    assert_eq!(read(&due), due_plist(&tmp));
+    assert!(on_link(&up));
+    assert_eq!(reloaded(), back);
+    // the old release recorded 2 green: the next tick, on the link, finds it up to date
+    fs::write(&record, r#"{"at":0,"ok":true,"smoke":[],"version":"2"}"#).unwrap();
+    assert_eq!(
+        launchd(&tmp, &link, &["upgrade"], &[]),
+        format!("0\nroutines 2: up to date\n{latest}")
     );
 
     // the stranded host: the next tick, through the shim, moves it and meets the held lock
@@ -592,72 +652,57 @@ fn migration() {
         fs::read_link(&link).unwrap(),
         layout.join("current/routine")
     );
-    assert!(program(&up));
-    assert_eq!(
-        fs::read_to_string(&due).unwrap(),
-        "the tick, on mise's shim\n"
-    );
-    assert!(
-        fs::read_to_string(tmp.join(".local/state/hotswap/routines.json"))
-            .unwrap()
-            .contains(r#""version":"1""#)
-    );
+    assert!(on_link(&up));
+    assert_eq!(read(&due), mise_tick);
+    assert!(read(&record).contains(r#""version":"1""#));
     assert_eq!(reloaded(), back);
-    // the tick after, the agent reloaded onto the link, the lock gone: green, the tick moved
-    put(
-        "print.out",
-        &format!(
-            "path = {}\nstate = running\nprogram = {}\n",
-            up.display(),
-            link.display()
-        ),
-    );
+    // the tick after, the lock gone: 2's setup moves the tick, then its kickstart fails — rolled
+    // back onto 1 with mise's pin first, so link, tick and shim all run 1
     fs::remove_dir_all(tmp.join("home/.state/a")).unwrap();
-    let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
-    let moved = format!(
-        "{print}upgrade\n{print}due\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
-         launchctl bootstrap gui/$UID {d}\n{print}upgrade\n"
-    );
+    put("kickstart.once", "");
+    let pin = "mise use -g packslip:jgeschwendt/routines@1\n";
     assert_eq!(
         launchd(&tmp, &link, &["upgrade"], &[]),
         format!(
-            "0\nroutines 2: green, 1 smoke probes\n{latest}launchctl bootout gui/$UID/com.routines.due\n{moved}{kick}"
+            "1\nroutines: {} failed; rolled back to 1\n{latest}{moved}{kick}{pin}routine@1 setup\n{kick}routine@1 status\n",
+            kick.trim_end()
         )
     );
-    assert_eq!(fs::read_to_string(&due).unwrap(), due_plist(&tmp));
-    assert_eq!(versions(), "1 2 current → 2");
-
-    // green: the old release's setup step, through the shim, runs 2's setup
-    on_mise();
-    let linked = "linked ~/.local/bin/routine → ~/.local/share/hotswap/routines/current/routine\n";
+    assert_eq!(read(&tmp.join("active")), "1\n");
+    assert_eq!(versions(), "1 2 current → 1");
+    assert_eq!(fs::read_link(&link).unwrap(), shim);
+    assert_eq!((read(&due), read(&up)), (mise_tick.into(), mise_up.into()));
+    let rec = read(&record);
+    assert!(
+        rec.contains(r#""red":"2""#) && rec.contains(r#""version":"1""#),
+        "{rec}"
+    );
+    // 3, bumped in by 1 and set up through the shim, moves the host again past the red 2, and its
+    // first tick from the link swaps green, pruning 2
+    fs::create_dir_all(installs.join("3")).unwrap();
+    fs::copy(EXE, installs.join("3/routine")).unwrap();
+    put("active", "3");
+    put("tag", "3");
+    loaded(&link, "running");
     assert_eq!(
         launchd(&tmp, &shim, &["setup"], &xdg_env),
-        format!(
-            "0\n{linked}reloaded {d}\ncurrent {u}\nlaunchctl bootout gui/$UID/com.routines.due\n{moved}"
-        )
+        format!("0\n{linked}reloaded {d}\n{moved}")
     );
-    assert_eq!(versions(), "1 2 current → 2");
-    assert_eq!(fs::read_to_string(&due).unwrap(), due_plist(&tmp));
-    assert!(program(&up));
+    assert_eq!(versions(), "1 2 3 current → 3");
+    assert_eq!(
+        fs::read_link(&link).unwrap(),
+        layout.join("current/routine")
+    );
+    assert!(on_link(&up));
+    assert_eq!(read(&due), due_plist(&tmp));
     assert_eq!(reloaded(), back);
-    // the old release recorded 2 green: the next tick, on the link, finds it up to date
-    put(
-        "print.out",
-        &format!(
-            "path = {}\nstate = running\nprogram = {}\n",
-            up.display(),
-            link.display()
-        ),
-    );
-    fs::write(
-        tmp.join(".local/state/hotswap/routines.json"),
-        r#"{"at":0,"ok":true,"smoke":[],"version":"2"}"#,
-    )
-    .unwrap();
     assert_eq!(
         launchd(&tmp, &link, &["upgrade"], &[]),
-        format!("0\nroutines 2: up to date\n{latest}")
+        format!(
+            "0\nroutines 3: green, 1 smoke probes\n{latest}{old}{print}upgrade\n{print}due\n{kick}"
+        )
     );
+    assert_eq!(versions(), "1 3 current → 3");
     assert!(installs.join("2/routine").exists() && installs.join("1/routine").exists());
 }
 

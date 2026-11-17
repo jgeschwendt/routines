@@ -24,7 +24,7 @@ const USAGE: &str = "routine — executable markdown on rails
   routine run <name>     run one routine document
   routine run --due      run every due routine (silent when none are)
   routine status         schedule × due? × last run, one row per routine
-  routine setup          install the release, link ~/.local/bin/routine, load the tick and upgrade agents; --remove undoes it (install/uninstall alias)
+  routine setup          install the release and its upgrade agent (hotswap), load the tick; --remove undoes it (install/uninstall alias)
   routine upgrade        swap to the latest release; --check, --back, --retry
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
   routine help           this text · --version the release, YYYY.M.N
