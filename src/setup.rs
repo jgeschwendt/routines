@@ -1,10 +1,10 @@
-//! `routine setup [--remove]` and `routine upgrade` — the launchd tick and hotswap's upgrade
-//! agent, both on `~/.local/bin/routine`, and the manifest hotswap installs and swaps under
-//! (gigantic.dev/hotswap/).
+//! `routine setup [--remove]` and `routine upgrade` — the launchd tick on `~/.local/bin/routine`,
+//! and the manifest hotswap installs and swaps under (gigantic.dev/hotswap/), whose `ensure` owns
+//! the upgrade agent.
 
 use crate::state;
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process,
     process::Command,
@@ -16,7 +16,6 @@ const TICK: &str = "dev.gigantic.routines.due";
 /// keeps `~/.local/share/hotswap/routines/` and `~/.local/state/hotswap/routines.json`, and finds
 /// what mise installed under `packslip-jgeschwendt-routines`.
 const TOOL: &str = "routines";
-const UPGRADE: &str = "dev.gigantic.routines.upgrade";
 
 fn xml(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -62,18 +61,19 @@ fn tick(exe: &Path, home: &Path) -> String {
     )
 }
 
-/// `hotswap::ensure` brings the release into hotswap's layout and links `~/.local/bin/routine`
-/// through its `current`; both agents run that link, never this process's binary, so a setup run
-/// from a checkout wires the installed release (none installed: packslip installs the latest).
-/// `--remove` boots both agents out and deletes them, the link and what hotswap keeps. Both plists
-/// land aside and are renamed in before any load, so one that cannot land leaves the live agents
-/// running; a loaded tick whose plist changed is booted out and bootstrapped again, the upgrade
-/// agent never: its bootout would kill the swap that runs this setup (hotswap reloads it, once the
-/// run ends, when it moved off mise's shim).
+/// `hotswap::ensure` brings the release into hotswap's layout, links `~/.local/bin/routine` through
+/// its `current` and owns the upgrade agent; the tick runs that link, never this process's binary,
+/// so a setup run from a checkout wires the installed release (none installed: packslip installs
+/// the latest). The tick lands aside and is renamed in before any load, so a plist that cannot land
+/// leaves the live tick running; a loaded tick whose plist changed is booted out and bootstrapped
+/// again. `--remove` boots the tick out and deletes it, the link and, through `hotswap::forget`,
+/// the upgrade agent and the layout. With no launchctl on PATH (Linux) there is no agent work.
 pub fn setup(remove: bool) -> Result<(), String> {
     let home =
         PathBuf::from(state::var("HOME").ok_or("HOME unset — the tick PATH needs ~/.local/bin")?);
     let (_, st, rhome) = state::roots();
+    let launchd = env::split_paths(&state::var("PATH").unwrap_or_default())
+        .any(|d| d.join("launchctl").is_file());
     let agents = home.join("Library/LaunchAgents");
     let launchctl = |args: &[&str]| {
         Command::new("launchctl")
@@ -86,14 +86,19 @@ pub fn setup(remove: bool) -> Result<(), String> {
         "gui/{}",
         String::from_utf8_lossy(&uid.unwrap_or_default()).trim()
     );
-    let plist = |l: &str| agents.join(format!("{l}.plist"));
-    launchctl(&["bootout", &format!("{gui}/{OLD}")]);
-    let _ = fs::remove_file(plist(OLD));
+    let (plist, target) = (
+        agents.join(format!("{TICK}.plist")),
+        format!("{gui}/{TICK}"),
+    );
+    if launchd {
+        launchctl(&["bootout", &format!("{gui}/{OLD}")]);
+        let _ = fs::remove_file(agents.join(format!("{OLD}.plist")));
+    }
     if remove {
-        for l in [TICK, UPGRADE] {
-            launchctl(&["bootout", &format!("{gui}/{l}")]);
-            let _ = fs::remove_file(plist(l));
-            println!("removed {}", plist(l).display());
+        if launchd {
+            launchctl(&["bootout", &target]);
+            let _ = fs::remove_file(&plist);
+            println!("removed {}", plist.display());
         }
         let _ = fs::remove_file(home.join(".local/bin/routine"));
         return hotswap::forget(TOOL);
@@ -101,42 +106,36 @@ pub fn setup(remove: bool) -> Result<(), String> {
     let link = hotswap::ensure(TOOL, &manifest())?;
     let to = fs::read_link(&link).unwrap_or_default();
     println!("linked {} → {}", link.display(), to.display());
-    let ours = [
-        (TICK, tick(&link, &home)),
-        (UPGRADE, hotswap::agent_plist(TOOL, "routine")),
-    ];
+    if !launchd {
+        return Ok(());
+    }
     for p in [&agents, &rhome, &st] {
         let _ = fs::create_dir_all(p);
     }
-    let mut fresh = vec![];
-    for (l, body) in &ours {
-        let (p, tmp) = (plist(l), plist(&format!("{l}.{}", process::id())));
-        fresh.push(fs::read_to_string(&p).ok().as_ref() != Some(body));
-        if fs::write(&tmp, body)
-            .and_then(|()| fs::rename(&tmp, &p))
-            .is_err()
-        {
-            let _ = fs::remove_file(&tmp);
-            return Err(format!("cannot write {}", p.display()));
-        }
+    let body = tick(&link, &home);
+    let fresh = fs::read_to_string(&plist).ok() != Some(body.clone());
+    let tmp = agents.join(format!("{TICK}.{}.plist", process::id()));
+    if fs::write(&tmp, body)
+        .and_then(|()| fs::rename(&tmp, &plist))
+        .is_err()
+    {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("cannot write {}", plist.display()));
     }
-    for ((l, _), fresh) in ours.iter().zip(fresh) {
-        let (p, target) = (plist(l), format!("{gui}/{l}"));
-        let loaded = launchctl(&["print", &target]);
-        let reload = loaded && fresh && *l == TICK;
-        if reload {
-            launchctl(&["bootout", &target]);
-        }
-        if (!loaded || reload) && !launchctl(&["bootstrap", &gui, &p.to_string_lossy()]) {
-            return Err("launchctl bootstrap failed".into());
-        }
-        let verb = match (loaded, reload) {
-            (false, _) => "loaded",
-            (true, true) => "reloaded",
-            (true, false) => "current",
-        };
-        println!("{verb} {}", p.display());
+    let loaded = launchctl(&["print", &target]);
+    let reload = loaded && fresh;
+    if reload {
+        launchctl(&["bootout", &target]);
     }
+    if (!loaded || reload) && !launchctl(&["bootstrap", &gui, &plist.to_string_lossy()]) {
+        return Err("launchctl bootstrap failed".into());
+    }
+    let verb = match (loaded, reload) {
+        (false, _) => "loaded",
+        (true, true) => "reloaded",
+        (true, false) => "current",
+    };
+    println!("{verb} {}", plist.display());
     Ok(())
 }
 

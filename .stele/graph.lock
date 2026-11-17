@@ -69,7 +69,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         }
       ],
@@ -99,7 +99,7 @@
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": "d28e651bb427988b8a2c3d43bb2f70830bc048908b182f7c4b9a5cfdd4ac1309",
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         },
         {
@@ -111,7 +111,7 @@
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": "63863113cc138715e7b7704b8525f754271e65145a8e63214c5ae28462d4519d",
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         },
         {
@@ -123,7 +123,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": "f0fa60f9304aa8de8f7ef255080867ffd644d8970da7cee52a35d326b313ba6f",
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         },
         {
@@ -135,7 +135,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         },
         {
@@ -147,7 +147,7 @@
           "text": "last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": "52583432f8d732ae268c1dcf666bd76ffee5d99d53256ccc92a8d1df66633070",
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         },
         {
@@ -159,7 +159,7 @@
           "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
-            "sha": "dac70c21c29fe4097ad42d5bd165bb99238a53e6"
+            "sha": "af02051aca36d40510d85b4961552f560f0d7436"
           }
         }
       ],
