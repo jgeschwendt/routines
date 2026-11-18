@@ -678,7 +678,7 @@ fn migration() {
         "{rec}"
     );
     // 3, bumped in by 1 and set up through the shim, moves the host again past the red 2, and its
-    // first tick from the link swaps green, pruning 2
+    // first tick from the link finds it up to date: setup recorded 3, so nothing swaps or prunes
     fs::create_dir_all(installs.join("3")).unwrap();
     fs::copy(EXE, installs.join("3/routine")).unwrap();
     put("active", "3");
@@ -698,11 +698,9 @@ fn migration() {
     assert_eq!(reloaded(), back);
     assert_eq!(
         launchd(&tmp, &link, &["upgrade"], &[]),
-        format!(
-            "0\nroutines 3: green, 1 smoke probes\n{latest}{old}{print}upgrade\n{print}due\n{kick}"
-        )
+        format!("0\nroutines 3: up to date\n{latest}")
     );
-    assert_eq!(versions(), "1 3 current → 3");
+    assert_eq!(versions(), "1 2 3 current → 3");
     assert!(installs.join("2/routine").exists() && installs.join("1/routine").exists());
 }
 
