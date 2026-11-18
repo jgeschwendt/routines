@@ -151,7 +151,6 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
         <ul role="list">
           <li>the runner invokes <code class="code">claude --model opus --permission-mode=auto --no-session-persistence -p</code> with the prompt on stdin (never argv — a large document passes ARG_MAX): the full document, the failing block, and its captured output, each section between markers carrying the run's random suffix so output cannot forge its end, cwd = the routines home, env carrying <code class="code">ROUTINE_NAME</code>, <code class="code">ROUTINE_STATE_DIR</code> and <code class="code">ROUTINE_HOME</code> as the blocks see them</li>
           <li>instruction: running unattended; diagnose and repair state; do not continue the routine yourself</li>
-          <li>never start a final-message line with <code class="code">needs input:</code> or <code class="code">failed:</code> — the Stop hook would open an unkeyed thread per run — but use the stable thread key the document names</li>
         </ul>
       </div>
     </div>
