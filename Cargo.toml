@@ -10,7 +10,7 @@ repository = "https://github.com/jgeschwendt/routines"
 
 # `setup` and `upgrade`: packslip installs, hotswap keeps the versions and swaps (gigantic.dev/hotswap/).
 [dependencies]
-hotswap = { git = "https://github.com/jgeschwendt/hotswap", rev = "0c8fdd80b4dfd1b8d4db3edb4695eef508ee9851" }
+hotswap = { git = "https://github.com/jgeschwendt/hotswap", rev = "e980196da0b7b5388f1a39cf62106213c8087725" }
 
 # Maximalist opt-out (the house lint discipline, verbatim): turn on the whole
 # strict, *stable* set (clippy::pedantic), then opt out the few we disagree
