@@ -2,7 +2,7 @@
 
 ```stele
 kind: container
-purpose: the runner — doc, cron, state, status, run <name>, run --due, sync-ci, setup and upgrade (hotswap); one binary crate, std plus hotswap, unsafe only in src/sys.rs
+purpose: the runner — doc, cron, state, status, health and ack, run <name>, run --due, sync-ci, setup and upgrade (hotswap); one binary crate, std plus hotswap, unsafe only in src/sys.rs
 invariants:
   - claim: due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute
     anchor: ※ due-derivation
@@ -16,6 +16,8 @@ invariants:
     anchor: ※ parallel-due
   - claim: run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake
     anchor: ※ dark-wake-gate
+  - claim: health is derived from the runner's own parsers and state — a doc health calls lint is one run refuses, and an ack never outlives the exit it acknowledged
+    anchor: ※ health-verdict
 ```
 
 - the watchdog is a thread: a runner killed -9 takes it along and its block runs on to its own end; the dead pid's lock is reaped by the next run
