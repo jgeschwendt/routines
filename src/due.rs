@@ -20,9 +20,10 @@ fn kids() -> std::sync::MutexGuard<'static, (Vec<i32>, Option<i32>)> {
 }
 
 // ※ due-tick
-/// 1 when any due routine failed. launchd stops the tick with a TERM to it alone,
-/// then KILLs its group, so a HUP, INT or TERM forwards TERM to every routine — a background
-/// child ignores INT — dispatches no more, and exits 128 + the signal once all are reaped.
+/// 1 when any due routine failed, exiting 2 or above — a 1 is a finding. launchd stops the tick
+/// with a TERM to it alone, then KILLs its group, so a HUP, INT or TERM forwards TERM to every
+/// routine — a background child ignores INT — dispatches no more, and exits 128 + the signal
+/// once all are reaped.
 pub fn due(now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let log = |m: &str| record::tick_log(&states, state::now().unwrap_or(now), m);
@@ -59,7 +60,7 @@ pub fn due(now: i64) -> i32 {
         let s = child.and_then(|mut c| c.wait());
         let code = s.map_or(127, |s| s.code().unwrap_or(128 + s.signal().unwrap_or(0)));
         if kids().1.is_none() {
-            rc |= i32::from(code != 0);
+            rc |= i32::from(code > 1);
             log(&format!("dispatched {name} exit={code}"));
         }
     }
