@@ -1431,19 +1431,25 @@ fn due_stops_on_a_signal() {
     }
 }
 
-/// `routine <args>` against `home` as health sees a host: `PATH` the stub `launchctl` in
-/// `<home>/../bin` (loaded while `<home>/../loaded` exists) when `launchd`, else none; exit code,
-/// stdout and stderr, the home read as `<h>` and the uid as `$UID`.
+/// `routine <args>` against `home` as health sees a host: `PATH` the stub `launchctl` and `sysctl`
+/// in `<home>/../bin` (loaded while `<home>/../loaded` exists, woken as `<home>/../waketime` says
+/// and failing without it) when `launchd`, else neither; exit code, stdout and stderr, the home
+/// read as `<h>` and the uid as `$UID`.
 fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String, String) {
     use std::{fs, os::unix::fs::PermissionsExt};
     let bin = home.parent().unwrap().join("bin");
     fs::create_dir_all(&bin).unwrap();
-    let stub = format!(
-        "#!/bin/sh\n[ -e '{}/loaded' ]\n",
-        bin.parent().unwrap().display()
-    );
-    fs::write(bin.join("launchctl"), stub).unwrap();
-    fs::set_permissions(bin.join("launchctl"), fs::Permissions::from_mode(0o755)).unwrap();
+    let t = bin.parent().unwrap().display();
+    for (n, stub) in [
+        ("launchctl", format!("#!/bin/sh\n[ -e '{t}/loaded' ]\n")),
+        (
+            "sysctl",
+            format!("#!/bin/sh\nexec /bin/cat '{t}/waketime'\n"),
+        ),
+    ] {
+        fs::write(bin.join(n), stub).unwrap();
+        fs::set_permissions(bin.join(n), fs::Permissions::from_mode(0o755)).unwrap();
+    }
     let path = if launchd {
         format!("{}:/usr/bin", bin.display())
     } else {
@@ -1751,18 +1757,25 @@ unhealthy — 7 finding(s)
             String::new()
         )
     );
-    // (case, tick.log, a live lock, launchctl loaded) → exit, the plain report, the JSON tick
+    // (case, tick.log, a live lock, launchctl loaded, kern.waketime) → exit, the plain report,
+    // the JSON tick
     let old = format!("{}\n2026-08-14T08:00:00Z run x\n", "x".repeat(70_000)); // the tail only
     let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due — its output is <h>/.state/due.log";
     let cases = [
-        ("unloaded", String::new(), false, false, 1, "not-loaded: tick — gui/$UID/dev.gigantic.routines.due is not loaded\n  fix: routine setup\nunhealthy — 1 finding(s)\n".into(), r#""verdict":"not-loaded","swept":null,"finding":"gui/$UID/dev.gigantic.routines.due is not loaded","fix":"routine setup""#.to_owned()),
-        ("silent", String::new(), false, true, 1, format!("stale: tick — tick.log has no line\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log has no line","fix":"{kick}""#)),
-        ("quiet", old.clone(), false, true, 1, format!("stale: tick — tick.log's last line is 3600s old\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log's last line is 3600s old","fix":"{kick}""#)),
-        ("held", old, true, true, 0, "healthy — 1 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
-        ("heard", "2026-08-14T08:59:00Z tick docs=0 due=- next=-\n".into(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":1786697940,"finding":null,"fix":null"#.into()),
+        ("unloaded", None, String::new(), false, false, 1, "not-loaded: tick — gui/$UID/dev.gigantic.routines.due is not loaded\n  fix: routine setup\nunhealthy — 1 finding(s)\n".into(), r#""verdict":"not-loaded","swept":null,"finding":"gui/$UID/dev.gigantic.routines.due is not loaded","fix":"routine setup""#.to_owned()),
+        ("silent", None, String::new(), false, true, 1, format!("stale: tick — tick.log has no line\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log has no line","fix":"{kick}""#)),
+        ("quiet", None, old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
+        ("slept", Some("{ sec = 1786600000, usec = 5 } Thu"), old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
+        ("garbled", Some("{ sec = soon }"), old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
+        ("woke", Some("{ sec = 1786697900, usec = 5 } Fri"), old.clone(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
+        ("held", None, old, true, true, 0, "healthy — 1 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
+        ("heard", None, "2026-08-14T08:59:00Z tick docs=0 due=- next=-\n".into(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":1786697940,"finding":null,"fix":null"#.into()),
     ];
-    for (case, log, busy, loaded, code, report, tick) in cases {
+    for (case, wake, log, busy, loaded, code, report, tick) in cases {
         let home = tmp.join(case).join("home");
+        if let Some(w) = wake {
+            put(&tmp, &format!("{case}/waketime"), Some(w), None);
+        }
         put(&home, ".state/tick.log", Some(&log), None);
         if busy {
             put(&home, "busy.md", Some(&held), None);

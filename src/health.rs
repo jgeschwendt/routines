@@ -5,7 +5,7 @@ use crate::{
     cron::{self, iso},
     doc, lock, run, setup, state, status,
 };
-use std::{fmt::Write, fs, path::Path, time::UNIX_EPOCH};
+use std::{fmt::Write, fs, path::Path, process::Command, time::UNIX_EPOCH};
 
 /// `s` as a JSON string: `"` and `\` escaped, every other control character `\u00XX`.
 fn json(s: &str) -> String {
@@ -189,8 +189,20 @@ fn routine(
     (row, running, said)
 }
 
+/// When the machine last woke, `sysctl -n kern.waketime`'s `sec`; none when the probe fails.
+fn wake() -> Option<i64> {
+    let o = Command::new("sysctl")
+        .args(["-n", "kern.waketime"])
+        .output()
+        .ok()?;
+    let o = String::from_utf8_lossy(&o.stdout).into_owned();
+    cron::num(o.strip_prefix("{ sec = ")?.split(',').next()?)
+}
+
 /// The tick's verdict and its finding: `unmanaged` with no launchctl, `not-loaded`, or `stale`
-/// when tick.log has been quiet ten minutes and no routine runs (a long run holds the tick).
+/// when tick.log has been quiet ten minutes since its last line or the last wake, whichever is
+/// later (launchd ticks within a minute of a wake), and no routine runs (a long run holds the
+/// tick).
 fn tick(
     states: &Path,
     now: i64,
@@ -199,25 +211,28 @@ fn tick(
 ) -> (&'static str, Option<(String, String)>) {
     let target = format!("{}/{}", setup::gui(), setup::TICK);
     if !setup::launchd() {
-        ("unmanaged", None)
+        return ("unmanaged", None);
     } else if !setup::launchctl(&["print", &target]) {
-        (
-            "not-loaded",
-            Some((format!("{target} is not loaded"), "routine setup".into())),
-        )
-    } else if !busy && heard.is_none_or(|t| now - t > 600) {
-        let f = heard.map_or("tick.log has no line".into(), |t| {
-            format!("tick.log's last line is {}s old", now - t)
-        });
-        let out = states.join("due.log");
-        let x = format!(
-            "launchctl kickstart -k {target} — its output is {}",
-            out.display()
-        );
-        ("stale", Some((f, x)))
-    } else {
-        ("ok", None)
+        let f = format!("{target} is not loaded");
+        return ("not-loaded", Some((f, "routine setup".into())));
     }
+    let quiet = heard.max(wake());
+    if busy || quiet.is_some_and(|t| now - t <= 600) {
+        return ("ok", None);
+    }
+    let f = quiet.map_or("tick.log has no line".into(), |t| {
+        format!(
+            "tick.log quiet {}s since {}, its last line or the last wake",
+            now - t,
+            iso(t)
+        )
+    });
+    let out = states.join("due.log");
+    let x = format!(
+        "launchctl kickstart -k {target} — its output is {}",
+        out.display()
+    );
+    ("stale", Some((f, x)))
 }
 
 /// One verdict over the home, as a JSON line when `as_json`; 1 when anything is red.
