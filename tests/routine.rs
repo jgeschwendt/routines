@@ -52,7 +52,7 @@ fn help() {
 }
 
 // `routine status` — stdout, stderr and exit code — for every fixture home: missing, empty, and
-// one holding each kind of row and each skipped name.
+// one holding each kind of row, a paused one among them, and each skipped name.
 #[test]
 fn status() {
     use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
@@ -78,6 +78,9 @@ fn status() {
         ("full/never.md", &hourly),
         ("full/past.md", &hourly),
         ("full/.state/past/last-run.json", &past),
+        ("full/paused.md", &hourly),
+        ("full/.state/paused/last-run.json", &past),
+        ("full/.state/paused/paused", ""),
         ("full/recent.md", &hourly),
         ("full/.state/recent/last-run.json", &recent),
         ("full/ahead.md", &hourly),
@@ -116,20 +119,21 @@ fn status() {
             .unwrap())
     };
     let now = ("ROUTINE_NOW", "1786699830"); // Fri 2026-08-14T09:30:30Z
-    let head = "NAME                 SCHEDULE         DUE  EXIT  FINISHED              SECS\n";
+    let head = "NAME                 SCHEDULE         DUE    EXIT  FINISHED              SECS\n";
     // without ROUTINE_NOW the clock is real, long past recent's next fire
     let rows = |recent: &str| {
         format!(
-            "{head}a-routine-name-past-21-columns0 * * * *        due  —     —                     —
-ahead                0 * * * *        due  0     2026-08-14T09:00:05Z  5
-bad                  @daily           bad  —     —                     —
-blank                —                n/a  —     —                     —
-dir                  —                n/a  —     —                     —
-never                0 * * * *        due  —     —                     —
-nul                  0 * * * *        due  —     —                     —
-past                 0 * * * *        due  0     2026-08-14T09:00:05Z  5
+            "{head}a-routine-name-past-21-columns0 * * * *        due    —     —                     —
+ahead                0 * * * *        due    0     2026-08-14T09:00:05Z  5
+bad                  @daily           bad    —     —                     —
+blank                —                n/a    —     —                     —
+dir                  —                n/a    —     —                     —
+never                0 * * * *        due    —     —                     —
+nul                  0 * * * *        due    —     —                     —
+past                 0 * * * *        due    0     2026-08-14T09:00:05Z  5
+paused               0 * * * *        paused 0     2026-08-14T09:00:05Z  5
 recent               0 * * * *        {recent}0     2026-08-14T09:00:05Z  5
-two                  —                n/a  \n9    —                     3 · degraded since since — then
+two                  —                n/a    \n9    —                     3 · degraded since since — then
 "
         )
     };
@@ -140,9 +144,9 @@ two                  —                n/a  \n9    —                     3 ·
         (&[("ROUTINE_HOME", "empty"), now], None),
         (
             &[("ROUTINE_HOME", "full"), ("ROUTINE_NOW", " \t1786699830\n")],
-            Some("—    "),
+            Some("—      "),
         ),
-        (&[("ROUTINE_HOME", &full)], Some("due  ")),
+        (&[("ROUTINE_HOME", &full)], Some("due    ")),
         (&[("ROUTINE_HOME", "locked"), now], None),
         (
             &[
@@ -151,7 +155,7 @@ two                  —                n/a  \n9    —                     3 ·
                 ("ROUTINE_STATE", "full/.state"),
                 now,
             ],
-            Some("—    "),
+            Some("—      "),
         ),
     ] {
         let want = want.map_or((head.to_owned(), ""), |r| (rows(r), skips));
@@ -1199,7 +1203,7 @@ fn due_state(home: &Path) -> Vec<String> {
 }
 
 /// A tick's home: `docs` a line per routine, `name|schedule|block` (an empty block `true`);
-/// `later` and `yearly` ran at 09:00, `ahead` past the clock, `c`'s lock is held, and a dark
+/// `later` and `yearly` ran at 09:00, `ahead` past the clock, `c`'s lock is held, `held` is paused, and a dark
 /// home holds a NUL schedule, a non-doc, a dangling link and a due.log past 5 MB.
 fn due_home(home: &Path, docs: &str) {
     use std::{fs, os::unix::fs::symlink};
@@ -1214,6 +1218,11 @@ fn due_home(home: &Path, docs: &str) {
             "c" => {
                 fs::create_dir_all(dir.join("lock")).unwrap();
                 fs::write(dir.join("lock/pid"), "1\n").unwrap(); // EPERM: alive
+                continue;
+            }
+            "held" => {
+                fs::create_dir_all(&dir).unwrap();
+                fs::write(dir.join("paused"), "").unwrap();
                 continue;
             }
             "later" | "yearly" => 1_786_698_000,
@@ -1238,7 +1247,7 @@ fn due_home(home: &Path, docs: &str) {
 // `routine run --due`: exit code, stdout and stderr (sorted by line, the routines being
 // concurrent), tick.log, and each routine's record and state — an empty home, nothing due, one due
 // under a full wake, several with one failing and one held under a pmset that fails open, and a
-// dark wake that defers, over every kind of skipped, bad and unscheduled doc and a due.log past
+// dark wake that defers, over every kind of skipped, bad, paused and unscheduled doc and a due.log past
 // 5 MB.
 #[test]
 fn due() {
@@ -1334,20 +1343,21 @@ fn due() {
             "dark",
             &dark,
             "hourly|0 * * * *|\nyearly|0 0 1 1 *|\nahead|0 0 1 1 *|\nbad|@daily|\nblank||\n\
-             Not_Slug|0 * * * *|",
+             held|0 * * * *|\nNot_Slug|0 * * * *|",
             0,
             vec![],
             "",
             format!(
                 "{t} skip Not_Slug.md: name not a slug\n{t} skip dangling.md: dangling symlink\n\
-                 {t} tick docs=6 due=ahead,hourly,nul next=bad@bad,blank@unscheduled,\
-                 yearly@2027-01-01T00:00:00Z\n{t} defer dark-wake due=ahead,hourly,nul\n"
+                 {t} tick docs=7 due=ahead,hourly,nul next=bad@bad,blank@unscheduled,\
+                 held@paused,yearly@2027-01-01T00:00:00Z\n{t} defer dark-wake due=ahead,hourly,nul\n"
             ),
             vec![
                 last("ahead", 1_786_699_999),
                 empty("due.log", 0),
                 empty("due.log.1", 5_242_881),
-                empty("tick.log", 282),
+                "<h>/.state/held 0 [\"paused\"] ".into(),
+                empty("tick.log", 294),
                 last("yearly", 1_786_698_000),
             ],
         ),
@@ -1489,7 +1499,8 @@ fn put(home: &Path, rel: &str, body: Option<&str>, at: Option<u64>) {
 }
 
 // `routine health`, plain and `--json`, over a home holding each verdict — lint, wedged, a live
-// lock inside its timeout, failed, acknowledged, an ack a new exit outlived, stale, due but not
+// lock inside its timeout, failed, acknowledged, an ack a new exit outlived, paused over a failed
+// exit and a due schedule (a hand-made marker pauses too), stale, due but not
 // passed over (never run, or due this minute) — each kind of skipped doc and an orphan, the tick
 // unmanaged; then each tick state under a stubbed launchctl, and the usage and clock refusals.
 #[test]
@@ -1543,7 +1554,14 @@ fn health() {
         ),
         (".state/moved/last-run.json", rec(now - 60, 4), None),
         (".state/ok/last-run.json", rec(now - 1000, 0), None),
+        (".state/paused/last-run.json", rec(1_786_690_000, 2), None),
+        (
+            ".state/paused/paused",
+            Some(r#"{"at":"2026-08-14T08:00:00Z","reason":"on \"hold\""}"#.to_owned() + "\n"),
+            None,
+        ),
         (".state/stale/last-run.json", rec(1_786_690_000, 0), None),
+        (".state/touched/paused", Some(String::new()), None),
         (".state/tick.log", Some(tick.into()), None),
         (".state/wedged/lock/pid", pid.clone(), None),
         (".state/wedged/lock", None, Some(now - 100)),
@@ -1566,7 +1584,9 @@ fn health() {
             Some(format!("---\nschedule: 0 0 1 1 *\n---\n{blk}")),
             None,
         ),
+        ("paused.md", Some(hourly.clone()), None),
         ("stale.md", Some(hourly.clone()), None),
+        ("touched.md", Some(blk.into()), None),
         ("wedged.md", Some(held.clone()), None),
     ] {
         put(&home, rel, body.as_deref(), at);
@@ -1595,6 +1615,8 @@ orphan: gone — <h>/.state/gone has no gone.md
 finding: found — exit 1 at 2026-08-14T08:59:00Z
   fix: it ran and found something — read <h>/.state/found/logs; <h>/found.md says whose move it is
 acknowledged: acked — exit 5 since 2026-08-14T08:59:30Z: a \"q\" \\ \tt\n é
+paused: paused — since 2026-08-14T08:00:00Z: on \"hold\"
+paused: touched — since : 
 unhealthy — 7 red · 1 finding(s)
 "
             ),
@@ -1615,7 +1637,7 @@ unhealthy — 7 red · 1 finding(s)
         r#""verdict":"ok","finding":null,"fix":null"#,
     );
     let plain = |l: &str, deg: &str, ack: &str, v: &str| {
-        format!(r#""last":{l},"degraded":{deg},"ack":{ack},{v}"#)
+        format!(r#""last":{l},"degraded":{deg},"ack":{ack},"paused":null,{v}"#)
     };
     let fixed =
         |v: &str, f: &str, x: &str| format!(r#""verdict":"{v}","finding":"{f}","fix":"{x}""#);
@@ -1732,6 +1754,16 @@ unhealthy — 7 red · 1 finding(s)
             plain(&last(0, now - 1000), "null", "null", ok),
         ),
         row(
+            "paused",
+            r#""0 * * * *""#,
+            "1786690800",
+            idle,
+            format!(
+                r#""last":{},"degraded":null,"ack":null,"paused":{{"at":"2026-08-14T08:00:00Z","reason":"on \"hold\""}},"verdict":"paused","finding":null,"fix":null"#,
+                last(2, 1_786_690_000)
+            ),
+        ),
+        row(
             "stale",
             r#""0 * * * *""#,
             "1786690800",
@@ -1746,6 +1778,13 @@ unhealthy — 7 red · 1 finding(s)
                     "routine run stale, and read <h>/.state/tick.log for its refusal",
                 ),
             ),
+        ),
+        row(
+            "touched",
+            "null",
+            "null",
+            idle,
+            r#""last":null,"degraded":null,"ack":null,"paused":{"at":"","reason":""},"verdict":"paused","finding":null,"fix":null"#.into(),
         ),
         row(
             "wedged",
@@ -1921,4 +1960,96 @@ fn ack() {
             format!("routine: cannot write {h}/.state/f/ack\n")
         )
     );
+}
+
+// `routine pause` and `resume`: usage without a name, 64 for an unknown routine; a pause lands
+// with its reason before the routine ever ran, the tick passes the paused routine over while
+// `run <name>` still runs it, a second pause restamps; resume lifts it and the next tick runs the
+// fire it missed, health never calling that stale; a resume of an unpaused routine changes
+// nothing, and an unwritable state dir is 73 either way.
+#[test]
+fn pause() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let tmp = sandbox("pause");
+    let home = tmp.join("home");
+    routine_doc(&home, "p", "schedule: \"0 * * * *\"", Some("true"));
+    let (st, usage) = (
+        home.join(".state/p"),
+        String::from_utf8(Command::new(EXE).output().unwrap().stdout).unwrap(),
+    );
+    let at = |now: u64, args: &[&str]| {
+        let env = [
+            ("ROUTINE_NOW", now.to_string()),
+            ("ROUTINE_PMSET", "/usr/bin/false".into()),
+        ];
+        out(routine_cmd(&home, args, &env).output().unwrap())
+    };
+    let now = 1_786_698_000;
+    let read = |f: &str| fs::read_to_string(st.join(f)).ok();
+    let (done, tick) = ((Some(0), String::new(), String::new()), || {
+        fs::read_to_string(home.join(".state/tick.log")).unwrap()
+    });
+    for v in ["pause", "resume"] {
+        for args in [&[v][..], &[v, ""]] {
+            assert_eq!(at(now, args), (Some(64), String::new(), usage.clone()));
+        }
+        for n in ["nope", "Bad_Name"] {
+            let err = format!("routine: no routine {n}\n");
+            assert_eq!(at(now, &[v, n]), (Some(64), String::new(), err));
+        }
+    }
+    assert_eq!(
+        (at(now, &["resume", "p"]), st.exists()),
+        (done.clone(), false)
+    );
+    assert_eq!(at(now, &["pause", "p", "on", "\"hold\""]), done);
+    let held = |t: &str, r: &str| Some(format!("{{\"at\":\"{t}\",\"reason\":\"{r}\"}}\n"));
+    assert_eq!(
+        read("paused"),
+        held("2026-08-14T09:00:00Z", "on \\\"hold\\\"")
+    );
+    assert_eq!(at(now + 7200, &["run", "--due"]), done);
+    assert!(tick().ends_with("Z tick docs=1 due=- next=p@paused\n"));
+    assert_eq!(
+        health_run(&home, &["health"], false).1,
+        "paused: p — since 2026-08-14T09:00:00Z: on \"hold\"\nhealthy — 1 routines\n"
+    );
+    assert_eq!(at(now, &["run", "p"]).0, Some(0));
+    assert_eq!(at(now + 60, &["pause", "p"]), done);
+    assert_eq!(read("paused"), held("2026-08-14T09:01:00Z", ""));
+    // swept an hour after the 10:00 fire fell due, resumed after that: due, not stale
+    assert_eq!(at(now + 7200, &["run", "--due"]), done);
+    assert_eq!(at(now + 7260, &["resume", "p"]), done.clone());
+    assert_eq!(
+        (read("paused"), read("resumed")),
+        (None, Some(format!("{}\n", now + 7260)))
+    );
+    let env = [("ROUTINE_NOW", (now + 7270).to_string())];
+    let h = out(routine_cmd(&home, &["health", "--json"], &env)
+        .output()
+        .unwrap());
+    let row = r#""due":true,"running":false"#;
+    assert!(
+        h.0 == Some(0) && h.1.contains(row) && h.1.contains(r#""paused":null,"verdict":"ok""#),
+        "{}",
+        h.1
+    );
+    assert_eq!(at(now + 7300, &["run", "--due"]).0, Some(0));
+    assert!(tick().ends_with("Z dispatched p exit=0\n"));
+    assert_eq!(at(now + 7300, &["pause", "p"]), done);
+    for (mode, v, verb, code) in [
+        (0o555, "resume", "lift", 73),
+        (0o755, "resume", "", 0),
+        (0o555, "pause", "write", 73),
+    ] {
+        fs::set_permissions(&st, fs::Permissions::from_mode(mode)).unwrap();
+        let got = at(now, &[v, "p"]);
+        fs::set_permissions(&st, fs::Permissions::from_mode(0o755)).unwrap();
+        let err = format!(
+            "routine: cannot {verb} {}/.state/p/paused\n",
+            home.display()
+        );
+        let err = if code == 0 { String::new() } else { err };
+        assert_eq!(got, (Some(code), String::new(), err), "{v} {mode:o}");
+    }
 }

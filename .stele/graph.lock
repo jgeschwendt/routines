@@ -8,7 +8,7 @@
     },
     "dark-wake-gate": {
       "file": "src/due.rs",
-      "line": 113,
+      "line": 114,
       "node": "src"
     },
     "due-derivation": {
@@ -23,7 +23,7 @@
     },
     "health-verdict": {
       "file": "src/health.rs",
-      "line": 100,
+      "line": 118,
       "node": "src"
     },
     "last-run-contract": {
@@ -34,6 +34,11 @@
     "parallel-due": {
       "file": "src/due.rs",
       "line": 43,
+      "node": "src"
+    },
+    "pause": {
+      "file": "src/health.rs",
+      "line": 398,
       "node": "src"
     }
   },
@@ -74,7 +79,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         }
       ],
@@ -104,7 +109,7 @@
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": "d28e651bb427988b8a2c3d43bb2f70830bc048908b182f7c4b9a5cfdd4ac1309",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         },
         {
@@ -112,11 +117,11 @@
           "enforced_by": null,
           "id": "dark-wake-gate",
           "kind": "invariant",
-          "resolved": "src/due.rs:113",
+          "resolved": "src/due.rs:114",
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": "63863113cc138715e7b7704b8525f754271e65145a8e63214c5ae28462d4519d",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         },
         {
@@ -128,7 +133,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": "f0fa60f9304aa8de8f7ef255080867ffd644d8970da7cee52a35d326b313ba6f",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         },
         {
@@ -140,7 +145,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         },
         {
@@ -148,11 +153,11 @@
           "enforced_by": null,
           "id": "health-verdict",
           "kind": "invariant",
-          "resolved": "src/health.rs:100",
+          "resolved": "src/health.rs:118",
           "text": "health is derived from the runner's own parsers and state — a doc health calls lint is one run refuses, and an ack never outlives the exit it acknowledged",
           "verified": {
-            "digest": "a00d3d6f3e023c8d491f9109f6e82512aff1ba3e7a7e90f430f6f1c615b54c32",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "digest": "57289d0181066e065ff2b5234b4cf9b9a8a134d3ff5e7f062740e0c8c82497c2",
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         },
         {
@@ -164,7 +169,7 @@
           "text": "last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": "52583432f8d732ae268c1dcf666bd76ffee5d99d53256ccc92a8d1df66633070",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         },
         {
@@ -176,7 +181,19 @@
           "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
-            "sha": "9282dd62015431c56979d2f05bacab68b2fbeef5"
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
+          }
+        },
+        {
+          "anchor": "※ pause",
+          "enforced_by": null,
+          "id": "pause",
+          "kind": "invariant",
+          "resolved": "src/health.rs:398",
+          "text": "a pause is the paused marker's presence, whatever it holds — the tick never dispatches a paused routine, health never calls it due, stale or red, and run <name> still runs it",
+          "verified": {
+            "digest": "e0f7e68f08d8c8a9d5080024a7c8e297cfabad2f0cc1ea98fee68839444d38cc",
+            "sha": "5d17dbc65e90ff37f300504d43a09ac8d85158c1"
           }
         }
       ],
@@ -192,7 +209,7 @@
       },
       "id": "src",
       "kind": "container",
-      "purpose": "the runner — doc, cron, state, status, health and ack, run <name>, run --due, sync-ci, setup and upgrade (hotswap); one binary crate, std plus hotswap, unsafe only in src/sys.rs"
+      "purpose": "the runner — doc, cron, state, status, health, ack and pause, run <name>, run --due, sync-ci, setup and upgrade (hotswap); one binary crate, std plus hotswap, unsafe only in src/sys.rs"
     },
     "tests": {
       "budget": null,

@@ -78,7 +78,7 @@ fn rotate(states: &Path) {
 }
 
 /// The due routines in byte order, journalled as one tick line — a skipped document ahead of
-/// it; a rejected schedule reads apart from an on-demand doc.
+/// it; a rejected schedule reads apart from an on-demand doc, and a paused routine is never due.
 fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
     let names = state::routines(dir, |f, why| {
         record::tick_log(states, now, &format!("skip {f}: {why}"));
@@ -87,6 +87,7 @@ fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
     for name in &names {
         let sched = status::schedule(dir, name);
         match status::next_fire_of(states, name, &sched, now) {
+            _ if states.join(name).join("paused").is_file() => next.push(format!("{name}@paused")),
             Some(n) if n <= now => due.push(name.clone()),
             Some(n) => next.push(format!("{name}@{}", cron::iso(n))),
             None if sched.is_empty() => next.push(format!("{name}@unscheduled")),
