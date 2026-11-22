@@ -46,8 +46,8 @@ fn mtime(p: &Path) -> Option<i64> {
     Some(t.duration_since(UNIX_EPOCH).ok()?.as_secs().cast_signed())
 }
 
-/// `<kind>: <name> — <finding>` and its fix, one red finding as the plain report prints it.
-fn red(kind: &str, name: &str, finding: &str, fix: &str) -> String {
+/// `<kind>: <name> — <finding>` and its fix, one finding as the plain report prints it.
+fn report(kind: &str, name: &str, finding: &str, fix: &str) -> String {
     format!("{kind}: {name} — {finding}\n  fix: {fix}\n")
 }
 
@@ -98,17 +98,18 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
 }
 
 // ※ health-verdict
-/// One routine's JSON object, whether it runs, and its report line — `Ok` a red finding, `Err`
-/// an acknowledged one. The first match wins: lint (what the runner refuses or mis-reads),
-/// wedged (a live lock past its timeout and the watchdog's minute), failed or acknowledged,
-/// stale (due, idle, and passed over by a sweep that could dispatch half an hour after it fell
+/// One routine's JSON object, whether it runs, and its report line with its bucket — 0 red, 1 a
+/// finding, 2 acknowledged. The first match wins: lint (what the runner refuses or mis-reads),
+/// wedged (a live lock past its timeout and the watchdog's minute), a non-zero last exit —
+/// acknowledged while an ack holds it, else a finding for exit 1 (it ran and found something,
+/// never red) and failed for 2 and above — stale (due, idle, and passed over by a sweep that could dispatch half an hour after it fell
 /// due — a slept machine's sweeps predate it), else ok.
 fn routine(
     (dir, states): (&Path, &Path),
     name: &str,
     now: i64,
     swept: Option<i64>,
-) -> (String, bool, Result<Option<String>, String>) {
+) -> (String, bool, Option<(usize, String)>) {
     let (doc, st) = (dir.join(format!("{name}.md")), states.join(name));
     let text = String::from_utf8_lossy(&fs::read(&doc).unwrap_or_default()).into_owned();
     let sched = status::schedule(dir, name);
@@ -148,11 +149,17 @@ fn routine(
             .max()
             .unwrap_or(logs);
         let (n, d) = (newest.display(), doc.display());
-        let x = format!("read {n}, then {d} — its prose is the repair manual");
+        let (v, x) = if *e == 1 {
+            let x = format!("it ran and found something — read {n}; {d} says whose move it is");
+            ("finding", x)
+        } else {
+            let x = format!("read {n}, then {d} — its prose is the repair manual");
+            ("failed", x)
+        };
         let v = if ack.as_ref().is_some_and(|a| a.0 == *e) {
             "acknowledged"
         } else {
-            "failed"
+            v
         };
         (v, Some((format!("exit {e} at {fin}"), x)))
     } else if let Some((d, s)) = since.zip(swept).filter(|(d, s)| !running && s - d > 1800) {
@@ -167,9 +174,15 @@ fn routine(
         ("ok", None)
     };
     let said = match (&says, ack.as_ref().filter(|_| verdict == "acknowledged")) {
-        (_, Some((e, at, r))) => Err(format!("acknowledged: {name} — exit {e} since {at}: {r}\n")),
-        (Some((f, x)), None) => Ok(Some(red(verdict, name, f, x))),
-        (None, None) => Ok(None),
+        (_, Some((e, at, r))) => Some((
+            2,
+            format!("acknowledged: {name} — exit {e} since {at}: {r}\n"),
+        )),
+        (Some((f, x)), None) => Some((
+            usize::from(verdict == "finding"),
+            report(verdict, name, f, x),
+        )),
+        (None, None) => None,
     };
     let degraded = st.join("degraded");
     let row = format!(
@@ -245,14 +258,13 @@ pub fn health(as_json: bool, now: i64) -> i32 {
         skipped.push((f.to_owned(), why.to_owned(), opens));
     });
     let (heard, swept) = sweeps(&states);
-    let (mut rows, mut reds, mut notes, mut busy) = (vec![], vec![], String::new(), false);
+    let (mut rows, mut said, mut busy) = (vec![], [vec![], vec![], vec![]], false);
     for name in &names {
-        let (row, running, said) = routine((&dir, &states), name, now, swept);
+        let (row, running, line) = routine((&dir, &states), name, now, swept);
         rows.push(row);
         busy |= running;
-        match said {
-            Ok(r) => reds.extend(r),
-            Err(n) => notes += &n,
+        if let Some((k, l)) = line {
+            said[k].push(l);
         }
     }
     let fix = "rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it";
@@ -260,7 +272,7 @@ pub fn health(as_json: bool, now: i64) -> i32 {
         .map(|(f, why, r)| {
             if *r {
                 let finding = format!("{why}, yet it opens with frontmatter");
-                reds.push(red("skipped", f, &finding, fix));
+                said[0].push(report("skipped", f, &finding, fix));
             }
             let x = opt(r.then(|| json(fix)));
             format!(
@@ -282,20 +294,20 @@ pub fn health(as_json: bool, now: i64) -> i32 {
             let (st, a) = (states.join(name).display().to_string(), archive.display());
             let finding = format!("{st} has no {name}.md");
             let fix = format!("mkdir -p {a} && mv {st} {a}/{name}-{stamp} — archive, never delete");
-            reds.push(red("orphan", name, &finding, &fix));
+            said[0].push(report("orphan", name, &finding, &fix));
             let (name, finding, fix) = (json(name), json(&finding), json(&fix));
             format!("{{\"name\":{name},\"finding\":{finding},\"fix\":{fix}}}")
         })
         .collect();
     let tick = tick(&states, now, heard, busy);
     if let Some((f, x)) = &tick.1 {
-        reds.insert(0, red(tick.0, "tick", f, x));
+        said[0].insert(0, report(tick.0, "tick", f, x));
     }
     if as_json {
         println!(
             "{{\"version\":{},\"now\":{now},\"verdict\":\"{}\",\"tick\":{{\"verdict\":\"{}\",\"swept\":{},\"finding\":{},\"fix\":{}}},\"routines\":[{}],\"skipped\":[{}],\"orphans\":[{}]}}",
             json(crate::VERSION),
-            if reds.is_empty() { "ok" } else { "red" },
+            if said[0].is_empty() { "ok" } else { "red" },
             tick.0,
             opt(swept.map(|s| s.to_string())),
             opt(tick.1.as_ref().map(|t| json(&t.0))),
@@ -305,14 +317,19 @@ pub fn health(as_json: bool, now: i64) -> i32 {
             orphans.join(","),
         );
     } else {
-        let close = if reds.is_empty() {
+        let close = if said[0].is_empty() {
             format!("healthy — {} routines", names.len())
         } else {
-            format!("unhealthy — {} finding(s)", reds.len())
+            format!("unhealthy — {} red", said[0].len())
         };
-        println!("{}{notes}{close}", reds.concat());
+        let found = (!said[1].is_empty()).then(|| format!(" · {} finding(s)", said[1].len()));
+        println!(
+            "{}{close}{}",
+            said.concat().concat(),
+            found.unwrap_or_default()
+        );
     }
-    i32::from(!reds.is_empty())
+    i32::from(!said[0].is_empty())
 }
 
 /// `routine ack <name> [reason…]` holds the failed last run's exit in `<state>/<name>/ack`, and
