@@ -24,6 +24,17 @@ pub fn iso(epoch: i64) -> String {
     )
 }
 
+/// `iso`'s inverse — Hinnant's `days_from_civil`; `None` for any other shape.
+pub fn epoch(stamp: &str) -> Option<i64> {
+    let field = |a: usize, b: usize| num(stamp.get(a..b)?);
+    let (mon, day) = (field(5, 7)?, field(8, 10)?);
+    let yr = field(0, 4)? - i64::from(mon < 3);
+    let doy = (153 * ((mon + 9) % 12) + 2) / 5 + day - 1;
+    let days = yr / 400 * 146_097 + yr % 400 * 365 + yr % 400 / 4 - yr % 400 / 100 + doy - 719_468;
+    let secs = days * 86400 + field(11, 13)? * 3600 + field(14, 16)? * 60 + field(17, 19)?;
+    (iso(secs) == stamp).then_some(secs)
+}
+
 /// 1-18 ASCII digits: bash `$((…))` wraps from 2^63, so 18 is the safe cap.
 pub fn num(s: &str) -> Option<i64> {
     (s.len() < 19 && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse().ok())?
@@ -110,7 +121,7 @@ pub fn next_fire_after(start: i64, expr: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{civil, iso, next_fire_after};
+    use super::{civil, epoch, iso, next_fire_after};
 
     #[test]
     fn civil_and_iso() {
@@ -121,7 +132,14 @@ mod tests {
             (4_105_036_800, "2100-01-31T00:00:00Z", 0),
             (4_107_542_400, "2100-03-01T00:00:00Z", 1), // 2100 is not: Feb 28 runs into Mar 1
         ] {
-            assert_eq!((iso(t).as_str(), civil(t).3), (s, w));
+            assert_eq!((iso(t).as_str(), civil(t).3, epoch(s)), (s, w, Some(t)));
+        }
+        for s in [
+            "2026-02-30T00:00:00Z",
+            "2026-08-14 09:00:00Z",
+            "2026-08-14T09:00:00Z ",
+        ] {
+            assert_eq!(epoch(s), None, "{s}");
         }
     }
 

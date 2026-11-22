@@ -11,7 +11,7 @@ use std::{
 };
 
 const OLD: &str = "com.routines.due"; // the label until 2026-10-20
-const TICK: &str = "dev.gigantic.routines.due";
+pub const TICK: &str = "dev.gigantic.routines.due";
 /// hotswap's tool name, the binary being `routine`: it labels `dev.gigantic.routines.upgrade`,
 /// keeps `~/.local/share/hotswap/routines/` and `~/.local/state/hotswap/routines.json`, and finds
 /// what mise installed under `packslip-jgeschwendt-routines`.
@@ -61,6 +61,27 @@ fn tick(exe: &Path, home: &Path) -> String {
     )
 }
 
+/// launchd is this host's: `launchctl` on `PATH` (none on Linux).
+pub fn launchd() -> bool {
+    env::split_paths(&state::var("PATH").unwrap_or_default()).any(|d| d.join("launchctl").is_file())
+}
+
+pub fn launchctl(args: &[&str]) -> bool {
+    Command::new("launchctl")
+        .args(args)
+        .output()
+        .is_ok_and(|o| o.status.success())
+}
+
+/// `gui/<uid>`, the domain the agents load in.
+pub fn gui() -> String {
+    let uid = Command::new("id").arg("-u").output().map(|o| o.stdout);
+    format!(
+        "gui/{}",
+        String::from_utf8_lossy(&uid.unwrap_or_default()).trim()
+    )
+}
+
 /// `hotswap::ensure` brings the release into hotswap's layout, links `~/.local/bin/routine` through
 /// its `current` and owns the upgrade agent; the tick runs that link, never this process's binary,
 /// so a setup run from a checkout wires the installed release (none installed: packslip installs
@@ -72,20 +93,7 @@ pub fn setup(remove: bool) -> Result<(), String> {
     let home =
         PathBuf::from(state::var("HOME").ok_or("HOME unset — the tick PATH needs ~/.local/bin")?);
     let (_, st, rhome) = state::roots();
-    let launchd = env::split_paths(&state::var("PATH").unwrap_or_default())
-        .any(|d| d.join("launchctl").is_file());
-    let agents = home.join("Library/LaunchAgents");
-    let launchctl = |args: &[&str]| {
-        Command::new("launchctl")
-            .args(args)
-            .output()
-            .is_ok_and(|o| o.status.success())
-    };
-    let uid = Command::new("id").arg("-u").output().map(|o| o.stdout);
-    let gui = format!(
-        "gui/{}",
-        String::from_utf8_lossy(&uid.unwrap_or_default()).trim()
-    );
+    let (launchd, agents, gui) = (launchd(), home.join("Library/LaunchAgents"), gui());
     let (plist, target) = (
         agents.join(format!("{TICK}.plist")),
         format!("{gui}/{TICK}"),

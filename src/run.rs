@@ -14,7 +14,7 @@ use std::{
     ffi::OsString,
     fs::{self, File},
     hash::BuildHasher,
-    io::{self, Read, Seek, SeekFrom, Write},
+    io::{self, Write},
     os::unix::{
         fs::DirBuilderExt,
         process::{CommandExt, ExitStatusExt},
@@ -37,10 +37,11 @@ pub fn divider(label: &str) -> String {
 }
 
 /// The deadline in seconds: 600 unless a positive number (a zero deadline would record every
-/// run as 124).
-pub fn timeout(doc: &str) -> i64 {
-    let t = frontmatter_get(doc, "timeout").and_then(|t| cron::num(&t));
-    t.filter(|&t| t > 0).unwrap_or(600)
+/// run as 124), and the doc's value when it is set yet no such number.
+pub fn timeout(doc: &str) -> (i64, Option<String>) {
+    let t = frontmatter_get(doc, "timeout").filter(|t| !t.is_empty());
+    let n = t.as_deref().and_then(cron::num).filter(|&n| n > 0);
+    (n.unwrap_or(600), t.filter(|_| n.is_none()))
 }
 
 /// `on_error`, `Err` when misspelt (`none`, `Fail`): that must not start an unattended agent.
@@ -192,18 +193,10 @@ fn on_signal(sig: i32) {
 
 /// The capture's last MiB into the run log: a runaway block must not fill the disk twice.
 fn show(f: &Path) {
-    let Ok(mut file) = File::open(f) else { return };
-    let cut = file
-        .metadata()
-        .map_or(0, |m| m.len())
-        .saturating_sub(1 << 20);
+    let (cut, b) = state::last_bytes(f, 1 << 20);
     if cut > 0 {
         say(&format!("… {cut} bytes cut — the last 1048576 follow\n"));
     }
-    let mut b = Vec::new();
-    let _ = file
-        .seek(SeekFrom::Start(cut))
-        .and_then(|_| file.read_to_end(&mut b));
     out(&b, false);
 }
 
@@ -480,7 +473,7 @@ pub fn run(name: &str, now: i64) -> ! {
         die(64, &format!("no routines home {}", home.display()));
     }
     say(&divider(&format!("routine {name} · {}", iso(now))));
-    let limit = Duration::from_secs(timeout(&text).unsigned_abs());
+    let limit = Duration::from_secs(timeout(&text).0.unsigned_abs());
     let (tx, rx) = mpsc::channel();
     let wd = thread::spawn({
         let tmp = tmp.clone();
@@ -534,17 +527,18 @@ mod tests {
     #[test]
     fn gates() {
         let fm = |k: &str, v: &str| format!("---\n{k}: {v}\n---\n");
-        for (v, want) in [
-            ("30", 30),
-            ("08", 8),
-            ("0", 600),
-            ("-5", 600),
-            ("1m", 600),
-            ("", 600),
+        for (v, want, bad) in [
+            ("30", 30, false),
+            ("08", 8, false),
+            ("0", 600, true),
+            ("-5", 600, true),
+            ("1m", 600, true),
+            ("", 600, false),
         ] {
-            assert_eq!(timeout(&fm("timeout", v)), want, "{v}");
+            let bad = bad.then(|| v.to_owned());
+            assert_eq!(timeout(&fm("timeout", v)), (want, bad), "{v}");
         }
-        assert_eq!(timeout(""), 600);
+        assert_eq!(timeout(""), (600, None));
         for (v, want) in [
             ("", Ok("")),
             ("claude", Ok("claude")),
