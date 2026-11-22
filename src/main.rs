@@ -1,6 +1,7 @@
 mod cron;
 mod doc;
 mod due;
+mod health;
 mod lock;
 mod record;
 mod run;
@@ -24,6 +25,8 @@ const USAGE: &str = "routine — executable markdown on rails
   routine run <name>     run one routine document
   routine run --due      run every due routine (silent when none are)
   routine status         schedule × due? × last run, one row per routine
+  routine health         one verdict over the home, silent but for findings; --json one line for an app
+  routine ack <name>     hold a failed last run's exit as known, [reason…]; --clear drops it
   routine setup          install the release and its upgrade agent (hotswap), load the tick; --remove undoes it (install/uninstall alias)
   routine upgrade        swap to the latest release; --check, --back, --retry
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
@@ -31,7 +34,8 @@ const USAGE: &str = "routine — executable markdown on rails
 
 exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed or state unwritable ·
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
-      else the failing block's code · run --due 1 when any routine failed ·
+      else the failing block's code · run --due 1 when any routine failed · health 1 when anything is red ·
+      ack 64 unknown routine or no failed run, 73 ack unwritable ·
       setup 1 when the release cannot install, a plist cannot land or bootstrap fails · upgrade 1 red, 2 unable to try
 
 env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_PMSET
@@ -51,11 +55,13 @@ fn main() -> ExitCode {
             println!("routine {VERSION}");
             0
         }
-        ["run"] | ["run", ""] => {
+        ["ack" | "run"] | ["ack" | "run", ""] | ["health", _, ..] if args[1..] != ["--json"] => {
             eprint!("{USAGE}");
             64
         }
-        [v @ ("status" | "run"), rest @ ..] => match state::now() {
+        [v @ ("ack" | "health" | "run" | "status"), rest @ ..] => match state::now() {
+            Ok(now) if *v == "ack" => health::ack(rest, now),
+            Ok(now) if *v == "health" => health::health(!rest.is_empty(), now),
             Ok(now) if *v == "run" && rest[0] == "--due" => due::due(now),
             Ok(now) if *v == "run" => run::run(rest[0], now),
             Ok(now) => {

@@ -1430,3 +1430,440 @@ fn due_stops_on_a_signal() {
         assert_eq!(due_state(&home), want, "{sig}");
     }
 }
+
+/// `routine <args>` against `home` as health sees a host: `PATH` the stub `launchctl` in
+/// `<home>/../bin` (loaded while `<home>/../loaded` exists) when `launchd`, else none; exit code,
+/// stdout and stderr, the home read as `<h>` and the uid as `$UID`.
+fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String, String) {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let bin = home.parent().unwrap().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let stub = format!(
+        "#!/bin/sh\n[ -e '{}/loaded' ]\n",
+        bin.parent().unwrap().display()
+    );
+    fs::write(bin.join("launchctl"), stub).unwrap();
+    fs::set_permissions(bin.join("launchctl"), fs::Permissions::from_mode(0o755)).unwrap();
+    let path = if launchd {
+        format!("{}:/usr/bin", bin.display())
+    } else {
+        "/usr/bin".into()
+    };
+    let o = routine_cmd(home, args, &[("PATH", path)]).output().unwrap();
+    let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
+    let fix = |b: Vec<u8>| {
+        String::from_utf8(b)
+            .unwrap()
+            .replace(&*home.to_string_lossy(), "<h>")
+            .replace(&format!("gui/{}/", uid.trim()), "gui/$UID/")
+    };
+    (o.status.code(), fix(o.stdout), fix(o.stderr))
+}
+
+/// `<home>/<rel>` written with `body`, its parents made, modified at epoch `at` when given.
+fn put(home: &Path, rel: &str, body: Option<&str>, at: Option<u64>) {
+    use std::{
+        fs,
+        time::{Duration, UNIX_EPOCH},
+    };
+    let p = home.join(rel);
+    fs::create_dir_all(if body.is_some() {
+        p.parent().unwrap()
+    } else {
+        &p
+    })
+    .unwrap();
+    if let Some(b) = body {
+        fs::write(&p, b).unwrap();
+    }
+    if let Some(t) = at {
+        let t = UNIX_EPOCH + Duration::from_secs(t);
+        fs::File::open(&p).unwrap().set_modified(t).unwrap();
+    }
+}
+
+// `routine health`, plain and `--json`, over a home holding each verdict — lint, wedged, a live
+// lock inside its timeout, failed, acknowledged, an ack a new exit outlived, stale, due but not
+// passed over (never run, or due this minute) — each kind of skipped doc and an orphan, the tick
+// unmanaged; then each tick state under a stubbed launchctl, and the usage and clock refusals.
+#[test]
+fn health() {
+    let tmp = sandbox("health");
+    let home = tmp.join("home");
+    let now = 1_786_698_000; // Fri 2026-08-14T09:00:00Z
+    let rec = |started: u64, exit: i32| {
+        Some(format!(
+            "{{\"started\":\"x\",\"started_epoch\":{started},\"finished\":\"2026-08-14T08:59:00Z\",\
+             \"exit\":{exit},\"duration\":7,\"degraded\":false}}\n"
+        ))
+    };
+    let (blk, pid) = ("```sh\ntrue\n```\n", Some("1\n".to_owned())); // pid 1: EPERM, alive
+    let (hourly, held) = (
+        format!("---\nschedule: \"0 * * * *\"\n---\n{blk}"),
+        format!("---\ntimeout: 30\n---\n{blk}"),
+    );
+    let tick = "2026-08-14T08:50:00Z tick docs=1 due=- next=-\n2026-08-14T08:55:00Z tick docs=1 \
+                due=x next=-\n2026-08-14T08:55:00Z defer dark-wake due=x\n";
+    let ack = r#"{"exit":5,"at":"2026-08-14T08:59:30Z","reason":"a \"q\" \\ \u0009t\u000a é"}"#;
+    for (rel, body, at) in [
+        (".state/.archive/old/x", Some(String::new()), None),
+        (".state/acked/ack", Some(format!("{ack}\n")), None),
+        (".state/acked/last-run.json", rec(now - 60, 5), None),
+        (".state/busy/lock/pid", pid.clone(), None),
+        (".state/busy/lock", None, Some(now - 10)),
+        (
+            ".state/failed/degraded",
+            Some("2026-08-14T08:59:00Z\n".into()),
+            None,
+        ),
+        (".state/failed/last-run.json", rec(now - 60, 3), None),
+        (
+            ".state/failed/logs/20260814T080000Z-1.log",
+            Some(String::new()),
+            None,
+        ),
+        (
+            ".state/failed/logs/20260814T085900Z-2.log",
+            Some(String::new()),
+            None,
+        ),
+        (".state/fresh/last-run.json", rec(1_786_695_000, 0), None),
+        (".state/gone/runs.jsonl", Some(String::new()), None),
+        (
+            ".state/moved/ack",
+            Some(r#"{"exit":5,"at":"x","reason":""}"#.into()),
+            None,
+        ),
+        (".state/moved/last-run.json", rec(now - 60, 4), None),
+        (".state/ok/last-run.json", rec(now - 1000, 0), None),
+        (".state/stale/last-run.json", rec(1_786_690_000, 0), None),
+        (".state/tick.log", Some(tick.into()), None),
+        (".state/wedged/lock/pid", pid.clone(), None),
+        (".state/wedged/lock", None, Some(now - 100)),
+        ("AGENTS.md", Some("# agents\n".into()), None),
+        ("Bad_Name.md", Some(hourly.clone()), None),
+        ("acked.md", Some(blk.into()), None),
+        ("busy.md", Some(held.clone()), None),
+        ("failed.md", Some(blk.into()), None),
+        ("fresh.md", Some(hourly.clone()), None),
+        (
+            "lint.md",
+            Some("---\non_error: none\ntimeout: 1m\nschedule: \"@daily\"\n---\n".into()),
+            None,
+        ),
+        ("moved.md", Some(blk.into()), None),
+        ("never.md", Some(hourly.clone()), Some(now - 600)),
+        (
+            "ok.md",
+            Some(format!("---\nschedule: 0 0 1 1 *\n---\n{blk}")),
+            None,
+        ),
+        ("stale.md", Some(hourly.clone()), None),
+        ("wedged.md", Some(held.clone()), None),
+    ] {
+        put(&home, rel, body.as_deref(), at);
+    }
+    std::os::unix::fs::symlink("nowhere", home.join("dangling.md")).unwrap();
+    let manual = "its prose is the repair manual";
+    assert_eq!(
+        health_run(&home, &["health"], false),
+        (
+            Some(1),
+            format!(
+                "failed: failed — exit 3 at 2026-08-14T08:59:00Z
+  fix: read <h>/.state/failed/logs/20260814T085900Z-2.log, then <h>/failed.md — {manual}
+lint: lint — no sh or bash block; on_error none is neither claude nor fail; timeout 1m is no positive number of seconds; schedule @daily never fires
+  fix: edit <h>/lint.md: the smallest change the runner takes
+failed: moved — exit 4 at 2026-08-14T08:59:00Z
+  fix: read <h>/.state/moved/logs, then <h>/moved.md — {manual}
+stale: stale — due since 2026-08-14T07:00:00Z, swept 2026-08-14T08:50:00Z without a run
+  fix: routine run stale, and read <h>/.state/tick.log for its refusal
+wedged: wedged — pid 1 has held the lock 100s, past its 30s timeout
+  fix: ps -p 1 -o command= — its watchdog missed it: kill 1, and the next run reaps the lock
+skipped: Bad_Name.md — name not a slug, yet it opens with frontmatter
+  fix: rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it
+orphan: gone — <h>/.state/gone has no gone.md
+  fix: mkdir -p <h>/.state/.archive && mv <h>/.state/gone <h>/.state/.archive/gone-20260814T090000Z — archive, never delete
+acknowledged: acked — exit 5 since 2026-08-14T08:59:30Z: a \"q\" \\ \tt\n é
+unhealthy — 7 finding(s)
+"
+            ),
+            String::new()
+        )
+    );
+    let last = |exit: i32, started: u64| {
+        format!(
+            r#"{{"started":{started},"finished":"2026-08-14T08:59:00Z","exit":{exit},"duration":7}}"#
+        )
+    };
+    let row = |name: &str, sched: &str, next: &str, flags: &str, rest: String| {
+        format!(r#"{{"name":"{name}","schedule":{sched},"next":{next},{flags},{rest}}}"#)
+    };
+    let (idle, due, ok) = (
+        r#""due":false,"running":false"#,
+        r#""due":true,"running":false"#,
+        r#""verdict":"ok","finding":null,"fix":null"#,
+    );
+    let plain = |l: &str, deg: &str, ack: &str, v: &str| {
+        format!(r#""last":{l},"degraded":{deg},"ack":{ack},{v}"#)
+    };
+    let fixed =
+        |v: &str, f: &str, x: &str| format!(r#""verdict":"{v}","finding":"{f}","fix":"{x}""#);
+    let manual = |n: &str, log: &str| {
+        format!("read <h>/.state/{n}/logs{log}, then <h>/{n}.md — its prose is the repair manual")
+    };
+    let rows = [
+        row(
+            "acked",
+            "null",
+            "null",
+            idle,
+            plain(
+                &last(5, now - 60),
+                "null",
+                ack,
+                &fixed(
+                    "acknowledged",
+                    "exit 5 at 2026-08-14T08:59:00Z",
+                    &manual("acked", ""),
+                ),
+            ),
+        ),
+        row(
+            "busy",
+            "null",
+            "null",
+            r#""due":false,"running":true"#,
+            plain("null", "null", "null", ok),
+        ),
+        row(
+            "failed",
+            "null",
+            "null",
+            idle,
+            plain(
+                &last(3, now - 60),
+                r#""2026-08-14T08:59:00Z""#,
+                "null",
+                &fixed(
+                    "failed",
+                    "exit 3 at 2026-08-14T08:59:00Z",
+                    &manual("failed", "/20260814T085900Z-2.log"),
+                ),
+            ),
+        ),
+        row(
+            "fresh",
+            r#""0 * * * *""#,
+            "1786698000",
+            due,
+            plain(&last(0, 1_786_695_000), "null", "null", ok),
+        ),
+        row(
+            "lint",
+            r#""@daily""#,
+            "null",
+            idle,
+            plain(
+                "null",
+                "null",
+                "null",
+                &fixed(
+                    "lint",
+                    "no sh or bash block; on_error none is neither claude nor fail; timeout 1m is no positive number of seconds; schedule @daily never fires",
+                    "edit <h>/lint.md: the smallest change the runner takes",
+                ),
+            ),
+        ),
+        row(
+            "moved",
+            "null",
+            "null",
+            idle,
+            plain(
+                &last(4, now - 60),
+                "null",
+                r#"{"exit":5,"at":"x","reason":""}"#,
+                &fixed(
+                    "failed",
+                    "exit 4 at 2026-08-14T08:59:00Z",
+                    &manual("moved", ""),
+                ),
+            ),
+        ),
+        row(
+            "never",
+            r#""0 * * * *""#,
+            "0",
+            due,
+            plain("null", "null", "null", ok),
+        ),
+        row(
+            "ok",
+            r#""0 0 1 1 *""#,
+            "1798761600",
+            idle,
+            plain(&last(0, now - 1000), "null", "null", ok),
+        ),
+        row(
+            "stale",
+            r#""0 * * * *""#,
+            "1786690800",
+            due,
+            plain(
+                &last(0, 1_786_690_000),
+                "null",
+                "null",
+                &fixed(
+                    "stale",
+                    "due since 2026-08-14T07:00:00Z, swept 2026-08-14T08:50:00Z without a run",
+                    "routine run stale, and read <h>/.state/tick.log for its refusal",
+                ),
+            ),
+        ),
+        row(
+            "wedged",
+            "null",
+            "null",
+            r#""due":false,"running":true"#,
+            plain(
+                "null",
+                "null",
+                "null",
+                &fixed(
+                    "wedged",
+                    "pid 1 has held the lock 100s, past its 30s timeout",
+                    "ps -p 1 -o command= — its watchdog missed it: kill 1, and the next run reaps the lock",
+                ),
+            ),
+        ),
+    ];
+    let version = option_env!("ROUTINE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
+    assert_eq!(
+        health_run(&home, &["health", "--json"], false),
+        (
+            Some(1),
+            format!(
+                r#"{{"version":"{version}","now":{now},"verdict":"red","tick":{{"verdict":"unmanaged","swept":1786697400,"finding":null,"fix":null}},"routines":[{}],"skipped":[{{"file":"AGENTS.md","why":"name not a slug","red":false}},{{"file":"Bad_Name.md","why":"name not a slug","red":true}},{{"file":"dangling.md","why":"dangling symlink","red":false}}],"orphans":["gone"]}}
+"#,
+                rows.join(",")
+            ),
+            String::new()
+        )
+    );
+    // (case, tick.log, a live lock, launchctl loaded) → exit, the plain report, the JSON tick
+    let old = format!("{}\n2026-08-14T08:00:00Z run x\n", "x".repeat(70_000)); // the tail only
+    let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due — its output is <h>/.state/due.log";
+    let cases = [
+        ("unloaded", String::new(), false, false, 1, "not-loaded: tick — gui/$UID/dev.gigantic.routines.due is not loaded\n  fix: routine setup\nunhealthy — 1 finding(s)\n".into(), r#""verdict":"not-loaded","swept":null,"finding":"gui/$UID/dev.gigantic.routines.due is not loaded","fix":"routine setup""#.to_owned()),
+        ("silent", String::new(), false, true, 1, format!("stale: tick — tick.log has no line\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log has no line","fix":"{kick}""#)),
+        ("quiet", old.clone(), false, true, 1, format!("stale: tick — tick.log's last line is 3600s old\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log's last line is 3600s old","fix":"{kick}""#)),
+        ("held", old, true, true, 0, "healthy — 1 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
+        ("heard", "2026-08-14T08:59:00Z tick docs=0 due=- next=-\n".into(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":1786697940,"finding":null,"fix":null"#.into()),
+    ];
+    for (case, log, busy, loaded, code, report, tick) in cases {
+        let home = tmp.join(case).join("home");
+        put(&home, ".state/tick.log", Some(&log), None);
+        if busy {
+            put(&home, "busy.md", Some(&held), None);
+            put(&home, ".state/busy/lock/pid", pid.as_deref(), None);
+            put(&home, ".state/busy/lock", None, Some(now - 10));
+        }
+        if loaded {
+            put(&tmp, &format!("{case}/loaded"), Some(""), None);
+        }
+        let json = health_run(&home, &["health", "--json"], true);
+        let tick = format!(r#""tick":{{{tick}}}"#);
+        assert_eq!(
+            health_run(&home, &["health"], true),
+            (Some(code), report, String::new()),
+            "{case}"
+        );
+        assert!(
+            json.0 == Some(code) && json.1.contains(&tick),
+            "{case}: {}",
+            json.1
+        );
+    }
+    let usage = String::from_utf8(Command::new(EXE).output().unwrap().stdout).unwrap();
+    assert_eq!(
+        health_run(&home, &["health", "x"], false),
+        (Some(64), String::new(), usage)
+    );
+    let o = routine_cmd(&home, &["health"], &[("ROUTINE_NOW", "x".into())])
+        .output()
+        .unwrap();
+    let err = "routine: ROUTINE_NOW=x is not an integer\n".to_owned();
+    assert_eq!(out(o), (Some(64), String::new(), err));
+}
+
+// `routine ack`: refused (64) for an unknown routine and a last run that is no failure, usage
+// without a name; it holds the failed exit with its reason, survives a run failing alike, and the
+// runner drops it on a different failure and on a green run; `--clear` drops it, an unwritable
+// state dir 73.
+#[test]
+fn ack() {
+    use std::{fs, os::unix::fs::PermissionsExt};
+    let tmp = sandbox("ack");
+    let home = tmp.join("home");
+    routine_doc(&home, "f", "on_error: fail", Some("exit \"$(cat code)\""));
+    let (st, usage) = (
+        home.join(".state/f"),
+        String::from_utf8(Command::new(EXE).output().unwrap().stdout).unwrap(),
+    );
+    let run = |args: &[&str]| out(routine_cmd(&home, args, &[]).output().unwrap());
+    let fail = |code: &str| {
+        fs::write(home.join("code"), code).unwrap();
+        run(&["run", "f"]).0
+    };
+    let ack = || fs::read_to_string(st.join("ack")).ok();
+    let refused = |m: &str| (Some(64), String::new(), format!("routine: {m}\n"));
+    assert_eq!(
+        run(&["ack", "f"]),
+        refused("f's last run is no failure to acknowledge")
+    );
+    for n in ["nope", "Bad_Name"] {
+        assert_eq!(run(&["ack", n]), refused(&format!("no routine {n}")));
+    }
+    for args in [&["ack"][..], &["ack", ""]] {
+        assert_eq!(run(args), (Some(64), String::new(), usage.clone()));
+    }
+    assert_eq!(fail("3"), Some(3));
+    assert_eq!(
+        run(&["ack", "f", "flaky", "\"net\""]),
+        (Some(0), String::new(), String::new())
+    );
+    let held =
+        r#"{"exit":3,"at":"2026-08-14T09:00:00Z","reason":"flaky \"net\""}"#.to_owned() + "\n";
+    assert_eq!(ack(), Some(held.clone()));
+    assert_eq!(
+        health_run(&home, &["health"], false).1,
+        "acknowledged: f — exit 3 since 2026-08-14T09:00:00Z: flaky \"net\"\nhealthy — 1 routines\n"
+    );
+    assert_eq!((fail("3"), ack()), (Some(3), Some(held)));
+    assert_eq!((fail("4"), ack()), (Some(4), None));
+    assert_eq!(run(&["ack", "f"]).0, Some(0));
+    assert_eq!((fail("0"), ack()), (Some(0), None));
+    assert_eq!(
+        (
+            fail("5"),
+            run(&["ack", "f"]).0,
+            run(&["ack", "f", "--clear"]).0,
+            ack()
+        ),
+        (Some(5), Some(0), Some(0), None)
+    );
+    assert_eq!(run(&["ack", "f", "--clear"]).0, Some(0));
+    fs::set_permissions(&st, fs::Permissions::from_mode(0o555)).unwrap();
+    let denied = run(&["ack", "f"]);
+    fs::set_permissions(&st, fs::Permissions::from_mode(0o755)).unwrap();
+    let h = home.display();
+    assert_eq!(
+        denied,
+        (
+            Some(73),
+            String::new(),
+            format!("routine: cannot write {h}/.state/f/ack\n")
+        )
+    );
+}
