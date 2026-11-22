@@ -1237,7 +1237,8 @@ fn due_home(home: &Path, docs: &str) {
 
 // `routine run --due`: exit code, stdout and stderr (sorted by line, the routines being
 // concurrent), tick.log, and each routine's record and state — an empty home, nothing due, one due
-// under a full wake, several with one failing and one held under a pmset that fails open, and a
+// under a full wake finding something (exit 1, the tick still 0), one failing alone (exit 2, the
+// tick 1), several with one failing, one finding and one held under a pmset that fails open, and a
 // dark wake that defers, over every kind of skipped, bad and unscheduled doc and a due.log past
 // 5 MB.
 #[test]
@@ -1271,8 +1272,11 @@ fn due() {
         ];
         (lines.map(|l| rule(&l)).to_vec(), r)
     };
-    let (ra, mut rb, hourly) = (ran("a", 0), ran("b", 3), ran("hourly", 0));
-    rb.0.push(rule("block 1 · caught exit 3 · Ns"));
+    let (ra, mut rb, mut rf, mut hourly) =
+        (ran("a", 0), ran("b", 2), ran("f", 1), ran("hourly", 1));
+    for (r, e) in [(&mut rb, 2), (&mut rf, 1), (&mut hourly, 1)] {
+        r.0.push(rule(&format!("block 1 · caught exit {e} · Ns")));
+    }
     let (empty, last) = (
         |n: &str, size| format!("<h>/.state/{n} {size} [] "),
         |n: &str, e| format!("<h>/.state/{n} 0 [\"last-run.json\"] {{\"started_epoch\":{e}}}\n"),
@@ -1302,32 +1306,44 @@ fn due() {
         (
             "one",
             &lit,
-            "hourly|0 * * * *|echo out; echo err >&2",
+            "hourly|0 * * * *|echo out; echo err >&2; exit 1",
             0,
             [hourly.0, vec!["out\n".into(), "err\n".into()]].concat(),
             "",
             format!(
                 "{t} tick docs=1 due=hourly next=-\n{t} dispatch hourly\n\
-                 {t} dispatched hourly exit=0\n"
+                 {t} dispatched hourly exit=1\n"
             ),
             vec![hourly.1, empty("tick.log", 134)],
         ),
         (
+            "failing",
+            &lit,
+            "b|0 * * * *|exit 2",
+            1,
+            rb.0.clone(),
+            "",
+            format!("{t} tick docs=1 due=b next=-\n{t} dispatch b\n{t} dispatched b exit=2\n"),
+            vec![rb.1.clone(), empty("tick.log", 119)],
+        ),
+        (
             "several",
             &open,
-            "a|0 * * * *|echo a\nb|0 * * * *|exit 3\nc|0 * * * *|",
+            "a|0 * * * *|echo a\nb|0 * * * *|exit 2\nc|0 * * * *|\nf|0 * * * *|exit 1",
             1,
-            [ra.0, vec!["a\n".into()], rb.0].concat(),
+            [ra.0, vec!["a\n".into()], rb.0, rf.0].concat(),
             "routine: c already running (pid 1)\n",
             format!(
-                "{t} tick docs=3 due=a,b,c next=-\n{t} dispatch a\n{t} dispatch b\n{t} dispatch c\n\
-                 {t} dispatched a exit=0\n{t} dispatched b exit=3\n{t} dispatched c exit=75\n"
+                "{t} tick docs=4 due=a,b,c,f next=-\n{t} dispatch a\n{t} dispatch b\n{t} dispatch c\n\
+                 {t} dispatch f\n{t} dispatched a exit=0\n{t} dispatched b exit=2\n\
+                 {t} dispatched c exit=75\n{t} dispatched f exit=1\n"
             ),
             vec![
                 ra.1,
                 rb.1,
                 "<h>/.state/c 0 [\"lock\", \"lock-blocked.log\"] ".into(),
-                empty("tick.log", 270),
+                rf.1,
+                empty("tick.log", 345),
             ],
         ),
         (

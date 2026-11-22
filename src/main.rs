@@ -34,7 +34,8 @@ const USAGE: &str = "routine — executable markdown on rails
 
 exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp failed or state unwritable ·
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
-      else the failing block's code · run --due 1 when any routine failed · health 1 when anything is red ·
+      else the failing block's code, by convention 1 a finding and 2+ a failure ·
+      run --due 1 when any routine failed, a finding not counting · health 1 when anything is red ·
       ack 64 unknown routine or no failed run, 73 ack unwritable ·
       setup 1 when the release cannot install, a plist cannot land or bootstrap fails · upgrade 1 red, 2 unable to try
 
