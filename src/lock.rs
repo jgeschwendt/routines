@@ -29,7 +29,7 @@ fn run(cmd: &str, args: &[&OsStr]) -> Output {
 }
 
 /// The holder's pid as `$(cat lock/pid)` reads it.
-fn holder(dir: &Path) -> String {
+pub fn holder(dir: &Path) -> String {
     let p = state::read(&dir.join("lock/pid"));
     p.trim_end_matches('\n').to_owned()
 }

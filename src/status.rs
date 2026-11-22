@@ -38,7 +38,7 @@ pub fn status(dir: &Path, states: &Path, now: i64) {
         "{}",
         cells(["NAME", "SCHEDULE", "DUE", "EXIT", "FINISHED", "SECS"])
     );
-    for name in state::routines(dir, |m| eprintln!("routine: {m}")) {
+    for name in state::routines(dir, |f, why| eprintln!("routine: skip {f}: {why}")) {
         let sched = schedule(dir, &name);
         let (st, last) = (states.join(&name), states.join(&name).join("last-run.json"));
         let due = if sched.is_empty() {

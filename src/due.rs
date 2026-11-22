@@ -80,7 +80,9 @@ fn rotate(states: &Path) {
 /// The due routines in byte order, journalled as one tick line — a skipped document ahead of
 /// it; a rejected schedule reads apart from an on-demand doc.
 fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
-    let names = state::routines(dir, |m| record::tick_log(states, now, m));
+    let names = state::routines(dir, |f, why| {
+        record::tick_log(states, now, &format!("skip {f}: {why}"));
+    });
     let (mut due, mut next) = (vec![], vec![]);
     for name in &names {
         let sched = status::schedule(dir, name);

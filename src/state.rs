@@ -3,7 +3,8 @@
 use std::{
     env,
     ffi::OsString,
-    fs,
+    fs::{self, File},
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -78,6 +79,19 @@ pub fn age(p: &Path) -> Option<u64> {
     Some(m.elapsed().map_or(0, |d| d.as_secs()))
 }
 
+/// The last `max` bytes of `file` and the count cut ahead of them; none when it cannot open.
+pub fn last_bytes(file: &Path, max: u64) -> (u64, Vec<u8>) {
+    let tail = |mut f: File| {
+        let cut = f.metadata().map_or(0, |m| m.len()).saturating_sub(max);
+        let mut b = Vec::new();
+        let _ = f
+            .seek(SeekFrom::Start(cut))
+            .and_then(|_| f.read_to_end(&mut b));
+        (cut, b)
+    };
+    File::open(file).map(tail).unwrap_or_default()
+}
+
 /// A routine name: `[a-z0-9-]`, never empty, never `-` first (`""|-*|*[!a-z0-9-]*`).
 pub fn slug(n: &str) -> bool {
     !n.is_empty()
@@ -92,9 +106,9 @@ pub fn read(file: &Path) -> String {
 }
 
 /// Each slug-named `*.md` document's name, in byte order; any other name is skipped, `skip`
-/// told why — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first; any
+/// told its file and why — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first; any
 /// other unreachable name (`[ -e ]` false, `[ -L ]` too: an unsearchable dir) is skipped silently.
-pub fn routines(dir: &Path, skip: impl Fn(&str)) -> Vec<String> {
+pub fn routines(dir: &Path, mut skip: impl FnMut(&str, &str)) -> Vec<String> {
     let mut files: Vec<_> = fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -118,7 +132,7 @@ pub fn routines(dir: &Path, skip: impl Fn(&str)) -> Vec<String> {
             } else {
                 return Some(n.to_owned());
             };
-            skip(&format!("skip {f}: {why}"));
+            skip(&f, why);
             None
         })
         .collect()
