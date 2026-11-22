@@ -1522,7 +1522,8 @@ fn health() {
             Some("2026-08-14T08:59:00Z\n".into()),
             None,
         ),
-        (".state/failed/last-run.json", rec(now - 60, 3), None),
+        (".state/failed/last-run.json", rec(now - 60, 2), None),
+        (".state/found/last-run.json", rec(now - 60, 1), None),
         (
             ".state/failed/logs/20260814T080000Z-1.log",
             Some(String::new()),
@@ -1551,6 +1552,7 @@ fn health() {
         ("acked.md", Some(blk.into()), None),
         ("busy.md", Some(held.clone()), None),
         ("failed.md", Some(blk.into()), None),
+        ("found.md", Some(blk.into()), None),
         ("fresh.md", Some(hourly.clone()), None),
         (
             "lint.md",
@@ -1576,7 +1578,7 @@ fn health() {
         (
             Some(1),
             format!(
-                "failed: failed — exit 3 at 2026-08-14T08:59:00Z
+                "failed: failed — exit 2 at 2026-08-14T08:59:00Z
   fix: read <h>/.state/failed/logs/20260814T085900Z-2.log, then <h>/failed.md — {manual}
 lint: lint — no sh or bash block; on_error none is neither claude nor fail; timeout 1m is no positive number of seconds; schedule @daily never fires
   fix: edit <h>/lint.md: the smallest change the runner takes
@@ -1590,8 +1592,10 @@ skipped: Bad_Name.md — name not a slug, yet it opens with frontmatter
   fix: rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it
 orphan: gone — <h>/.state/gone has no gone.md
   fix: mkdir -p <h>/.state/.archive && mv <h>/.state/gone <h>/.state/.archive/gone-20260814T090000Z — archive, never delete
+finding: found — exit 1 at 2026-08-14T08:59:00Z
+  fix: it ran and found something — read <h>/.state/found/logs; <h>/found.md says whose move it is
 acknowledged: acked — exit 5 since 2026-08-14T08:59:30Z: a \"q\" \\ \tt\n é
-unhealthy — 7 finding(s)
+unhealthy — 7 red · 1 finding(s)
 "
             ),
             String::new()
@@ -1648,13 +1652,29 @@ unhealthy — 7 finding(s)
             "null",
             idle,
             plain(
-                &last(3, now - 60),
+                &last(2, now - 60),
                 r#""2026-08-14T08:59:00Z""#,
                 "null",
                 &fixed(
                     "failed",
-                    "exit 3 at 2026-08-14T08:59:00Z",
+                    "exit 2 at 2026-08-14T08:59:00Z",
                     &manual("failed", "/20260814T085900Z-2.log"),
+                ),
+            ),
+        ),
+        row(
+            "found",
+            "null",
+            "null",
+            idle,
+            plain(
+                &last(1, now - 60),
+                "null",
+                "null",
+                &fixed(
+                    "finding",
+                    "exit 1 at 2026-08-14T08:59:00Z",
+                    "it ran and found something — read <h>/.state/found/logs; <h>/found.md says whose move it is",
                 ),
             ),
         ),
@@ -1762,11 +1782,11 @@ unhealthy — 7 finding(s)
     let old = format!("{}\n2026-08-14T08:00:00Z run x\n", "x".repeat(70_000)); // the tail only
     let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due — its output is <h>/.state/due.log";
     let cases = [
-        ("unloaded", None, String::new(), false, false, 1, "not-loaded: tick — gui/$UID/dev.gigantic.routines.due is not loaded\n  fix: routine setup\nunhealthy — 1 finding(s)\n".into(), r#""verdict":"not-loaded","swept":null,"finding":"gui/$UID/dev.gigantic.routines.due is not loaded","fix":"routine setup""#.to_owned()),
-        ("silent", None, String::new(), false, true, 1, format!("stale: tick — tick.log has no line\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log has no line","fix":"{kick}""#)),
-        ("quiet", None, old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
-        ("slept", Some("{ sec = 1786600000, usec = 5 } Thu"), old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
-        ("garbled", Some("{ sec = soon }"), old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 finding(s)\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
+        ("unloaded", None, String::new(), false, false, 1, "not-loaded: tick — gui/$UID/dev.gigantic.routines.due is not loaded\n  fix: routine setup\nunhealthy — 1 red\n".into(), r#""verdict":"not-loaded","swept":null,"finding":"gui/$UID/dev.gigantic.routines.due is not loaded","fix":"routine setup""#.to_owned()),
+        ("silent", None, String::new(), false, true, 1, format!("stale: tick — tick.log has no line\n  fix: {kick}\nunhealthy — 1 red\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log has no line","fix":"{kick}""#)),
+        ("quiet", None, old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 red\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
+        ("slept", Some("{ sec = 1786600000, usec = 5 } Thu"), old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 red\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
+        ("garbled", Some("{ sec = soon }"), old.clone(), false, true, 1, format!("stale: tick — tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake\n  fix: {kick}\nunhealthy — 1 red\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log quiet 3600s since 2026-08-14T08:00:00Z, its last line or the last wake","fix":"{kick}""#)),
         ("woke", Some("{ sec = 1786697900, usec = 5 } Fri"), old.clone(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
         ("held", None, old, true, true, 0, "healthy — 1 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
         ("heard", None, "2026-08-14T08:59:00Z tick docs=0 due=- next=-\n".into(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":1786697940,"finding":null,"fix":null"#.into()),
@@ -1857,6 +1877,28 @@ fn ack() {
     assert_eq!((fail("4"), ack()), (Some(4), None));
     assert_eq!(run(&["ack", "f"]).0, Some(0));
     assert_eq!((fail("0"), ack()), (Some(0), None));
+    // exit 1 is a finding, alone never red: exit 0, the top-level verdict ok
+    assert_eq!(fail("1"), Some(1));
+    let ((code, plain, _), json) = (
+        health_run(&home, &["health"], false),
+        health_run(&home, &["health", "--json"], false).1,
+    );
+    let found = "finding: f — exit 1 at 2026-08-14T09:00:00Z\n  fix: it ran and found something — read <h>/.state/f/logs/20260814T090000Z-";
+    let close = ".log; <h>/f.md says whose move it is\nhealthy — 1 routines · 1 finding(s)\n";
+    assert!(
+        code == Some(0) && plain.starts_with(found) && plain.ends_with(close),
+        "{plain}"
+    );
+    let top = r#""now":1786698000,"verdict":"ok""#;
+    assert!(
+        json.contains(top) && json.contains(r#""verdict":"finding""#),
+        "{json}"
+    );
+    assert_eq!(run(&["ack", "f", "known"]).0, Some(0));
+    assert_eq!(
+        health_run(&home, &["health"], false).1,
+        "acknowledged: f — exit 1 since 2026-08-14T09:00:00Z: known\nhealthy — 1 routines\n"
+    );
     assert_eq!(
         (
             fail("5"),
