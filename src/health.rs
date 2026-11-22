@@ -235,7 +235,8 @@ fn tick(
     ("stale", Some((f, x)))
 }
 
-/// One verdict over the home, as a JSON line when `as_json`; 1 when anything is red.
+/// One verdict over the home, as a JSON line when `as_json` whose every finding carries the fix
+/// the plain report prints; 1 when anything is red.
 pub fn health(as_json: bool, now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let mut skipped = Vec::new();
@@ -254,14 +255,19 @@ pub fn health(as_json: bool, now: i64) -> i32 {
             Err(n) => notes += &n,
         }
     }
+    let fix = "rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it";
     let skips: Vec<_> = (skipped.iter())
         .map(|(f, why, r)| {
             if *r {
                 let finding = format!("{why}, yet it opens with frontmatter");
-                let fix = "rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it";
                 reds.push(red("skipped", f, &finding, fix));
             }
-            format!("{{\"file\":{},\"why\":{},\"red\":{r}}}", json(f), json(why))
+            let x = opt(r.then(|| json(fix)));
+            format!(
+                "{{\"file\":{},\"why\":{},\"red\":{r},\"fix\":{x}}}",
+                json(f),
+                json(why)
+            )
         })
         .collect();
     let mut orphans: Vec<_> = (fs::read_dir(&states).into_iter().flatten().flatten())
@@ -271,17 +277,21 @@ pub fn health(as_json: bool, now: i64) -> i32 {
         .collect();
     orphans.sort();
     let (archive, stamp) = (states.join(".archive"), iso(now).replace(['-', ':'], ""));
-    for n in &orphans {
-        let (s, a) = (states.join(n).display().to_string(), archive.display());
-        let fix = format!("mkdir -p {a} && mv {s} {a}/{n}-{stamp} — archive, never delete");
-        reds.push(red("orphan", n, &format!("{s} has no {n}.md"), &fix));
-    }
+    let orphans: Vec<_> = (orphans.iter())
+        .map(|name| {
+            let (st, a) = (states.join(name).display().to_string(), archive.display());
+            let finding = format!("{st} has no {name}.md");
+            let fix = format!("mkdir -p {a} && mv {st} {a}/{name}-{stamp} — archive, never delete");
+            reds.push(red("orphan", name, &finding, &fix));
+            let (name, finding, fix) = (json(name), json(&finding), json(&fix));
+            format!("{{\"name\":{name},\"finding\":{finding},\"fix\":{fix}}}")
+        })
+        .collect();
     let tick = tick(&states, now, heard, busy);
     if let Some((f, x)) = &tick.1 {
         reds.insert(0, red(tick.0, "tick", f, x));
     }
     if as_json {
-        let orphans: Vec<_> = orphans.iter().map(|o| json(o)).collect();
         println!(
             "{{\"version\":{},\"now\":{now},\"verdict\":\"{}\",\"tick\":{{\"verdict\":\"{}\",\"swept\":{},\"finding\":{},\"fix\":{}}},\"routines\":[{}],\"skipped\":[{}],\"orphans\":[{}]}}",
             json(crate::VERSION),

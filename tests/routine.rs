@@ -1750,7 +1750,7 @@ unhealthy — 7 finding(s)
         (
             Some(1),
             format!(
-                r#"{{"version":"{version}","now":{now},"verdict":"red","tick":{{"verdict":"unmanaged","swept":1786697400,"finding":null,"fix":null}},"routines":[{}],"skipped":[{{"file":"AGENTS.md","why":"name not a slug","red":false}},{{"file":"Bad_Name.md","why":"name not a slug","red":true}},{{"file":"dangling.md","why":"dangling symlink","red":false}}],"orphans":["gone"]}}
+                r#"{{"version":"{version}","now":{now},"verdict":"red","tick":{{"verdict":"unmanaged","swept":1786697400,"finding":null,"fix":null}},"routines":[{}],"skipped":[{{"file":"AGENTS.md","why":"name not a slug","red":false,"fix":null}},{{"file":"Bad_Name.md","why":"name not a slug","red":true,"fix":"rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it"}},{{"file":"dangling.md","why":"dangling symlink","red":false,"fix":null}}],"orphans":[{{"name":"gone","finding":"<h>/.state/gone has no gone.md","fix":"mkdir -p <h>/.state/.archive && mv <h>/.state/gone <h>/.state/.archive/gone-20260814T090000Z — archive, never delete"}}]}}
 "#,
                 rows.join(",")
             ),
