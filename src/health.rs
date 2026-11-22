@@ -1,5 +1,6 @@
-//! `routine health` and `routine ack` — one verdict over the home, derived from the runner's own
-//! parsers and state, and the ack that holds one failure until its exit changes.
+//! `routine health`, `routine ack` and `routine pause` — one verdict over the home, derived from
+//! the runner's own parsers and state, the ack that holds one failure until its exit changes, and
+//! the pause that holds a routine off the tick until `routine resume`.
 
 use crate::{
     cron::{self, iso},
@@ -51,22 +52,39 @@ fn report(kind: &str, name: &str, finding: &str, fix: &str) -> String {
     format!("{kind}: {name} — {finding}\n  fix: {fix}\n")
 }
 
-/// The ack's line, as `ack` writes it and health reports it.
-fn ack_json(exit: i64, at: &str, reason: &str) -> String {
-    format!(
-        "{{\"exit\":{exit},\"at\":{},\"reason\":{}}}",
-        json(at),
-        json(reason)
-    )
+/// A marker's line — an ack's after its `"exit":N,`, a pause's whole — as its verb writes it and
+/// health reports it.
+fn stamp(head: &str, at: &str, reason: &str) -> String {
+    format!("{{{head}\"at\":{},\"reason\":{}}}", json(at), json(reason))
 }
 
-/// `<dir>/ack` as `(exit, at, reason)`, when it holds the line `ack_json` writes.
-fn acked(dir: &Path) -> Option<(i64, String, String)> {
-    let a = state::read(&dir.join("ack"));
-    let (e, r) = a.strip_prefix("{\"exit\":")?.split_once(",\"at\":\"")?;
+/// `file` as `(head, at, reason)`, when it holds the line `stamp` writes.
+fn stamped(file: &Path) -> Option<(String, String, String)> {
+    let a = state::read(file);
+    let (head, r) = a.strip_prefix('{')?.split_once("\"at\":\"")?;
     let (at, r) = r.split_once("\",\"reason\":\"")?;
     let r = r.trim_end().strip_suffix("\"}")?;
-    Some((cron::num(e)?, unjson(at), unjson(r)))
+    Some((head.into(), unjson(at), unjson(r)))
+}
+
+/// `<dir>/ack` as `(exit, at, reason)`.
+fn acked(dir: &Path) -> Option<(i64, String, String)> {
+    let (head, at, r) = stamped(&dir.join("ack"))?;
+    Some((
+        cron::num(head.strip_prefix("\"exit\":")?.strip_suffix(',')?)?,
+        at,
+        r,
+    ))
+}
+
+/// `<dir>/paused` as `(at, reason)`, both empty when a hand made it.
+fn paused(dir: &Path) -> Option<(String, String)> {
+    let f = dir.join("paused");
+    (f.is_file()).then(|| stamped(&f).map_or_else(Default::default, |p| (p.1, p.2)))
+}
+
+fn ack_json(exit: i64, at: &str, reason: &str) -> String {
+    stamp(&format!("\"exit\":{exit},"), at, reason)
 }
 
 /// `<dir>/last-run.json` as `(started_epoch, finished, exit, duration)`, when each is there.
@@ -99,11 +117,12 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
 
 // ※ health-verdict
 /// One routine's JSON object, whether it runs, and its report line with its bucket — 0 red, 1 a
-/// finding, 2 acknowledged. The first match wins: lint (what the runner refuses or mis-reads),
-/// wedged (a live lock past its timeout and the watchdog's minute), a non-zero last exit —
+/// finding, 2 acknowledged or paused. The first match wins: lint (what the runner refuses or
+/// mis-reads), wedged (a live lock past its timeout and the watchdog's minute), paused (a `paused`
+/// marker, whatever it holds: the tick passes it over, so it is never due), a non-zero last exit —
 /// acknowledged while an ack holds it, else a finding for exit 1 (it ran and found something,
 /// never red) and failed for 2 and above — stale (due, idle, and passed over by a sweep that could dispatch half an hour after it fell
-/// due — a slept machine's sweeps predate it), else ok.
+/// due or was resumed — a slept machine's sweeps predate it), else ok.
 fn routine(
     (dir, states): (&Path, &Path),
     name: &str,
@@ -124,11 +143,13 @@ fn routine(
     .into_iter()
     .flatten()
     .collect();
-    let due = next.is_some_and(|n| n <= now);
+    let (last, ack, paused) = (last_run(&st), acked(&st), paused(&st));
+    let due = paused.is_none() && next.is_some_and(|n| n <= now);
     let running = st.join("lock").exists() && !lock::stale(&st);
     let held = mtime(&st.join("lock")).map_or(0, |t| now - t);
-    let (last, ack) = (last_run(&st), acked(&st));
+    let resumed = cron::num(state::read(&st.join("resumed")).trim_end()).unwrap_or(0);
     let since = (next.filter(|_| due)).and_then(|n| if n == 0 { mtime(&doc) } else { Some(n) });
+    let since = since.map(|d| d.max(resumed));
     let (verdict, says) = if !lint.is_empty() {
         let fix = format!(
             "edit {}: the smallest change the runner takes",
@@ -142,6 +163,8 @@ fn routine(
             "ps -p {p} -o command= — its watchdog missed it: kill {p}, and the next run reaps the lock"
         );
         ("wedged", Some((f, x)))
+    } else if paused.is_some() {
+        ("paused", None)
     } else if let Some((_, fin, e, _)) = last.as_ref().filter(|l| l.2 != 0) {
         let logs = st.join("logs");
         let newest = (fs::read_dir(&logs).into_iter().flatten().flatten())
@@ -173,20 +196,25 @@ fn routine(
     } else {
         ("ok", None)
     };
-    let said = match (&says, ack.as_ref().filter(|_| verdict == "acknowledged")) {
-        (_, Some((e, at, r))) => Some((
+    let said = match (
+        &says,
+        ack.as_ref().filter(|_| verdict == "acknowledged"),
+        paused.as_ref().filter(|_| verdict == "paused"),
+    ) {
+        (_, Some((e, at, r)), _) => Some((
             2,
             format!("acknowledged: {name} — exit {e} since {at}: {r}\n"),
         )),
-        (Some((f, x)), None) => Some((
+        (_, _, Some((at, r))) => Some((2, format!("paused: {name} — since {at}: {r}\n"))),
+        (Some((f, x)), ..) => Some((
             usize::from(verdict == "finding"),
             report(verdict, name, f, x),
         )),
-        (None, None) => None,
+        _ => None,
     };
     let degraded = st.join("degraded");
     let row = format!(
-        "{{\"name\":{},\"schedule\":{},\"next\":{},\"due\":{due},\"running\":{running},\"last\":{},\"degraded\":{},\"ack\":{},\"verdict\":\"{verdict}\",\"finding\":{},\"fix\":{}}}",
+        "{{\"name\":{},\"schedule\":{},\"next\":{},\"due\":{due},\"running\":{running},\"last\":{},\"degraded\":{},\"ack\":{},\"paused\":{},\"verdict\":\"{verdict}\",\"finding\":{},\"fix\":{}}}",
         json(name),
         opt((!sched.is_empty()).then(|| json(&sched))),
         opt(next.map(|n| n.to_string())),
@@ -196,6 +224,7 @@ fn routine(
         ))),
         opt((degraded.is_file()).then(|| json(state::read(&degraded).trim_end_matches('\n')))),
         opt(ack.map(|(e, at, r)| ack_json(e, &at, &r))),
+        opt(paused.map(|(at, r)| stamp("", &at, &r))),
         opt(says.as_ref().map(|s| json(&s.0))),
         opt(says.map(|s| json(&s.1))),
     );
@@ -332,6 +361,10 @@ pub fn health(as_json: bool, now: i64) -> i32 {
     i32::from(!said[0].is_empty())
 }
 
+fn known(dir: &Path, name: &str) -> bool {
+    state::slug(name) && dir.join(format!("{name}.md")).is_file()
+}
+
 /// `routine ack <name> [reason…]` holds the failed last run's exit in `<state>/<name>/ack`, and
 /// `--clear` drops it: 64 for an unknown routine or a last run that is no failure, 73 when the
 /// ack cannot land.
@@ -339,7 +372,7 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, why) = (args[0], &args[1..]);
     let f = states.join(name).join("ack");
-    let (rc, msg) = if !state::slug(name) || !dir.join(format!("{name}.md")).is_file() {
+    let (rc, msg) = if !known(&dir, name) {
         (64, format!("no routine {name}"))
     } else if why == ["--clear"] {
         let _ = fs::remove_file(&f);
@@ -357,6 +390,36 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
             64,
             format!("{name}'s last run is no failure to acknowledge"),
         )
+    };
+    eprintln!("routine: {msg}");
+    rc
+}
+
+// ※ pause
+/// `routine pause <name> [reason…]` holds the routine off the tick in `<state>/<name>/paused`;
+/// `routine resume <name>` drops it and stamps `resumed`, where health counts stale from: 64 for
+/// an unknown routine, 73 when the marker cannot land or lift.
+pub fn pause(on: bool, args: &[&str], now: i64) -> i32 {
+    let (dir, states, _) = state::roots();
+    let (name, st) = (args[0], states.join(args[0]));
+    let f = st.join("paused");
+    let (rc, msg) = if !known(&dir, name) {
+        (64, format!("no routine {name}"))
+    } else if on {
+        let line = stamp("", &iso(now), &args[1..].join(" ")) + "\n";
+        if fs::create_dir_all(&st)
+            .and_then(|()| fs::write(&f, line))
+            .is_ok()
+        {
+            return 0;
+        }
+        (73, format!("cannot write {}", f.display()))
+    } else if !f.is_file()
+        || fs::remove_file(&f).is_ok() && fs::write(st.join("resumed"), format!("{now}\n")).is_ok()
+    {
+        return 0;
+    } else {
+        (73, format!("cannot lift {}", f.display()))
     };
     eprintln!("routine: {msg}");
     rc

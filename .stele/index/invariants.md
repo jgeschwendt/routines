@@ -10,3 +10,4 @@
 | health is derived from the runner's own parsers and state — a doc health calls lint is one run refuses, and an ack never outlives the exit it acknowledged | src | ※ health-verdict |
 | last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state | src | ※ last-run-contract |
 | run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM | src | ※ parallel-due |
+| a pause is the paused marker's presence, whatever it holds — the tick never dispatches a paused routine, health never calls it due, stale or red, and run <name> still runs it | src | ※ pause |

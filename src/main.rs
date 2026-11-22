@@ -27,6 +27,8 @@ const USAGE: &str = "routine — executable markdown on rails
   routine status         schedule × due? × last run, one row per routine
   routine health         one verdict over the home, silent but for findings; --json one line for an app
   routine ack <name>     hold a failed last run's exit as known, [reason…]; --clear drops it
+  routine pause <name>   hold it off the tick, [reason…]; run <name> still runs it
+  routine resume <name>  lift the pause; a fire it missed runs on the next tick
   routine setup          install the release and its upgrade agent (hotswap), load the tick; --remove undoes it (install/uninstall alias)
   routine upgrade        swap to the latest release; --check, --back, --retry
   routine sync-ci        (re)write ./.github/workflows/routines.yaml here
@@ -36,6 +38,7 @@ exit: 64 usage/unknown routine, recorded for a bad doc or no home · 73 mktemp f
       75 lock held · 78 requires missing · 124 timeout · 129/130/143 HUP/INT/TERM ·
       else the failing block's code · run --due 1 when any routine failed · health 1 when anything is red ·
       ack 64 unknown routine or no failed run, 73 ack unwritable ·
+      pause, resume 64 unknown routine, 73 marker unwritable ·
       setup 1 when the release cannot install, a plist cannot land or bootstrap fails · upgrade 1 red, 2 unable to try
 
 env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_PMSET
@@ -55,13 +58,21 @@ fn main() -> ExitCode {
             println!("routine {VERSION}");
             0
         }
-        ["ack" | "run"] | ["ack" | "run", ""] | ["health", _, ..] if args[1..] != ["--json"] => {
+        ["ack" | "pause" | "resume" | "run"]
+        | ["ack" | "pause" | "resume" | "run", ""]
+        | ["health", _, ..]
+            if args[1..] != ["--json"] =>
+        {
             eprint!("{USAGE}");
             64
         }
-        [v @ ("ack" | "health" | "run" | "status"), rest @ ..] => match state::now() {
+        [
+            v @ ("ack" | "health" | "pause" | "resume" | "run" | "status"),
+            rest @ ..,
+        ] => match state::now() {
             Ok(now) if *v == "ack" => health::ack(rest, now),
             Ok(now) if *v == "health" => health::health(!rest.is_empty(), now),
+            Ok(now) if matches!(*v, "pause" | "resume") => health::pause(*v == "pause", rest, now),
             Ok(now) if *v == "run" && rest[0] == "--due" => due::due(now),
             Ok(now) if *v == "run" => run::run(rest[0], now),
             Ok(now) => {
