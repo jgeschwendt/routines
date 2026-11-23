@@ -11,7 +11,7 @@
 use std::{
     ffi::c_int,
     io::{self, Read as _},
-    os::{fd::AsRawFd as _, unix::process::CommandExt as _},
+    os::{fd::IntoRawFd as _, unix::process::CommandExt as _},
     process::{self, Command},
     ptr,
     sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed},
@@ -76,9 +76,8 @@ fn action(sig: c_int, new: *const Action) -> Action {
 /// job's INT).
 pub fn catch(on: impl FnOnce(c_int) + Send + 'static) {
     let Ok((mut r, w)) = io::pipe() else { return };
-    FD.store(w.as_raw_fd(), Relaxed);
+    FD.store(w.into_raw_fd(), Relaxed);
     PID.store(process::id(), Relaxed);
-    std::mem::forget(w);
     let new = Action {
         handler: handler as extern "C" fn(c_int) as usize,
         flags: SA_RESTART,
