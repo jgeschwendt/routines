@@ -109,9 +109,9 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
     let is = |l: &str, m: &str| l.get(20..).is_some_and(|r| r.starts_with(m));
     let heard = lines.last().and_then(|l| stamp(l));
     lines.push("");
-    let swept = (lines.windows(2).rev())
-        .filter(|w| is(w[0], " tick docs=") && !is(w[1], " defer dark-wake"))
-        .find_map(|w| stamp(w[0]));
+    let swept = (lines.iter().zip(lines.iter().skip(1)).rev())
+        .filter(|&(line, next)| is(line, " tick docs=") && !is(next, " defer dark-wake"))
+        .find_map(|(line, _)| stamp(line));
     (heard, swept)
 }
 
@@ -303,8 +303,10 @@ pub fn health(as_json: bool, now: i64) -> i32 {
         let (row, running, line) = routine((&dir, &states), name, now, swept);
         rows.push(row);
         busy |= running;
-        if let Some((k, l)) = line {
-            said[k].push(l);
+        if let Some((k, l)) = line
+            && let Some(bucket) = said.get_mut(k)
+        {
+            bucket.push(l);
         }
     }
     let fix = "rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it";
@@ -379,6 +381,10 @@ fn known(dir: &Path, name: &str) -> bool {
 /// `routine ack <name> [reason…]` holds the failed last run's exit in `<state>/<name>/ack`, and
 /// `--clear` drops it: 64 for an unknown routine or a last run that is no failure, 73 when the
 /// ack cannot land.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "main's usage gate passes a name first"
+)]
 pub fn ack(args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, why) = (args[0], &args[1..]);
@@ -410,6 +416,10 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
 /// `routine pause <name> [reason…]` holds the routine off the tick in `<state>/<name>/paused`;
 /// `routine resume <name>` drops it and stamps `resumed`, where health counts stale from: 64 for
 /// an unknown routine, 73 when the marker cannot land or lift.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "main's usage gate passes a name first"
+)]
 pub fn pause(on: bool, args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, st) = (args[0], states.join(args[0]));

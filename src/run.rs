@@ -94,14 +94,13 @@ impl Run {
             self.tmp.join("prompt"),
             self.tmp.join(format!("catch-{i}.out")),
         );
-        let k = self.tmp.to_string_lossy();
         let text = catch_prompt(
             &self.name,
             &self.doc,
             &fs::read(&self.doc).unwrap_or_default(),
             i,
             code,
-            &k[k.len() - 6..],
+            &self.tmp.extension().unwrap_or_default().to_string_lossy(),
             &fs::read(output).unwrap_or_default(),
         );
         drop(fs::write(&prompt, text));
@@ -230,6 +229,7 @@ fn subst(b: &[u8]) -> Vec<u8> {
 /// of `doc` (`text`), which exited `code` printing `out`: its last 200 lines, last 64 KiB. The
 /// markers carry the run's random suffix `k`, so output printing `=== end output ===` cannot
 /// step outside its section.
+#[expect(clippy::indexing_slicing, reason = "the start is at most the length")]
 pub fn catch_prompt(
     name: &str,
     doc: &Path,
@@ -395,20 +395,6 @@ fn mktemp() -> PathBuf {
         })
 }
 
-/// What the runner exports to every child, `ROUTINE_CLAUDE` second: `LC_ALL` and its roots and
-/// seams, absolute.
-fn exports(rdir: PathBuf, states: &Path, home: &Path) -> Vec<(&'static str, OsString)> {
-    let var = |k, d: &str| state::var(k).unwrap_or_else(|| d.into());
-    vec![
-        ("LC_ALL", "C".into()),
-        ("ROUTINE_CLAUDE", var("ROUTINE_CLAUDE", "claude")),
-        ("ROUTINE_DIR", rdir.into()),
-        ("ROUTINE_HOME", home.into()),
-        ("ROUTINE_PMSET", var("ROUTINE_PMSET", "pmset")),
-        ("ROUTINE_STATE", states.into()),
-    ]
-}
-
 /// `cmd_run`: the name and document gates, the lock, `requires`, the log and temp dir, the
 /// blocks, `on_error`, the home, then the sequence under the watchdog.
 pub fn run(name: &str, now: i64) -> ! {
@@ -442,8 +428,17 @@ pub fn run(name: &str, now: i64) -> ! {
         }
         Some(true) => held().owner = Some((dir.clone(), now)),
     }
-    let envs = exports(rdir, &states, &home);
-    let claude = envs[1].1.clone();
+    // what the runner exports to every child: `LC_ALL` and its roots and seams, absolute
+    let var = |k, d: &str| state::var(k).unwrap_or_else(|| d.into());
+    let claude = var("ROUTINE_CLAUDE", "claude");
+    let envs = vec![
+        ("LC_ALL", "C".into()),
+        ("ROUTINE_CLAUDE", claude.clone()),
+        ("ROUTINE_DIR", rdir.into()),
+        ("ROUTINE_HOME", home.as_os_str().into()),
+        ("ROUTINE_PMSET", var("ROUTINE_PMSET", "pmset")),
+        ("ROUTINE_STATE", states.as_os_str().into()),
+    ];
     // the environment the blocks inherit, never the runner's own variables
     let missing = missing(&text, |v| {
         let ours = envs.iter().find(|e| e.0 == v).map(|e| e.1.clone());
@@ -582,27 +577,27 @@ mod tests {
     // the document doubles as the block's output: a NUL dropped, 200 lines kept, 64 KiB at most
     #[test]
     fn catch_prompt() {
+        let lines =
+            |r: RangeInclusive<i32>| r.map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
         let texts = [
             "a\0b\n\n\0\n".to_owned(),
-            (1..=300).map(|i| format!("{i}\n")).collect(),
+            format!("{}\n", lines(1..=300)),
             format!("{}\nend", "y".repeat(70_000)),
         ];
-        let ours: Vec<_> = (texts.iter().enumerate())
-            .map(|(i, t)| {
-                let p = super::catch_prompt(
-                    "nm",
-                    Path::new(&i.to_string()),
-                    t.as_bytes(),
-                    3,
-                    7,
-                    "Ab3xYz",
-                    t.as_bytes(),
-                );
-                String::from_utf8(p).unwrap()
-            })
-            .collect();
+        let [nul, numbered, long] = texts.map(|t| {
+            let p = super::catch_prompt(
+                "nm",
+                Path::new("0"),
+                t.as_bytes(),
+                3,
+                7,
+                "Ab3xYz",
+                t.as_bytes(),
+            );
+            String::from_utf8(p).unwrap()
+        });
         assert_eq!(
-            ours[0],
+            nul,
             format!(
                 "You are running unattended inside routine 'nm', invoked by the routine runner.
 Block 3 of the document below exited 7.
@@ -621,21 +616,19 @@ not run the remaining blocks — the runner retries block 3 once after you exit.
 "
             )
         );
-        let lines =
-            |r: RangeInclusive<i32>| r.map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
-        assert!(ours[1].contains(&format!(
+        assert!(numbered.contains(&format!(
             " · Ab3xYz ===\n{}\n=== end document",
             lines(1..=300)
         )));
-        assert!(ours[1].contains(&format!(
+        assert!(numbered.contains(&format!(
             " · Ab3xYz ===\n{}\n=== end output",
             lines(101..=300)
         )));
-        assert!(ours[2].contains(&format!(
+        assert!(long.contains(&format!(
             "===\n{}\nend\n=== end document",
             "y".repeat(70_000)
         )));
-        assert!(ours[2].contains(&format!(
+        assert!(long.contains(&format!(
             "===\n{}\nend\n=== end output",
             "y".repeat((1 << 16) - 4)
         )));

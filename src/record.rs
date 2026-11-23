@@ -18,6 +18,10 @@ pub fn append(file: &Path, text: &str) -> io::Result<()> {
 }
 
 /// The last `n` (≥ 1) lines of `b` as `tail -n` counts them: an unterminated last line is one.
+#[expect(
+    clippy::indexing_slicing,
+    reason = "each index is one the slice's own range yields"
+)]
 pub fn tail(b: &[u8], n: usize) -> &[u8] {
     let body = b.strip_suffix(b"\n").unwrap_or(b);
     let cut = (0..body.len())
@@ -136,13 +140,10 @@ mod tests {
             .map(|(i, c)| {
                 let f = dir.join(format!("{i}.rs"));
                 fs::write(&f, c.0).unwrap();
-                let a: Vec<_> = c.1.split(' ').collect();
-                keep_tail(
-                    &f,
-                    a[0] == "l",
-                    a[1].parse().unwrap(),
-                    a[2].parse().unwrap(),
-                );
+                let mut args = c.1.split(' ');
+                let lines = args.next() == Some("l");
+                let max = args.next().unwrap().parse().unwrap();
+                keep_tail(&f, lines, max, args.next().unwrap().parse().unwrap());
                 fs::read_to_string(f).unwrap()
             })
             .collect();
