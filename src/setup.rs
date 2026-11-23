@@ -99,12 +99,12 @@ pub fn setup(remove: bool) -> Result<(), String> {
         format!("{gui}/{TICK}"),
     );
     if launchd {
-        launchctl(&["bootout", &format!("{gui}/{OLD}")]);
+        _ = launchctl(&["bootout", &format!("{gui}/{OLD}")]);
         drop(fs::remove_file(agents.join(format!("{OLD}.plist"))));
     }
     if remove {
         if launchd {
-            launchctl(&["bootout", &target]);
+            _ = launchctl(&["bootout", &target]);
             drop(fs::remove_file(&plist));
             println!("removed {}", plist.display());
         }
@@ -133,7 +133,7 @@ pub fn setup(remove: bool) -> Result<(), String> {
     let loaded = launchctl(&["print", &target]);
     let reload = loaded && fresh;
     if reload {
-        launchctl(&["bootout", &target]);
+        _ = launchctl(&["bootout", &target]);
     }
     if (!loaded || reload) && !launchctl(&["bootstrap", &gui, &plist.to_string_lossy()]) {
         return Err("launchctl bootstrap failed".into());

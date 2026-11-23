@@ -181,7 +181,7 @@ fn on_signal(sig: i32) {
         g.stopping = true;
         g.child
     };
-    kill_tree(TERM, p);
+    _ = kill_tree(TERM, p);
     let mut n = 0;
     while n < 20 && kill_tree(0, p) {
         thread::sleep(Duration::from_millis(100));
@@ -215,10 +215,10 @@ fn watchdog(limit: Duration, done: &Receiver<()>, tmp: &Path) {
             say(&format!(
                 "watchdog: pid {p} still running 10s past the deadline, escalating to KILL\n"
             ));
-            kill_tree(KILL, p);
+            _ = kill_tree(KILL, p);
         } else if p != t {
             say(&format!("watchdog: deadline reached, killing pid {p}\n"));
-            kill_tree(TERM, p);
+            _ = kill_tree(TERM, p);
         }
         t = p;
         thread::sleep(Duration::from_secs(1));
@@ -247,7 +247,8 @@ impl Run {
     /// home; on exit, any member it left behind (`cmd &`) is sent TERM; `None` when it cannot run.
     fn supervise(&self, cmd: &mut Command, input: &Path, output: &Path) -> Option<i32> {
         let o = File::create(output).ok()?;
-        cmd.stdin(File::open(input).ok()?)
+        _ = cmd
+            .stdin(File::open(input).ok()?)
             .stderr(o.try_clone().ok()?)
             .stdout(o)
             .current_dir(&self.home)
@@ -262,7 +263,7 @@ impl Run {
         drop(g);
         let s = c.wait().ok()?;
         drop(held());
-        kill_tree(TERM, c.id().cast_signed());
+        _ = kill_tree(TERM, c.id().cast_signed());
         Some(s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)))
     }
 

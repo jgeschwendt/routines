@@ -59,7 +59,7 @@ static PID: AtomicU32 = AtomicU32::new(0);
 extern "C" fn handler(sig: c_int) {
     if process::id() == PID.load(Relaxed) {
         // SAFETY: a one-byte write from a live local to the pipe `catch` leaked open.
-        unsafe { write(FD.load(Relaxed), sig.to_le_bytes().as_ptr(), 1) };
+        unsafe { _ = write(FD.load(Relaxed), sig.to_le_bytes().as_ptr(), 1) };
     }
 }
 
@@ -67,7 +67,7 @@ extern "C" fn handler(sig: c_int) {
 fn action(sig: c_int, new: *const Action) -> Action {
     let mut old = Action::default();
     // SAFETY: `new` is null or a live `Action`, `old` a live one to fill; both are C's layout.
-    unsafe { sigaction(sig, new, &raw mut old) };
+    unsafe { _ = sigaction(sig, new, &raw mut old) };
     old
 }
 
@@ -86,14 +86,14 @@ pub fn catch(on: impl FnOnce(c_int) + Send + 'static) {
     };
     for sig in [HUP, INT, TERM] {
         if action(sig, ptr::null()).handler != SIG_IGN {
-            action(sig, &raw const new);
+            _ = action(sig, &raw const new);
         }
     }
-    thread::spawn(move || {
+    drop(thread::spawn(move || {
         let mut b = [0];
         drop(r.read_exact(&mut b));
         on(b[0].into());
-    });
+    }));
 }
 
 /// `cmd &` without job control: INT and QUIT ignored in the child, a disposition exec keeps.
@@ -109,7 +109,7 @@ fn ignore() -> io::Result<()> {
         ..Action::default()
     };
     for sig in [INT, QUIT] {
-        action(sig, &raw const ign);
+        _ = action(sig, &raw const ign);
     }
     Ok(())
 }
