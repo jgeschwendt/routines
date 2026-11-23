@@ -54,7 +54,7 @@ struct Run {
     claude: OsString,
     dir: PathBuf,
     doc: PathBuf,
-    /// what the runner exports to every child: `LC_ALL` and its absolute roots and seams
+    /// what the runner exports to every child: `LC_ALL` and its absolute roots and seams.
     envs: Vec<(&'static str, OsString)>,
     fail: bool,
     home: PathBuf,
