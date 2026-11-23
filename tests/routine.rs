@@ -775,7 +775,11 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         };
         let block = block.map_or(String::new(), |b| format!("```sh\n{b}\n```\n"));
         fs::create_dir_all(home.join("tmp")).unwrap();
-        fs::write(home.join(format!("{name}.md")), fm + "prose\n" + &block).unwrap();
+        fs::write(
+            home.join(format!("{name}.md")),
+            format!("{fm}prose\n{block}"),
+        )
+        .unwrap();
     }
 
     /// `routine <args>` against `home`, the clock frozen, claude the sandbox's stub and `TMPDIR` the
@@ -811,7 +815,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             digits.clear();
             out.push(c);
         }
-        out + &digits
+        format!("{out}{digits}")
     }
 
     /// Whether `pid` (in `file`) still runs, given three seconds to go.
@@ -1568,7 +1572,13 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             (".state/paused/last-run.json", rec(1_786_690_000, 2), None),
             (
                 ".state/paused/paused",
-                Some(r#"{"at":"2026-08-14T08:00:00Z","reason":"on \"hold\""}"#.to_owned() + "\n"),
+                Some(
+                    concat!(
+                        r#"{"at":"2026-08-14T08:00:00Z","reason":"on \"hold\""}"#,
+                        "\n"
+                    )
+                    .to_owned(),
+                ),
                 None,
             ),
             (".state/stale/last-run.json", rec(1_786_690_000, 0), None),
@@ -1917,8 +1927,11 @@ unhealthy — 7 red · 1 finding(s)
             run(&["ack", "f", "flaky", "\"net\""]),
             (Some(0), String::new(), String::new())
         );
-        let held =
-            r#"{"exit":3,"at":"2026-08-14T09:00:00Z","reason":"flaky \"net\""}"#.to_owned() + "\n";
+        let held = concat!(
+            r#"{"exit":3,"at":"2026-08-14T09:00:00Z","reason":"flaky \"net\""}"#,
+            "\n"
+        )
+        .to_owned();
         assert_eq!(ack(), Some(held.clone()));
         assert_eq!(
             health_run(&home, &["health"], false).1,

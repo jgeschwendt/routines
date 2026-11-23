@@ -571,7 +571,7 @@ mod tests {
     fn catch_prompt() {
         let texts = [
             "a\0b\n\n\0\n".to_owned(),
-            (1..=300).map(|i| i.to_string() + "\n").collect(),
+            (1..=300).map(|i| format!("{i}\n")).collect(),
             format!("{}\nend", "y".repeat(70_000)),
         ];
         let ours: Vec<_> = (texts.iter().enumerate())

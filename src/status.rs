@@ -11,7 +11,7 @@ fn cells(texts: [&str; 6]) -> String {
         row += t;
         row += &" ".repeat(w.saturating_sub(t.len() - 2 * t.matches('—').count()));
     }
-    row + texts[5] + "\n"
+    format!("{row}{}\n", texts[5])
 }
 
 /// `name`'s schedule, empty when none; the doc keeps its NULs, where `frontmatter_get` cuts a
@@ -69,7 +69,7 @@ pub fn status(dir: &Path, states: &Path, now: i64) {
                 due,
                 &or_dash(state::json_get(&last, "exit")),
                 &or_dash(state::json_get(&last, "finished")),
-                &(or_dash(state::json_get(&last, "duration")) + &deg),
+                &format!("{}{deg}", or_dash(state::json_get(&last, "duration"))),
             ])
         );
     }

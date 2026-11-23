@@ -18,7 +18,7 @@ fn json(s: &str) -> String {
             c => o.push(c),
         }
     }
-    o + "\""
+    format!("{o}\"")
 }
 
 /// `json`'s escapes undone: `\uXXXX` its code point, `\X` the `X`.
@@ -384,7 +384,7 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
         .map(|l| l.2)
         .filter(|&e| e != 0)
     {
-        if fs::write(&f, ack_json(e, &iso(now), &why.join(" ")) + "\n").is_ok() {
+        if fs::write(&f, format!("{}\n", ack_json(e, &iso(now), &why.join(" ")))).is_ok() {
             return 0;
         }
         (73, format!("cannot write {}", f.display()))
@@ -409,7 +409,7 @@ pub fn pause(on: bool, args: &[&str], now: i64) -> i32 {
     let (rc, msg) = if !known(&dir, name) {
         (64, format!("no routine {name}"))
     } else if on {
-        let line = stamp("", &iso(now), &args[1..].join(" ")) + "\n";
+        let line = format!("{}\n", stamp("", &iso(now), &args[1..].join(" ")));
         if fs::create_dir_all(&st)
             .and_then(|()| fs::write(&f, line))
             .is_ok()
