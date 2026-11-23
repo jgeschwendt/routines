@@ -505,6 +505,7 @@ pub fn run(name: &str, now: i64) -> ! {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 mod tests {
     use super::{missing, on_error, timeout};
     use std::{ffi::OsString, ops::RangeInclusive, path::Path};
