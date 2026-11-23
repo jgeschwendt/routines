@@ -187,7 +187,7 @@ impl Run {
 
 /// `label` ruled out to 80 columns as `LC_ALL=C` counts them: bytes, but a `·` as one.
 pub fn divider(label: &str) -> String {
-    let n = 70_usize.saturating_sub(label.len() - label.matches('·').count());
+    let n = 70usize.saturating_sub(label.len() - label.matches('·').count());
     format!("──────── {label} {}\n", "─".repeat(n))
 }
 

@@ -39,7 +39,7 @@ fn out(o: Output) -> (Option<i32>, String, String) {
 
 /// `label` ruled out to 80 columns: bytes, a `·` one column — the runner's divider.
 fn rule(label: &str) -> String {
-    let n = 70_usize.saturating_sub(label.len() - label.matches('·').count());
+    let n = 70usize.saturating_sub(label.len() - label.matches('·').count());
     format!("──────── {label} {}\n", "─".repeat(n))
 }
 
