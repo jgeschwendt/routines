@@ -50,6 +50,10 @@ fn main() -> ExitCode {
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
+    #[expect(
+        clippy::pattern_type_mismatch,
+        reason = "a slice pattern binds by reference only through ref, which ref_patterns forbids"
+    )]
     let code = match &*args.iter().map(String::as_str).collect::<Vec<_>>() {
         [] | ["" | "help" | "-h" | "--help", ..] => {
             print!("{USAGE}");

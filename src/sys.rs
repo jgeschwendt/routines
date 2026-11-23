@@ -56,6 +56,10 @@ unsafe extern "C" {
 
 /// Async-signal-safe: an atomic load, getpid and write. A child between fork and exec still
 /// holds this handler, and its pid keeps a signal meant for it out of the runner's pipe.
+#[expect(
+    clippy::semicolon_inside_block,
+    reason = "rustfmt splits the block the fix makes, and its line reads uncovered in the handler"
+)]
 extern "C" fn handler(sig: c_int) {
     if process::id() == PID.load(Relaxed) {
         // SAFETY: a one-byte write from a live local to the pipe `catch` leaked open.
@@ -76,10 +80,16 @@ fn action(sig: c_int, new: *const Action) -> Action {
 /// The first HUP, INT or TERM, handed to `on` on a thread of its own; later ones are dropped.
 /// A signal ignored at entry stays ignored, as bash's traps leave it (`nohup`, a background
 /// job's INT).
-pub fn catch(on: impl FnOnce(c_int) + Send + 'static) {
+pub fn catch<F: FnOnce(c_int) + Send + 'static>(on: F) {
     let Ok((mut r, w)) = io::pipe() else { return };
     FD.store(w.into_raw_fd(), Relaxed);
     PID.store(process::id(), Relaxed);
+    #[expect(
+        trivial_casts,
+        clippy::as_conversions,
+        clippy::fn_to_numeric_cast_any,
+        reason = "sigaction takes the handler as an address: the fn item to its pointer, then to usize"
+    )]
     let new = Action {
         handler: handler as extern "C" fn(c_int) as usize,
         flags: SA_RESTART,
@@ -127,7 +137,7 @@ mod tests {
     #[test]
     fn ignore_sets_sig_ign() {
         use super::{Action, INT, QUIT, SIG_IGN, action, ignore};
-        assert!(ignore().is_ok());
+        assert_eq!(ignore().ok(), Some(()));
         let dfl = Action::default();
         for sig in [INT, QUIT] {
             assert_eq!(action(sig, &raw const dfl).handler, SIG_IGN);

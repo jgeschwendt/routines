@@ -49,7 +49,7 @@ pub fn tick_log(states: &Path, now: i64, msg: &str) {
     let f = states.join("tick.log");
     drop(fs::create_dir_all(states));
     drop(append(&f, &format!("{} {msg}\n", iso(now))));
-    keep_tail(&f, false, 1_048_576, 2000);
+    keep_tail(&f, false, 1 << 20, 2000);
 }
 
 /// The `degraded` marker: the log is per-run and the exit code the block's, so without it a
@@ -91,6 +91,10 @@ pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
 pub fn log_file(dir: &Path, started: i64) -> PathBuf {
     let logs = dir.join("logs");
     drop(fs::create_dir_all(&logs));
+    #[expect(
+        clippy::filetype_is_file,
+        reason = "find's -type f: only a regular file is pruned"
+    )]
     for e in fs::read_dir(&logs).into_iter().flatten().flatten() {
         if e.file_type().is_ok_and(|t| t.is_file())
             && e.file_name().as_encoded_bytes().ends_with(b".log")
@@ -162,7 +166,7 @@ mod tests {
         .enumerate()
         {
             let d = dir.join(i.to_string());
-            fs::create_dir(&d).unwrap();
+            fs::create_dir_all(&d).unwrap();
             if before {
                 fs::write(d.join("degraded"), "").unwrap();
             }
@@ -215,7 +219,7 @@ mod tests {
             let p = logs.join(name);
             fs::create_dir_all(&logs).unwrap();
             if name == "dir.log" {
-                fs::create_dir(&p).unwrap();
+                fs::create_dir_all(&p).unwrap();
             } else {
                 fs::write(&p, "").unwrap();
             }

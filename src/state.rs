@@ -39,6 +39,10 @@ pub fn roots() -> (PathBuf, PathBuf, PathBuf) {
 }
 
 /// `ROUTINE_NOW` freezes the clock; `Err` carries a value that is no integer.
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the Err is the bad text itself; the parse error adds nothing to it"
+)]
 pub fn now() -> Result<i64, String> {
     var("ROUTINE_NOW").map_or_else(
         || {
@@ -81,6 +85,10 @@ pub fn age(p: &Path) -> Option<u64> {
 
 /// The last `max` bytes of `file` and the count cut ahead of them; none when it cannot open.
 pub fn last_bytes(file: &Path, max: u64) -> (u64, Vec<u8>) {
+    #[expect(
+        clippy::verbose_file_reads,
+        reason = "it reads from the seek on, which fs::read cannot"
+    )]
     let tail = |mut f: File| {
         let cut = f.metadata().map_or(0, |m| m.len()).saturating_sub(max);
         let mut b = Vec::new();
@@ -109,7 +117,7 @@ pub fn read(file: &Path) -> String {
 /// Each slug-named `*.md` document's name, in byte order; any other name is skipped, `skip`
 /// told its file and why — a dangling symlink, or a name that is not `[a-z0-9-]`, `-` first; any
 /// other unreachable name (`[ -e ]` false, `[ -L ]` too: an unsearchable dir) is skipped silently.
-pub fn routines(dir: &Path, mut skip: impl FnMut(&str, &str)) -> Vec<String> {
+pub fn routines<F: FnMut(&str, &str)>(dir: &Path, mut skip: F) -> Vec<String> {
     let mut files: Vec<_> = fs::read_dir(dir)
         .into_iter()
         .flatten()

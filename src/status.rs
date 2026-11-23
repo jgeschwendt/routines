@@ -26,10 +26,10 @@ pub fn schedule(dir: &Path, name: &str) -> String {
 /// is stamped ahead of the clock; `None` for no schedule or one the parser rejects.
 pub fn next_fire_of(states: &Path, name: &str, sched: &str, now: i64) -> Option<i64> {
     let se = state::json_get(&states.join(name).join("last-run.json"), "started_epoch");
-    match cron::num(&se).filter(|&se| se <= now) {
-        Some(se) => cron::next_fire_after(se, sched),
-        None => cron::next_fire_after(now, sched).map(|_| 0),
-    }
+    cron::num(&se).filter(|&se| se <= now).map_or_else(
+        || cron::next_fire_after(now, sched).map(|_| 0),
+        |se| cron::next_fire_after(se, sched),
+    )
 }
 
 pub fn status(dir: &Path, states: &Path, now: i64) {

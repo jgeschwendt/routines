@@ -102,7 +102,7 @@ fn last_run(dir: &Path) -> Option<(i64, String, i64, i64)> {
 /// tick.log's tail as `(heard, swept)`: its last line's stamp, and the last sweep that could
 /// dispatch — a `tick docs=` line no `defer dark-wake` follows.
 fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
-    let (cut, log) = state::last_bytes(&states.join("tick.log"), 65536);
+    let (cut, log) = state::last_bytes(&states.join("tick.log"), 1 << 16);
     let log = String::from_utf8_lossy(&log);
     let mut lines: Vec<_> = log.lines().skip(usize::from(cut > 0)).collect();
     let stamp = |l: &str| l.get(..20).and_then(cron::epoch);
@@ -123,6 +123,10 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
 /// acknowledged while an ack holds it, else a finding for exit 1 (it ran and found something,
 /// never red) and failed for 2 and above — stale (due, idle, and passed over by a sweep that could dispatch half an hour after it fell
 /// due or was resumed — a slept machine's sweeps predate it), else ok.
+#[expect(
+    clippy::pattern_type_mismatch,
+    reason = "a tuple's fields bind by reference only through ref, which ref_patterns forbids"
+)]
 fn routine(
     (dir, states): (&Path, &Path),
     name: &str,
@@ -185,7 +189,7 @@ fn routine(
             v
         };
         (v, Some((format!("exit {e} at {fin}"), x)))
-    } else if let Some((d, s)) = since.zip(swept).filter(|(d, s)| !running && s - d > 1800) {
+    } else if let Some((d, s)) = since.zip(swept).filter(|&(d, s)| !running && s - d > 1800) {
         let f = format!("due since {}, swept {} without a run", iso(d), iso(s));
         let log = states.join("tick.log");
         let x = format!(
@@ -282,6 +286,10 @@ fn tick(
 
 /// One verdict over the home, as a JSON line when `as_json` whose every finding carries the fix
 /// the plain report prints; 1 when anything is red.
+#[expect(
+    clippy::pattern_type_mismatch,
+    reason = "a tuple's fields bind by reference only through ref, which ref_patterns forbids"
+)]
 pub fn health(as_json: bool, now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let mut skipped = Vec::new();
