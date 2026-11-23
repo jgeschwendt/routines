@@ -11,7 +11,7 @@ mod status;
 mod sync_ci;
 mod sys;
 
-use std::process::ExitCode;
+use std::{env, process::ExitCode};
 
 /// The release's `YYYY.M.N`, stamped through `ROUTINE_VERSION` by the release workflow, else the
 /// crate's.
@@ -45,7 +45,7 @@ env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_P
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<_> = std::env::args_os()
+    let args: Vec<_> = env::args_os()
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
