@@ -36,6 +36,7 @@ pub fn next_fire_of(states: &Path, name: &str, sched: &str, now: i64) -> Option<
     )
 }
 
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn status(dir: &Path, states: &Path, now: i64) {
     let or_dash = |s: String| if s.is_empty() { "—".into() } else { s };
     print!(

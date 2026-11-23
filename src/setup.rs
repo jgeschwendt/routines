@@ -24,6 +24,7 @@ fn xml(s: &str) -> String {
 }
 
 /// The tick's plist: `exe run --due` every 60 s, the roots stamped.
+#[expect(clippy::single_call_fn, reason = "the tick's plist")]
 fn tick(exe: &Path, home: &Path) -> String {
     let (dir, st, rhome) = state::roots();
     let st_x = xml(&st.display().to_string());
@@ -89,6 +90,7 @@ pub fn gui() -> String {
 /// leaves the live tick running; a loaded tick whose plist changed is booted out and bootstrapped
 /// again. `--remove` boots the tick out and deletes it, the link and, through `hotswap::forget`,
 /// the upgrade agent and the layout. With no launchctl on PATH (Linux) there is no agent work.
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn setup(remove: bool) -> Result<(), String> {
     let home =
         PathBuf::from(state::var("HOME").ok_or("HOME unset — the tick PATH needs ~/.local/bin")?);
@@ -171,6 +173,7 @@ fn manifest() -> hotswap::Manifest {
     }
 }
 
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn upgrade(args: &[String]) -> i32 {
     hotswap::upgrade(TOOL, &manifest(), args)
 }

@@ -45,6 +45,13 @@ pub fn iso(epoch: i64) -> String {
     clippy::modulo_arithmetic,
     reason = "Hinnant's days_from_civil, on fields of at most four digits"
 )]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "iso's inverse, unit-tested beside it"
+    )
+)]
 pub fn epoch(stamp: &str) -> Option<i64> {
     let field = |a: usize, b: usize| num(stamp.get(a..b)?);
     let (mon, day) = (field(5, 7)?, field(8, 10)?);

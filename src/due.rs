@@ -23,6 +23,7 @@ fn kids() -> MutexGuard<'static, (Vec<i32>, Option<i32>)> {
 /// 1 when any due routine failed. launchd stops the tick with a TERM to it alone,
 /// then KILLs its group, so a HUP, INT or TERM forwards TERM to every routine — a background
 /// child ignores INT — dispatches no more, and exits 128 + the signal once all are reaped.
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn due(now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let log = |m: &str| record::tick_log(&states, state::now().unwrap_or(now), m);
@@ -75,6 +76,10 @@ pub fn due(now: i64) -> i32 {
 
 /// launchd holds due.log's fd open (`StandardOutPath`), so a rename orphans every later write
 /// into an unlinked inode: past 5 MB it is copied to `due.log.1` and truncated.
+#[expect(
+    clippy::single_call_fn,
+    reason = "a named step of the tick: due.log's copy-truncate"
+)]
 fn rotate(states: &Path) {
     let f = states.join("due.log");
     if fs::metadata(&f).is_ok_and(|m| m.len() > 5_242_880)
@@ -86,6 +91,10 @@ fn rotate(states: &Path) {
 
 /// The due routines in byte order, journalled as one tick line — a skipped document ahead of
 /// it; a rejected schedule reads apart from an on-demand doc, and a paused routine is never due.
+#[expect(
+    clippy::single_call_fn,
+    reason = "a named step of the tick: the due list and its tick line"
+)]
 fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
     let names = state::routines(dir, |f, why| {
         record::tick_log(states, now, &format!("skip {f}: {why}"));
@@ -121,6 +130,10 @@ fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
 // ※ dark-wake-gate
 /// A Power Nap dark wake: `pmset -g systemstate` lists the capabilities and Graphics is not
 /// among them. No such line — the probe missing, failing or unparseable — fails open.
+#[expect(
+    clippy::single_call_fn,
+    reason = "a named step of the tick: the dark-wake probe"
+)]
 fn dark_wake(pmset: &OsStr) -> bool {
     let out = Command::new(pmset)
         .args(["-g", "systemstate"])

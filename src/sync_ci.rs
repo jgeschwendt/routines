@@ -15,6 +15,10 @@ const WORKFLOW: &str = include_str!("../.github/workflows/routines.yaml");
 /// symlinked path, a trailing `/`, stays as given — else the resolved one. With no working
 /// directory to resolve (deleted), the inherited `PWD`; with none of that either, `.`, never an
 /// empty prefix that would put the workflow under `/`.
+#[expect(
+    clippy::single_call_fn,
+    reason = "a shell's $PWD, its rules documented on their own"
+)]
 fn pwd() -> OsString {
     let id = |p: &Path| fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
     let pwd = env::var_os("PWD").filter(|p| !p.is_empty());
@@ -30,6 +34,7 @@ fn pwd() -> OsString {
 
 /// Writes `.github/workflows/routines.yaml` under the working directory and drops the pre-.yaml
 /// `routines.yml`, which would double-tick. A failed write warns and still exits 0.
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn sync_ci() {
     let mut dir = pwd();
     dir.push("/.github/workflows"); // appended as a shell does: a trailing `/` doubles

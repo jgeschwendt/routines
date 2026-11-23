@@ -83,6 +83,13 @@ pub fn stale(dir: &Path) -> bool {
     clippy::create_dir,
     reason = "mkdir is the reap guard: it must fail when another reaper holds it"
 )]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the lock's API, unit-tested on its own"
+    )
+)]
 pub fn acquire(dir: &Path) -> Option<bool> {
     let w = || run("test", &[OsStr::new("-w"), dir.as_os_str()]).status;
     if fs::create_dir_all(dir).is_err() || !w().success() {
@@ -108,6 +115,13 @@ pub fn acquire(dir: &Path) -> Option<bool> {
 }
 
 /// `on_exit`'s release: a lock reaped from under this run is its successor's now.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the lock's API, unit-tested on its own"
+    )
+)]
 pub fn release(dir: &Path) {
     if holder(dir) == process::id().to_string() {
         drop(fs::remove_dir_all(dir.join("lock")));
@@ -116,6 +130,13 @@ pub fn release(dir: &Path) {
 
 /// Contention's own ledger line (`last-run.json` is the holder's), bounded at 200 lines; the
 /// holder's pid, read now, or `unknown`.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the lock's API, unit-tested on its own"
+    )
+)]
 pub fn blocked(dir: &Path, started: i64) -> String {
     let p = Some(holder(dir)).filter(|p| !p.is_empty());
     let p = p.unwrap_or_else(|| "unknown".into());

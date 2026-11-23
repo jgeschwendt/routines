@@ -60,6 +60,7 @@ unsafe extern "C" {
     clippy::semicolon_inside_block,
     reason = "rustfmt splits the block the fix makes, and its line reads uncovered in the handler"
 )]
+#[expect(clippy::single_call_fn, reason = "sigaction takes a function")]
 extern "C" fn handler(sig: c_int) {
     if process::id() == PID.load(Relaxed) {
         // SAFETY: a one-byte write from a live local to the pipe `catch` leaked open.
@@ -108,12 +109,23 @@ pub fn catch<F: FnOnce(c_int) + Send + 'static>(on: F) {
 }
 
 /// `cmd &` without job control: INT and QUIT ignored in the child, a disposition exec keeps.
+#[expect(
+    clippy::single_call_fn,
+    reason = "the pre_exec hook, kept in sys with the unsafe it needs"
+)]
 pub fn background(cmd: &mut Command) -> &mut Command {
     // SAFETY: between fork and exec only sigaction runs, async-signal-safe.
     unsafe { cmd.pre_exec(ignore) }
 }
 
 #[expect(clippy::unnecessary_wraps, reason = "pre_exec's signature")]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "pre_exec takes a function, unit-tested on its own"
+    )
+)]
 fn ignore() -> io::Result<()> {
     let ign = Action {
         handler: SIG_IGN,
