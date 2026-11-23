@@ -173,7 +173,7 @@ two                  —                n/a    \n9    —                     3 
             Some("—      "),
         ),
     ] {
-        let want = want.map_or((head.to_owned(), ""), |r| (rows(r), skips));
+        let want = want.map_or_else(|| (head.to_owned(), ""), |r| (rows(r), skips));
         assert_eq!(status(env), (Some(0), want.0, want.1.to_owned()), "{env:?}");
     }
     lock(0o700).unwrap();
