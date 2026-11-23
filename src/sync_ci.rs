@@ -35,8 +35,8 @@ pub fn sync_ci() {
     dir.push("/.github/workflows"); // appended as a shell does: a trailing `/` doubles
     let dir = PathBuf::from(dir);
     let wf = dir.join("routines.yaml");
-    let _ = fs::create_dir_all(&dir);
-    let _ = fs::remove_file(dir.join("routines.yml"));
+    drop(fs::create_dir_all(&dir));
+    drop(fs::remove_file(dir.join("routines.yml")));
     if let Err(e) = fs::write(&wf, WORKFLOW) {
         eprintln!("routine: {}: {e}", wf.display());
     }

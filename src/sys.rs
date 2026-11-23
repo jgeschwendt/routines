@@ -91,7 +91,7 @@ pub fn catch(on: impl FnOnce(c_int) + Send + 'static) {
     }
     thread::spawn(move || {
         let mut b = [0];
-        let _ = r.read_exact(&mut b);
+        drop(r.read_exact(&mut b));
         on(b[0].into());
     });
 }

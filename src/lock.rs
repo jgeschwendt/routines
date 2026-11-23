@@ -87,10 +87,10 @@ pub fn acquire(dir: &Path) -> Option<bool> {
                 (fs::create_dir(&g).is_ok() || state::age(&g).is_some_and(|a| a >= 60)) && {
                     let won = take(dir)
                         || stale(dir) && {
-                            let _ = fs::remove_dir_all(dir.join("lock"));
+                            drop(fs::remove_dir_all(dir.join("lock")));
                             take(dir)
                         };
-                    let _ = fs::remove_dir_all(&g);
+                    drop(fs::remove_dir_all(&g));
                     won
                 }
             } else {
@@ -102,7 +102,7 @@ pub fn acquire(dir: &Path) -> Option<bool> {
 /// `on_exit`'s release: a lock reaped from under this run is its successor's now.
 pub fn release(dir: &Path) {
     if holder(dir) == process::id().to_string() {
-        let _ = fs::remove_dir_all(dir.join("lock"));
+        drop(fs::remove_dir_all(dir.join("lock")));
     }
 }
 
@@ -112,10 +112,10 @@ pub fn blocked(dir: &Path, started: i64) -> String {
     let p = Some(holder(dir)).filter(|p| !p.is_empty());
     let p = p.unwrap_or_else(|| "unknown".into());
     let log = dir.join("lock-blocked.log");
-    let _ = record::append(
+    drop(record::append(
         &log,
         &format!("{} lock-blocked holder-pid={p}\n", iso(started)),
-    );
+    ));
     record::keep_tail(&log, true, 200, 200);
     p
 }

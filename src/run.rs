@@ -136,13 +136,13 @@ fn held() -> MutexGuard<'static, Held> {
 /// To the terminal and, once open, the run's log — the runner's `tee`s. A reader that went
 /// away (`routine run x | head`) stops nothing.
 fn out(b: &[u8], err: bool) {
-    let _ = if err {
+    drop(if err {
         io::stderr().write_all(b)
     } else {
         io::stdout().write_all(b)
-    };
+    });
     if let Some(mut f) = LOG.get() {
-        let _ = f.write_all(b);
+        drop(f.write_all(b));
     }
 }
 
@@ -158,7 +158,7 @@ fn finish(g: &Held, rc: i32) -> ! {
         lock::release(dir);
     }
     if let Some(t) = &g.tmp {
-        let _ = fs::remove_dir_all(t);
+        drop(fs::remove_dir_all(t));
     }
     process::exit(rc)
 }
@@ -187,7 +187,7 @@ fn on_signal(sig: i32) {
         thread::sleep(Duration::from_millis(100));
         n += 1;
     }
-    let _ = n < 20 || kill_tree(KILL, p);
+    _ = n < 20 || kill_tree(KILL, p);
     finish(&lock(), 128 + sig)
 }
 
@@ -206,7 +206,7 @@ fn watchdog(limit: Duration, done: &Receiver<()>, tmp: &Path) {
     if done.recv_timeout(limit) != Err(RecvTimeoutError::Timeout) {
         return;
     }
-    let _ = fs::write(tmp.join("timedout"), "");
+    drop(fs::write(tmp.join("timedout"), ""));
     TIMEDOUT.store(true, Relaxed);
     let (mut t, mut n) = (0, 0);
     loop {
@@ -307,7 +307,7 @@ impl Run {
             &k[k.len() - 6..],
             &fs::read(output).unwrap_or_default(),
         );
-        let _ = fs::write(&prompt, text);
+        drop(fs::write(&prompt, text));
         let t0 = Instant::now();
         let mut agent = Command::new(&self.claude);
         let agent = agent.args(["--model", "opus", "--permission-mode=auto"]);
@@ -325,7 +325,7 @@ impl Run {
             return crc;
         }
         if crc == 0 {
-            let _ = fs::remove_file(self.dir.join("degraded"));
+            drop(fs::remove_file(self.dir.join("degraded")));
         } else {
             record::degrade(&self.dir, state::now().unwrap_or(0));
         }
@@ -448,15 +448,17 @@ pub fn run(name: &str, now: i64) -> ! {
     let log = record::log_file(&dir, now);
     let tmp = mktemp();
     held().tmp = Some(tmp.clone());
-    let _ = fs::OpenOptions::new()
-        .append(true)
-        .create(true)
-        .open(log)
-        .map(|f| LOG.set(f));
+    drop(
+        fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(log)
+            .map(|f| LOG.set(f)),
+    );
     let blocks = extract_blocks(&text);
-    let _ = fs::create_dir(tmp.join("blocks"));
+    drop(fs::create_dir(tmp.join("blocks")));
     for (i, b) in blocks.iter().enumerate() {
-        let _ = fs::write(tmp.join(format!("blocks/{:03}.sh", i + 1)), b);
+        drop(fs::write(tmp.join(format!("blocks/{:03}.sh", i + 1)), b));
     }
     let shown = doc.display();
     if blocks.is_empty() {
@@ -494,7 +496,7 @@ pub fn run(name: &str, now: i64) -> ! {
     drop(tx);
     // past the deadline the watchdog may still be escalating on the block's group
     if TIMEDOUT.load(Relaxed) {
-        let _ = wd.join();
+        drop(wd.join());
         rc = 124;
     }
     say(&divider(&format!("routine {name} · exit {rc}")));
