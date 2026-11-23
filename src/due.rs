@@ -57,6 +57,10 @@ pub fn due(now: i64) -> i32 {
     let mut rc = 0;
     for (name, child) in runs {
         let s = child.and_then(|mut c| c.wait());
+        #[expect(
+            clippy::or_fun_call,
+            reason = "eager: a lazy default runs in no test, and the line coverage drops"
+        )]
         let code = s.map_or(127, |s| s.code().unwrap_or(128 + s.signal().unwrap_or(0)));
         if kids().1.is_none() {
             rc |= i32::from(code != 0);

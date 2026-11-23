@@ -12,6 +12,7 @@ mod tests {
     use std::{
         ffi::OsStr,
         fs::{self, Permissions},
+        io::ErrorKind,
         os::unix::{
             ffi::OsStrExt as _,
             fs::{PermissionsExt as _, symlink},
@@ -209,7 +210,7 @@ two                  —                n/a    \n9    —                     3 
             fs::create_dir_all(&wfs).unwrap();
             fs::write(wfs.join("routines.yml"), "").unwrap();
             if blocked {
-                fs::create_dir(wfs.join("routines.yaml")).unwrap();
+                fs::create_dir_all(wfs.join("routines.yaml")).unwrap();
             }
             let mut c = Command::new(EXE);
             let cwd = tmp.join("link").join(&name);
@@ -243,7 +244,7 @@ two                  —                n/a    \n9    —                     3 
         // a deleted working directory: the inherited PWD, else `.` — never `/`
         for (env, shown) in [("", "<cwd>"), ("-u PWD", ".")] {
             let gone = tmp.join(format!("gone{}", env.len()));
-            fs::create_dir(&gone).unwrap();
+            fs::create_dir_all(&gone).unwrap();
             let g = gone.display();
             let o = Command::new("/bin/sh")
                 .arg("-c")
@@ -504,7 +505,10 @@ two                  —                n/a    \n9    —                     3 
         );
         assert_eq!(run(&["uninstall"], &[]), removed);
         assert!(!due.exists() && !up.exists() && !rec.exists() && !layout.exists());
-        assert!(local.join("routine").symlink_metadata().is_err());
+        assert_eq!(
+            (local.join("routine").symlink_metadata().err()).map(|e| e.kind()),
+            Some(ErrorKind::NotFound)
+        );
         assert_eq!(run(&["setup", "--remove"], &linux), "0\n");
         assert_eq!(
             run(&["upgrade"], &[]),
@@ -524,6 +528,10 @@ two                  —                n/a    \n9    —                     3 
     // the tick back on the shim, which runs 1. A later release, 3, bumped in by 1, moves the host
     // again through its setup, and its first tick swaps green.
     #[test]
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "one scenario, step by step; its own docs disown the measure"
+    )]
     fn migration() {
         let tmp = host("migration");
         let xdg = tmp.join("xdg");
@@ -749,6 +757,10 @@ two                  —                n/a    \n9    —                     3 
         );
         drop(fs::remove_dir_all(&tmp));
         fs::create_dir_all(&tmp).unwrap();
+        #[expect(
+            clippy::literal_string_with_formatting_args,
+            reason = "${MODE:-} is the stub's shell, never a format argument"
+        )]
         let stub = r#"#!/bin/sh
 if [ "$1" = auth ]; then
   case "${MODE:-}" in
@@ -795,7 +807,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             .env("ROUTINE_NOW", "1786698000")
             .env("ROUTINE_CLAUDE", home.parent().unwrap().join("claude"))
             .env("TMPDIR", home.join("tmp"))
-            .envs(env.iter().map(|(k, v)| (k, v)));
+            .envs(env.iter().map(|pair| (pair.0, &pair.1)));
         c
     }
 
@@ -990,7 +1002,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             |why: &str| format!("{}catch degraded: claude {why}\n{}", exit(5), caught(5));
         let big = format!(
             "… 51424 bytes cut — the last 1048576 follow\n{}{}",
-            "x".repeat(1_048_576),
+            "x".repeat(1 << 20),
             exit(0)
         );
         let refused = |e: &str| (String::new(), format!("routine: {e}\n"));

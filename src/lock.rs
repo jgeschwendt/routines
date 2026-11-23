@@ -40,6 +40,10 @@ fn started_at(pid: &str) -> String {
     String::from_utf8_lossy(&o.stdout).into()
 }
 
+#[expect(
+    clippy::create_dir,
+    reason = "mkdir is the lock: it must fail when the lock exists"
+)]
 fn take(dir: &Path) -> bool {
     let (lock, pid) = (dir.join("lock"), process::id().to_string());
     fs::create_dir(&lock).is_ok()
@@ -75,6 +79,10 @@ pub fn stale(dir: &Path) -> bool {
 /// that judged one lock stale must not both reap it: the reap holds `lock.reap` and re-judges
 /// inside it; a reaper killed in that instant leaves a guard honoured a minute. A lock gone by
 /// then was released, and is simply taken.
+#[expect(
+    clippy::create_dir,
+    reason = "mkdir is the reap guard: it must fail when another reaper holds it"
+)]
 pub fn acquire(dir: &Path) -> Option<bool> {
     let w = || run("test", &[OsStr::new("-w"), dir.as_os_str()]).status;
     if fs::create_dir_all(dir).is_err() || !w().success() {
@@ -178,13 +186,13 @@ mod tests {
             if let Some(p) = pid {
                 fs::create_dir_all(&lock).unwrap();
                 fs::write(lock.join("pid"), p).unwrap();
-                if let Some(s) = &started {
+                if let Some(s) = started.as_ref() {
                     fs::write(lock.join("started"), s).unwrap();
                 }
                 touch(&lock, aged).unwrap();
             }
             if let Some(g) = guard {
-                fs::create_dir(&reap).unwrap();
+                fs::create_dir_all(&reap).unwrap();
                 touch(&reap, g).unwrap();
             }
             let held = acquire(&dir);
@@ -213,7 +221,7 @@ mod tests {
     fn blocked_keeps_a_ledger() {
         let dir = scratch("lock-blocked");
         assert_eq!(blocked(&dir, 1_786_698_000), "unknown");
-        fs::create_dir(dir.join("lock")).unwrap();
+        fs::create_dir_all(dir.join("lock")).unwrap();
         fs::write(dir.join("lock/pid"), "42\n\n").unwrap();
         fs::write(dir.join("lock-blocked.log"), "x\n".repeat(200)).unwrap();
         assert_eq!(blocked(&dir, 1_786_698_000), "42");
