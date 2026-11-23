@@ -1,6 +1,10 @@
 //! The document: frontmatter and fenced blocks.
 
 /// Up to `n` leading spaces off `line`.
+#[expect(
+    clippy::string_slice,
+    reason = "the cut counts ASCII spaces: a char boundary"
+)]
 fn dedent(line: &str, n: usize) -> &str {
     &line[line.bytes().take(n).take_while(|&b| b == b' ').count()..]
 }
@@ -13,6 +17,10 @@ fn lines(text: &str) -> impl Iterator<Item = &str> {
 
 /// A flat `key: value` from the leading `---` fence pair; the first match wins.
 /// A BOM and blanks after a fence, invisible in an editor, never drop the frontmatter.
+#[expect(
+    clippy::string_slice,
+    reason = "the cut is an ASCII blank's offset: a char boundary"
+)]
 pub fn frontmatter_get(text: &str, key: &str) -> Option<String> {
     let mut lines = lines(text).map(|l| l.trim_end_matches([' ', '\t', '\r']));
     let first = lines.next()?;
@@ -63,8 +71,8 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
             }
         } else if comment {
             comment = !line.contains("-->");
-        } else if t.starts_with("<!--") {
-            comment = !t[2..].contains("-->");
+        } else if let Some(rest) = t.strip_prefix("<!").filter(|r| r.starts_with("--")) {
+            comment = !rest.contains("-->");
         } else if let Some(ch @ ('`' | '~')) = t.chars().next() {
             let info = t.trim_start_matches(ch);
             let len = t.len() - info.len();

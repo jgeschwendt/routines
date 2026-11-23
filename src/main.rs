@@ -51,6 +51,10 @@ fn main() -> ExitCode {
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
     #[expect(
+        clippy::indexing_slicing,
+        reason = "each index is inside the length its arm's slice pattern matched"
+    )]
+    #[expect(
         clippy::pattern_type_mismatch,
         reason = "a slice pattern binds by reference only through ref, which ref_patterns forbids"
     )]

@@ -68,9 +68,9 @@ pub fn json_get(file: &Path, key: &str) -> String {
     let vals: Vec<_> = text
         .split('\n')
         .filter_map(|l| {
-            let v = &l[l.rfind(&pat)? + pat.len()..];
+            let v = l.rsplit_once(&pat)?.1;
             let v = v.strip_prefix('"').unwrap_or(v);
-            Some(&v[..v.find(['"', ',', '}']).unwrap_or(v.len())])
+            v.split(['"', ',', '}']).next()
         })
         .collect();
     vals.join("\n").trim_end_matches('\n').to_owned()
