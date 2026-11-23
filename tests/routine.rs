@@ -290,7 +290,7 @@ fn host(name: &str) -> PathBuf {
     );
     for n in ["curl", "launchctl", "mise"] {
         fs::write(tmp.join("bin").join(n), &stub).unwrap();
-        fs::set_permissions(tmp.join("bin").join(n), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(tmp.join("bin").join(n), Permissions::from_mode(0o755)).unwrap();
     }
     fs::write(tmp.join("tag"), "1").unwrap();
     tmp
@@ -371,7 +371,7 @@ fn setup_and_upgrade() {
     let tmp = host("setup");
     let run = |args: &[&str], env: &[(&str, &Path)]| launchd(&tmp, Path::new(EXE), args, env);
     let (agents, local) = (tmp.join("Library/LaunchAgents"), tmp.join(".local/bin"));
-    let mode = |p: &Path, m| fs::set_permissions(p, fs::Permissions::from_mode(m));
+    let mode = |p: &Path, m| fs::set_permissions(p, Permissions::from_mode(m));
     let layout = tmp.join(".local/share/hotswap/routines");
     fs::create_dir_all(layout.join("1")).unwrap();
     symlink(EXE, layout.join("1/routine")).unwrap();
@@ -533,7 +533,7 @@ fn migration() {
     let exe = |p: &Path, body: &str| {
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, body).unwrap();
-        fs::set_permissions(p, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(p, Permissions::from_mode(0o755)).unwrap();
     };
     let put = |name: &str, body: &str| fs::write(tmp.join(name), body).unwrap();
     let read = |p: &Path| fs::read_to_string(p).unwrap();
@@ -750,7 +750,7 @@ cat > /dev/null
 case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;; fails) exit 1 ;; esac
 "#;
     fs::write(tmp.join("claude"), stub).unwrap();
-    fs::set_permissions(tmp.join("claude"), fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(tmp.join("claude"), Permissions::from_mode(0o755)).unwrap();
     tmp
 }
 
@@ -900,7 +900,7 @@ fn run() {
         if !matches!(name, "gone" | "") {
             routine_doc(&home, name, fm, block);
         }
-        let ro = |m| fs::set_permissions(st.join("ro"), fs::Permissions::from_mode(m));
+        let ro = |m| fs::set_permissions(st.join("ro"), Permissions::from_mode(m));
         match name {
             "ro" => {
                 fs::create_dir_all(st.join("ro")).unwrap();
@@ -1258,7 +1258,7 @@ fn due() {
     let pmset = |name: &str, body: &str| {
         let p = tmp.join(name);
         fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-        fs::set_permissions(&p, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&p, Permissions::from_mode(0o755)).unwrap();
         p.to_string_lossy().into_owned()
     };
     let caps = "Current System Capabilities are:";
@@ -1458,7 +1458,7 @@ fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String
         ),
     ] {
         fs::write(bin.join(n), stub).unwrap();
-        fs::set_permissions(bin.join(n), fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(bin.join(n), Permissions::from_mode(0o755)).unwrap();
     }
     let path = if launchd {
         format!("{}:/usr/bin", bin.display())
@@ -1943,9 +1943,9 @@ fn ack() {
         (Some(5), Some(0), Some(0), None)
     );
     assert_eq!(run(&["ack", "f", "--clear"]).0, Some(0));
-    fs::set_permissions(&st, fs::Permissions::from_mode(0o555)).unwrap();
+    fs::set_permissions(&st, Permissions::from_mode(0o555)).unwrap();
     let denied = run(&["ack", "f"]);
-    fs::set_permissions(&st, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(&st, Permissions::from_mode(0o755)).unwrap();
     let h = home.display();
     assert_eq!(
         denied,
@@ -2036,9 +2036,9 @@ fn pause() {
         (0o755, "resume", "", 0),
         (0o555, "pause", "write", 73),
     ] {
-        fs::set_permissions(&st, fs::Permissions::from_mode(mode)).unwrap();
+        fs::set_permissions(&st, Permissions::from_mode(mode)).unwrap();
         let got = at(now, &[v, "p"]);
-        fs::set_permissions(&st, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::set_permissions(&st, Permissions::from_mode(0o755)).unwrap();
         let err = format!(
             "routine: cannot {verb} {}/.state/p/paused\n",
             home.display()
