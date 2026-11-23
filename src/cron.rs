@@ -45,7 +45,7 @@ fn expand(field: &str, lo: i64, hi: i64) -> Option<Vec<i64>> {
     // bash's `IFS=, set -- $field`: one trailing comma splits to nothing
     let mut parts: Vec<_> = field.split(',').collect();
     if parts.last() == Some(&"") {
-        parts.pop();
+        _ = parts.pop();
     }
     let mut out = Vec::new();
     for part in parts {

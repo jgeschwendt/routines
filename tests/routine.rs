@@ -109,7 +109,7 @@ fn status() {
     let status = |env: &[(&str, &str)]| {
         let mut c = Command::new(EXE);
         for k in "HOME ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW".split(' ') {
-            c.env_remove(k);
+            _ = c.env_remove(k);
         }
         out(c
             .arg("status")
@@ -197,7 +197,7 @@ fn sync_ci() {
             || cwd.canonicalize().unwrap().display().to_string(),
             |suffix| format!("{}{suffix}", cwd.display()),
         );
-        c.env("PWD", if pwd.is_some() { &shown } else { "relative" });
+        _ = c.env("PWD", if pwd.is_some() { &shown } else { "relative" });
         let o = c.arg("sync-ci").current_dir(&cwd).output().unwrap();
         (
             o.status.code(),
@@ -288,7 +288,7 @@ fn host(name: &str) -> std::path::PathBuf {
 fn launchd(tmp: &Path, exe: &Path, args: &[&str], env: &[(&str, &Path)]) -> String {
     let mut c = Command::new(exe);
     for k in "MISE_DATA_DIR XDG_DATA_HOME XPC_SERVICE_NAME ROUTINE_DIR ROUTINE_STATE".split(' ') {
-        c.env_remove(k);
+        _ = c.env_remove(k);
     }
     let o = (c.args(args).env("HOME", tmp).current_dir(tmp))
         .env(
@@ -553,7 +553,7 @@ fn migration() {
         ),
     );
     fs::create_dir_all(installs.join("2")).unwrap();
-    fs::copy(EXE, installs.join("2/routine")).unwrap();
+    _ = fs::copy(EXE, installs.join("2/routine")).unwrap();
     symlink("./2", installs.join("global")).unwrap();
     let loaded = |program: &Path, state: &str| {
         let out = format!(
@@ -688,7 +688,7 @@ fn migration() {
     // 3, bumped in by 1 and set up through the shim, moves the host again past the red 2, and its
     // first tick from the link finds it up to date: setup recorded 3, so nothing swaps or prunes
     fs::create_dir_all(installs.join("3")).unwrap();
-    fs::copy(EXE, installs.join("3/routine")).unwrap();
+    _ = fs::copy(EXE, installs.join("3/routine")).unwrap();
     put("active", "3");
     put("tag", "3");
     loaded(&link, "running");
@@ -761,9 +761,10 @@ fn routine_doc(home: &Path, name: &str, fm: &str, block: Option<&str>) {
 fn routine_cmd(home: &Path, args: &[&str], env: &[(&str, String)]) -> Command {
     let mut c = Command::new(EXE);
     for k in "ROUTINE_DIR ROUTINE_STATE MODE".split(' ') {
-        c.env_remove(k);
+        _ = c.env_remove(k);
     }
-    c.args(args)
+    _ = c
+        .args(args)
         .env("ROUTINE_HOME", home)
         .env("ROUTINE_NOW", "1786698000")
         .env("ROUTINE_CLAUDE", home.parent().unwrap().join("claude"))
@@ -1110,7 +1111,7 @@ fn run_stops_on_a_signal() {
         for (sig, code) in [("HUP", 129), ("INT", 130), ("TERM", 143)] {
             let home = tmp.join(sig);
             routine_doc(&home, "sig", "on_error: fail", Some(block));
-            s.spawn(move || {
+            drop(s.spawn(move || {
                 let mut c = routine_cmd(&home, &["run", "sig"], &[])
                     .stdout(std::process::Stdio::null())
                     .spawn()
@@ -1125,7 +1126,7 @@ fn run_stops_on_a_signal() {
                         .args([&format!("-{sig}"), &pid])
                         .status()
                 };
-                kill(sig).unwrap();
+                _ = kill(sig).unwrap();
                 if sig == "TERM" {
                     thread::sleep(Duration::from_millis(500));
                     drop(kill(sig));
@@ -1135,7 +1136,7 @@ fn run_stops_on_a_signal() {
                 assert_eq!(rc, Some(code), "{sig}");
                 assert!(rec.contains(&format!("\"exit\":{code},")), "{sig}");
                 assert!(!st.join("lock").exists() && !alive(&st.join("member.pid")));
-            });
+            }));
         }
     });
 }
@@ -1160,7 +1161,7 @@ fn run_times_out() {
         for (name, block, mode, want) in cases {
             let home = tmp.join(name);
             routine_doc(&home, name, "timeout: 1", Some(block));
-            s.spawn(move || {
+            drop(s.spawn(move || {
                 let env = [("MODE", mode.to_owned())];
                 let o = routine_cmd(&home, &["run", name], &env).output().unwrap();
                 let out = String::from_utf8_lossy(&o.stdout);
@@ -1177,7 +1178,7 @@ fn run_times_out() {
                 );
                 assert!(name != "slow" || out.contains("block 1 · exit 143"));
                 assert!(name != "stubborn" || !alive(&st.join("member.pid")));
-            });
+            }));
         }
     });
 }
@@ -1437,7 +1438,7 @@ fn due_stops_on_a_signal() {
             thread::sleep(Duration::from_millis(50));
         }
         let pid = format!("{}{}", if group { "-" } else { "" }, c.id());
-        Command::new("kill")
+        _ = Command::new("kill")
             .args([&format!("-{sig}"), "--", &pid])
             .status()
             .unwrap();
