@@ -7,7 +7,7 @@ use std::{fs, path::Path};
 /// as one column. The last text is unpadded.
 fn cells(texts: [&str; 6]) -> String {
     let mut row = String::new();
-    for (t, w) in texts.iter().zip([21_usize, 17, 7, 6, 22]) {
+    for (t, w) in texts.iter().zip([21usize, 17, 7, 6, 22]) {
         row += t;
         row += &" ".repeat(w.saturating_sub(t.len() - 2 * t.matches('—').count()));
     }
