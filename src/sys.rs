@@ -67,7 +67,9 @@ extern "C" fn handler(sig: c_int) {
 fn action(sig: c_int, new: *const Action) -> Action {
     let mut old = Action::default();
     // SAFETY: `new` is null or a live `Action`, `old` a live one to fill; both are C's layout.
-    unsafe { _ = sigaction(sig, new, &raw mut old) };
+    unsafe {
+        _ = sigaction(sig, new, &raw mut old);
+    }
     old
 }
 
