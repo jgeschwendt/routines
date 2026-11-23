@@ -10,8 +10,8 @@
 
 use std::{
     ffi::c_int,
-    io::{self, Read},
-    os::{fd::AsRawFd, unix::process::CommandExt},
+    io::{self, Read as _},
+    os::{fd::AsRawFd as _, unix::process::CommandExt as _},
     process::{self, Command},
     ptr,
     sync::atomic::{AtomicI32, AtomicU32, Ordering::Relaxed},

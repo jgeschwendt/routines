@@ -5,7 +5,7 @@
 
 use std::{
     ffi::OsStr,
-    os::unix::ffi::OsStrExt,
+    os::unix::ffi::OsStrExt as _,
     path::Path,
     process::{Command, Output},
 };
@@ -55,7 +55,7 @@ fn help() {
 // one holding each kind of row, a paused one among them, and each skipped name.
 #[test]
 fn status() {
-    use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
+    use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt as _, os::unix::fs::symlink};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("status");
     let lock = |mode| fs::set_permissions(tmp.join("locked"), Permissions::from_mode(mode));
     drop(lock(0o700));
@@ -252,7 +252,7 @@ fn sync_ci() {
 /// while `bootstrap.code` exists, `kickstart` once per `kickstart.once`. curl's `releases/latest` lands on the tag in `tag`; `mise use`
 /// writes its version to `active`, which the fake mise's shim execs.
 fn host(name: &str) -> std::path::PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{name} &<>"));
     drop(
         Command::new("chmod")
@@ -355,7 +355,7 @@ fn due_plist(tmp: &Path) -> String {
 // links; `setup --remove` undoes it all, the upgrade agent and the layout through hotswap.
 #[test]
 fn setup_and_upgrade() {
-    use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
+    use std::{fs, os::unix::fs::PermissionsExt as _, os::unix::fs::symlink};
     let tmp = host("setup");
     let run = |args: &[&str], env: &[(&str, &Path)]| launchd(&tmp, Path::new(EXE), args, env);
     let (agents, local) = (tmp.join("Library/LaunchAgents"), tmp.join(".local/bin"));
@@ -503,7 +503,9 @@ fn setup_and_upgrade() {
 // again through its setup, and its first tick swaps green.
 #[test]
 fn migration() {
-    use std::{fs, os::unix::fs::PermissionsExt, os::unix::fs::symlink, thread, time::Duration};
+    use std::{
+        fs, os::unix::fs::PermissionsExt as _, os::unix::fs::symlink, thread, time::Duration,
+    };
     let tmp = host("migration");
     let xdg = tmp.join("xdg");
     let installs = xdg.join("mise/installs/packslip-jgeschwendt-routines");
@@ -716,7 +718,7 @@ fn migration() {
 /// auth probe (`hang`), logs out (`out`), outlives the deadline past its TERM-ignoring probe
 /// into a TERM-honouring agent (`gap`), repairs (`fix`) or fails the agent (`fails`).
 fn sandbox(name: &str) -> std::path::PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     drop(
         Command::new("chmod")
@@ -890,7 +892,7 @@ fn run_cases(h: &str) -> [Case; 18] {
 // and a runaway block's cut copy — then the tick journal's refusals.
 #[test]
 fn run() {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("run");
     let home = tmp.join("home");
     let h = home.to_string_lossy().into_owned();
@@ -1258,7 +1260,7 @@ fn due_home(home: &Path, docs: &str) {
 // 5 MB.
 #[test]
 fn due() {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("due");
     let pmset = |name: &str, body: &str| {
         let p = tmp.join(name);
@@ -1401,7 +1403,7 @@ fn due() {
 // block; the tick exits 143 or 130 with no `dispatched` line.
 #[test]
 fn due_stops_on_a_signal() {
-    use std::{os::unix::process::CommandExt, thread, time::Duration};
+    use std::{os::unix::process::CommandExt as _, thread, time::Duration};
     let tmp = sandbox("due-signal");
     let block = r#"echo $$ > "$ROUTINE_STATE_DIR/pid"; exec sleep 30"#;
     let t = "2026-08-14T09:00:00Z";
@@ -1453,7 +1455,7 @@ fn due_stops_on_a_signal() {
 /// and failing without it) when `launchd`, else neither; exit code, stdout and stderr, the home
 /// read as `<h>` and the uid as `$UID`.
 fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String, String) {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let bin = home.parent().unwrap().join("bin");
     fs::create_dir_all(&bin).unwrap();
     let t = bin.parent().unwrap().display();
@@ -1882,7 +1884,7 @@ unhealthy — 7 red · 1 finding(s)
 // state dir 73.
 #[test]
 fn ack() {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("ack");
     let home = tmp.join("home");
     routine_doc(&home, "f", "on_error: fail", Some("exit \"$(cat code)\""));
@@ -1976,7 +1978,7 @@ fn ack() {
 // nothing, and an unwritable state dir is 73 either way.
 #[test]
 fn pause() {
-    use std::{fs, os::unix::fs::PermissionsExt};
+    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("pause");
     let home = tmp.join("home");
     routine_doc(&home, "p", "schedule: \"0 * * * *\"", Some("true"));

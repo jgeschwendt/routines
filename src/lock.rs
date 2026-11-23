@@ -7,7 +7,7 @@ use crate::{cron::iso, record, state};
 use std::{
     ffi::OsStr,
     fs,
-    os::unix::process::ExitStatusExt,
+    os::unix::process::ExitStatusExt as _,
     path::Path,
     process::{self, Command, ExitStatus, Output},
 };
@@ -126,7 +126,7 @@ mod tests {
     use crate::doc::tests::scratch;
     use std::{
         fs,
-        os::unix::fs::PermissionsExt,
+        os::unix::fs::PermissionsExt as _,
         process::{self, Command},
         time::{Duration, SystemTime},
     };
