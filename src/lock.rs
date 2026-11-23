@@ -121,6 +121,7 @@ pub fn blocked(dir: &Path, started: i64) -> String {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 mod tests {
     use super::{acquire, blocked, holder, release, stale, started_at};
     use crate::doc::tests::scratch;

@@ -87,6 +87,7 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 pub mod tests {
     use super::{extract_blocks, frontmatter_get};
     use std::{env, fs, path::PathBuf, process};

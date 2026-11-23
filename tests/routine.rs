@@ -6,6 +6,7 @@
 )]
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 mod tests {
     use hotswap as _;
     use std::{

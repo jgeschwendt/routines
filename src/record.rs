@@ -104,6 +104,7 @@ pub fn log_file(dir: &Path, started: i64) -> PathBuf {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 mod tests {
     use super::{degrade, keep_tail, log_file, record, tick_log};
     use crate::doc::tests::scratch;
