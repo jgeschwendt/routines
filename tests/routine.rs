@@ -1,3 +1,5 @@
+//! The built binary on every verb against sandboxed homes, claude, launchctl, curl, pmset and mise
+//! stubbed.
 #![expect(
     clippy::too_many_lines,
     reason = "a test is one table of literal expectations"

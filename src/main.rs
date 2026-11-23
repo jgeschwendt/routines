@@ -1,3 +1,4 @@
+//! `routine` — executable markdown on rails.
 mod cron;
 mod doc;
 mod due;
