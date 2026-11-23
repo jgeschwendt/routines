@@ -4,7 +4,7 @@ use std::{
     env,
     ffi::OsString,
     fs::{self, File},
-    io::{Read, Seek, SeekFrom},
+    io::{Read as _, Seek as _, SeekFrom},
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
 };

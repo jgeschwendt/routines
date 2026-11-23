@@ -6,7 +6,7 @@ use crate::{
     cron::{self, iso},
     doc, lock, run, setup, state, status,
 };
-use std::{fmt::Write, fs, path::Path, process::Command, time::UNIX_EPOCH};
+use std::{fmt::Write as _, fs, path::Path, process::Command, time::UNIX_EPOCH};
 
 /// `s` as a JSON string: `"` and `\` escaped, every other control character `\u00XX`.
 fn json(s: &str) -> String {

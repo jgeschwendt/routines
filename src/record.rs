@@ -4,7 +4,7 @@
 use crate::{cron::iso, state};
 use std::{
     fs, io,
-    io::Write,
+    io::Write as _,
     path::{Path, PathBuf},
     process,
 };

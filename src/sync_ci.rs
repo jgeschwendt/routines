@@ -5,7 +5,7 @@ use std::{
     env,
     ffi::OsString,
     fs,
-    os::unix::fs::MetadataExt,
+    os::unix::fs::MetadataExt as _,
     path::{Path, PathBuf},
 };
 

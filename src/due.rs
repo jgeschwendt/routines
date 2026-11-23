@@ -6,7 +6,7 @@ use std::{
     env,
     ffi::OsStr,
     fs,
-    os::unix::process::ExitStatusExt,
+    os::unix::process::ExitStatusExt as _,
     path::Path,
     process::{Command, Stdio},
     sync::{Mutex, PoisonError},
