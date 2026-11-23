@@ -56,7 +56,7 @@ pub fn tick_log(states: &Path, now: i64, msg: &str) {
 /// degraded catch is invisible to status.
 pub fn degrade(dir: &Path, now: i64) {
     drop(fs::create_dir_all(dir));
-    drop(fs::write(dir.join("degraded"), iso(now) + "\n"));
+    drop(fs::write(dir.join("degraded"), format!("{}\n", iso(now))));
 }
 
 /// The run's record: `last-run.json` renamed into place (a crash mid-write never leaves an
@@ -168,7 +168,7 @@ mod tests {
             }
             record(&d, 1_786_698_000, 1_786_698_065, rc);
             let mut names: Vec<_> = (fs::read_dir(&d).unwrap())
-                .map(|e| e.unwrap().file_name().into_string().unwrap() + "\n")
+                .map(|e| format!("{}\n", e.unwrap().file_name().into_string().unwrap()))
                 .collect();
             names.sort();
             let line = format!(
@@ -176,9 +176,12 @@ mod tests {
             );
             let held = if after { "degraded\n" } else { "" };
             assert_eq!(
-                fs::read_to_string(d.join("last-run.json")).unwrap()
-                    + &fs::read_to_string(d.join("runs.jsonl")).unwrap()
-                    + &names.concat(),
+                format!(
+                    "{}{}{}",
+                    fs::read_to_string(d.join("last-run.json")).unwrap(),
+                    fs::read_to_string(d.join("runs.jsonl")).unwrap(),
+                    names.concat()
+                ),
                 format!("{line}{line}{held}last-run.json\nruns.jsonl\n")
             );
         }

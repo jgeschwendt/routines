@@ -44,7 +44,7 @@ fn take(dir: &Path) -> bool {
     let (lock, pid) = (dir.join("lock"), process::id().to_string());
     fs::create_dir(&lock).is_ok()
         && fs::write(lock.join("started"), started_at(&pid)).is_ok()
-        && fs::write(lock.join("pid"), pid + "\n").is_ok()
+        && fs::write(lock.join("pid"), format!("{pid}\n")).is_ok()
 }
 
 /// The lock's holder is dead. Only ESRCH is dead — EPERM (Seatbelt, another uid) is a live pid
