@@ -84,9 +84,10 @@ pub fn last_bytes(file: &Path, max: u64) -> (u64, Vec<u8>) {
     let tail = |mut f: File| {
         let cut = f.metadata().map_or(0, |m| m.len()).saturating_sub(max);
         let mut b = Vec::new();
-        let _ = f
-            .seek(SeekFrom::Start(cut))
-            .and_then(|_| f.read_to_end(&mut b));
+        drop(
+            f.seek(SeekFrom::Start(cut))
+                .and_then(|_| f.read_to_end(&mut b)),
+        );
         (cut, b)
     };
     File::open(file).map(tail).unwrap_or_default()

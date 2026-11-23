@@ -39,24 +39,24 @@ pub fn keep_tail(file: &Path, lines: bool, max: usize, keep: usize) {
     {
         let mut tmp = file.as_os_str().to_owned();
         tmp.push(format!(".trim.{}", process::id()));
-        let _ = fs::write(&tmp, tail(&b, keep)).and_then(|()| fs::rename(&tmp, file));
-        let _ = fs::remove_file(tmp);
+        drop(fs::write(&tmp, tail(&b, keep)).and_then(|()| fs::rename(&tmp, file)));
+        drop(fs::remove_file(tmp));
     }
 }
 
 /// A line in the sweep's own journal, `<states>/tick.log`, bounded at ~1 MB.
 pub fn tick_log(states: &Path, now: i64, msg: &str) {
     let f = states.join("tick.log");
-    let _ = fs::create_dir_all(states);
-    let _ = append(&f, &format!("{} {msg}\n", iso(now)));
+    drop(fs::create_dir_all(states));
+    drop(append(&f, &format!("{} {msg}\n", iso(now))));
     keep_tail(&f, false, 1_048_576, 2000);
 }
 
 /// The `degraded` marker: the log is per-run and the exit code the block's, so without it a
 /// degraded catch is invisible to status.
 pub fn degrade(dir: &Path, now: i64) {
-    let _ = fs::create_dir_all(dir);
-    let _ = fs::write(dir.join("degraded"), iso(now) + "\n");
+    drop(fs::create_dir_all(dir));
+    drop(fs::write(dir.join("degraded"), iso(now) + "\n"));
 }
 
 /// The run's record: `last-run.json` renamed into place (a crash mid-write never leaves an
@@ -64,12 +64,12 @@ pub fn degrade(dir: &Path, now: i64) {
 /// clears `degraded` before stamping, so the record and the marker never disagree; an exit
 /// other than the acked one drops `ack`, which never outlives the failure it held.
 pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
-    let _ = fs::create_dir_all(dir);
+    drop(fs::create_dir_all(dir));
     if rc == 0 {
-        let _ = fs::remove_file(dir.join("degraded"));
+        drop(fs::remove_file(dir.join("degraded")));
     }
     if state::json_get(&dir.join("ack"), "exit") != rc.to_string() {
-        let _ = fs::remove_file(dir.join("ack"));
+        drop(fs::remove_file(dir.join("ack")));
     }
     let line = format!(
         "{{\"started\":\"{}\",\"started_epoch\":{started},\"finished\":\"{}\",\"exit\":{rc},\"duration\":{},\"degraded\":{}}}\n",
@@ -79,9 +79,9 @@ pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
         dir.join("degraded").is_file()
     );
     let tmp = dir.join(format!("last-run.json.{}", process::id()));
-    let _ = fs::write(&tmp, &line).and_then(|()| fs::rename(&tmp, dir.join("last-run.json")));
+    drop(fs::write(&tmp, &line).and_then(|()| fs::rename(&tmp, dir.join("last-run.json"))));
     let runs = dir.join("runs.jsonl");
-    let _ = append(&runs, &line);
+    drop(append(&runs, &line));
     keep_tail(&runs, true, 5000, 2000);
 }
 
@@ -90,13 +90,13 @@ pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
 /// keeps two runs apart.
 pub fn log_file(dir: &Path, started: i64) -> PathBuf {
     let logs = dir.join("logs");
-    let _ = fs::create_dir_all(&logs);
+    drop(fs::create_dir_all(&logs));
     for e in fs::read_dir(&logs).into_iter().flatten().flatten() {
         if e.file_type().is_ok_and(|t| t.is_file())
             && e.file_name().as_encoded_bytes().ends_with(b".log")
             && state::age(&e.path()).is_some_and(|a| a >= 15 * 86400)
         {
-            let _ = fs::remove_file(e.path());
+            drop(fs::remove_file(e.path()));
         }
     }
     let stamp = iso(started).replace(['-', ':'], "");

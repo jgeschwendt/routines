@@ -100,15 +100,15 @@ pub fn setup(remove: bool) -> Result<(), String> {
     );
     if launchd {
         launchctl(&["bootout", &format!("{gui}/{OLD}")]);
-        let _ = fs::remove_file(agents.join(format!("{OLD}.plist")));
+        drop(fs::remove_file(agents.join(format!("{OLD}.plist"))));
     }
     if remove {
         if launchd {
             launchctl(&["bootout", &target]);
-            let _ = fs::remove_file(&plist);
+            drop(fs::remove_file(&plist));
             println!("removed {}", plist.display());
         }
-        let _ = fs::remove_file(home.join(".local/bin/routine"));
+        drop(fs::remove_file(home.join(".local/bin/routine")));
         return hotswap::forget(TOOL);
     }
     let link = hotswap::ensure(TOOL, &manifest())?;
@@ -118,7 +118,7 @@ pub fn setup(remove: bool) -> Result<(), String> {
         return Ok(());
     }
     for p in [&agents, &rhome, &st] {
-        let _ = fs::create_dir_all(p);
+        drop(fs::create_dir_all(p));
     }
     let body = tick(&link, &home);
     let fresh = fs::read_to_string(&plist).ok() != Some(body.clone());
@@ -127,7 +127,7 @@ pub fn setup(remove: bool) -> Result<(), String> {
         .and_then(|()| fs::rename(&tmp, &plist))
         .is_err()
     {
-        let _ = fs::remove_file(&tmp);
+        drop(fs::remove_file(&tmp));
         return Err(format!("cannot write {}", plist.display()));
     }
     let loaded = launchctl(&["print", &target]);

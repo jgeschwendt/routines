@@ -375,7 +375,7 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
     let (rc, msg) = if !known(&dir, name) {
         (64, format!("no routine {name}"))
     } else if why == ["--clear"] {
-        let _ = fs::remove_file(&f);
+        drop(fs::remove_file(&f));
         return 0;
     } else if let Some(e) = last_run(&states.join(name))
         .map(|l| l.2)

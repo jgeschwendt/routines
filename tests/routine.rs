@@ -58,8 +58,8 @@ fn status() {
     use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt, os::unix::fs::symlink};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("status");
     let lock = |mode| fs::set_permissions(tmp.join("locked"), Permissions::from_mode(mode));
-    let _ = lock(0o700);
-    let _ = fs::remove_dir_all(&tmp);
+    drop(lock(0o700));
+    drop(fs::remove_dir_all(&tmp));
     let sched = |s: &str| format!("---\nschedule: \"{s}\"\n---\n");
     let hourly = sched("0 * * * *");
     let run = |epoch: &str| {
@@ -179,7 +179,7 @@ two                  —                n/a    \n9    —                     3 
 fn sync_ci() {
     use std::{fs, os::unix::fs::symlink};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sync-ci");
-    let _ = fs::remove_dir_all(&tmp);
+    drop(fs::remove_dir_all(&tmp));
     fs::create_dir_all(tmp.join("real")).unwrap();
     symlink("real", tmp.join("link")).unwrap();
     let run = |blocked: bool, pwd: Option<&str>| {
@@ -254,12 +254,14 @@ fn sync_ci() {
 fn host(name: &str) -> std::path::PathBuf {
     use std::{fs, os::unix::fs::PermissionsExt};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{name} &<>"));
-    let _ = Command::new("chmod")
-        .arg("-R")
-        .arg("u+w")
-        .arg(&tmp)
-        .output();
-    let _ = fs::remove_dir_all(&tmp);
+    drop(
+        Command::new("chmod")
+            .arg("-R")
+            .arg("u+w")
+            .arg(&tmp)
+            .output(),
+    );
+    drop(fs::remove_dir_all(&tmp));
     fs::create_dir_all(tmp.join("bin")).unwrap();
     let stub = format!(
         "#!/bin/sh\np='{0}'; log=log\ncase \"$(ps -ww -o command= -p $PPID)\" in *bootout*) log=waiter.log;; esac\n\
@@ -299,7 +301,7 @@ fn launchd(tmp: &Path, exe: &Path, args: &[&str], env: &[(&str, &Path)]) -> Stri
         .output()
         .unwrap();
     let calls = std::fs::read_to_string(tmp.join("log")).unwrap_or_default();
-    let _ = std::fs::remove_file(tmp.join("log"));
+    drop(std::fs::remove_file(tmp.join("log")));
     let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
     let out = String::from_utf8([o.stdout, o.stderr].concat()).unwrap();
     format!("{}\n{out}{calls}", o.status.code().unwrap())
@@ -563,9 +565,11 @@ fn migration() {
     };
     // the host as the old release left it, mise bumped to 2
     let on_mise = || {
-        let _ = fs::remove_dir_all(&layout);
-        let _ = fs::remove_file(&link);
-        let _ = fs::remove_file(tmp.join(".local/state/hotswap/routines.mise"));
+        drop(fs::remove_dir_all(&layout));
+        drop(fs::remove_file(&link));
+        drop(fs::remove_file(
+            tmp.join(".local/state/hotswap/routines.mise"),
+        ));
         fs::create_dir_all(link.parent().unwrap()).unwrap();
         symlink(&shim, &link).unwrap();
         fs::create_dir_all(&agents).unwrap();
@@ -577,7 +581,7 @@ fn migration() {
         put("tag", "2");
         put("loaded", "");
         loaded(&shim, "running");
-        let _ = fs::write(&agent_log, "");
+        drop(fs::write(&agent_log, ""));
     };
     // the waiter's outcome once the agent's job stops running, the agent's log read and emptied;
     // launchd then runs the agent from the link
@@ -592,7 +596,7 @@ fn migration() {
         let out = read(&agent_log).replace(&tmp.display().to_string(), "~");
         let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
         fs::write(&agent_log, "").unwrap();
-        let _ = fs::remove_file(tmp.join("waiter.log"));
+        drop(fs::remove_file(tmp.join("waiter.log")));
         loaded(&link, "running");
         out.replace(&format!("gui/{}", uid.trim()), "gui/$UID")
     };
@@ -714,12 +718,14 @@ fn migration() {
 fn sandbox(name: &str) -> std::path::PathBuf {
     use std::{fs, os::unix::fs::PermissionsExt};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
-    let _ = Command::new("chmod")
-        .arg("-R")
-        .arg("u+w")
-        .arg(&tmp)
-        .output();
-    let _ = fs::remove_dir_all(&tmp);
+    drop(
+        Command::new("chmod")
+            .arg("-R")
+            .arg("u+w")
+            .arg(&tmp)
+            .output(),
+    );
+    drop(fs::remove_dir_all(&tmp));
     fs::create_dir_all(&tmp).unwrap();
     let stub = r#"#!/bin/sh
 if [ "$1" = auth ]; then
@@ -915,7 +921,7 @@ fn run() {
             &["run", name]
         };
         let o = routine_cmd(&home, args, &env).output().unwrap();
-        let _ = ro(0o755);
+        drop(ro(0o755));
         if name == "leak" {
             assert!(
                 !alive(&st.join("leak/leak.pid")),
@@ -1122,7 +1128,7 @@ fn run_stops_on_a_signal() {
                 kill(sig).unwrap();
                 if sig == "TERM" {
                     thread::sleep(Duration::from_millis(500));
-                    let _ = kill(sig);
+                    drop(kill(sig));
                 }
                 let rc = c.wait().unwrap().code();
                 let rec = fs::read_to_string(st.join("last-run.json")).unwrap();

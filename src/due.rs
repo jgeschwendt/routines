@@ -73,7 +73,7 @@ fn rotate(states: &Path) {
     if fs::metadata(&f).is_ok_and(|m| m.len() > 5_242_880)
         && fs::copy(&f, states.join("due.log.1")).is_ok()
     {
-        let _ = fs::write(&f, "");
+        drop(fs::write(&f, ""));
     }
 }
 

@@ -96,7 +96,7 @@ pub(crate) mod tests {
         let dir = std::env::current_exe()
             .unwrap()
             .with_file_name(format!("{name}.{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
+        drop(fs::remove_dir_all(&dir));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
