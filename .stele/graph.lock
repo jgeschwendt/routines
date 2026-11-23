@@ -38,7 +38,7 @@
     },
     "pause": {
       "file": "src/health.rs",
-      "line": 398,
+      "line": 401,
       "node": "src"
     }
   },
@@ -79,7 +79,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         }
       ],
@@ -109,7 +109,7 @@
           "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
             "digest": "8d8777472a7097099f23eb17a4942e5b6df46a8c36d1b40e856ef91487766a86",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -121,7 +121,7 @@
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": "63863113cc138715e7b7704b8525f754271e65145a8e63214c5ae28462d4519d",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -133,7 +133,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": "f0fa60f9304aa8de8f7ef255080867ffd644d8970da7cee52a35d326b313ba6f",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -145,7 +145,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -157,7 +157,7 @@
           "text": "health is derived from the runner's own parsers and state — a doc health calls lint is one run refuses, and an ack never outlives the exit it acknowledged",
           "verified": {
             "digest": "57289d0181066e065ff2b5234b4cf9b9a8a134d3ff5e7f062740e0c8c82497c2",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -169,7 +169,7 @@
           "text": "last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": "66b1c1dc816840e643dc8ed1448fe2ae6e099e204635f58a476c55ce120ad692",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -181,7 +181,7 @@
           "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": "c7ab48f8d0e799b04704d8d500303d79d89bfb9a2e1fee62314bf52e0b283794",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         },
         {
@@ -189,11 +189,11 @@
           "enforced_by": null,
           "id": "pause",
           "kind": "invariant",
-          "resolved": "src/health.rs:398",
+          "resolved": "src/health.rs:401",
           "text": "a pause is the paused marker's presence, whatever it holds — the tick never dispatches a paused routine, health never calls it due, stale or red, and run <name> still runs it",
           "verified": {
             "digest": "e0f7e68f08d8c8a9d5080024a7c8e297cfabad2f0cc1ea98fee68839444d38cc",
-            "sha": "f402d65fd9313a56dc86ce2a248f2af7abe74eed"
+            "sha": "ff26a2f19943999e4c7ca04cc85e3a31ef03c08a"
           }
         }
       ],
