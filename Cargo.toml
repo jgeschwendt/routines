@@ -5,6 +5,8 @@ edition = "2024"
 description = "routine — executable markdown on rails"
 # SPDX id, not `license-file`: crates.io and dependency scanners read `license`.
 license = "PolyForm-Noncommercial-1.0.0"
+# A git dependency (hotswap) keeps it off crates.io; packslip ships the releases.
+publish = false
 readme = "README.md"
 repository = "https://github.com/jgeschwendt/routines"
 
