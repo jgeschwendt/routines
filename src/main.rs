@@ -49,7 +49,7 @@ fn main() -> ExitCode {
         .skip(1)
         .map(|a| a.to_string_lossy().into_owned())
         .collect();
-    let code = match &args.iter().map(String::as_str).collect::<Vec<_>>()[..] {
+    let code = match &*args.iter().map(String::as_str).collect::<Vec<_>>() {
         [] | ["" | "help" | "-h" | "--help", ..] => {
             print!("{USAGE}");
             0
