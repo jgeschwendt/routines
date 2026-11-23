@@ -17,43 +17,44 @@ pub fn append(file: &Path, text: &str) -> io::Result<()> {
     .write_all(text.as_bytes())
 }
 
-/// The last `n` (≥ 1) lines of `b` as `tail -n` counts them: an unterminated last line is one.
+/// The last `n` (≥ 1) lines of `bytes` as `tail -n` counts them: an unterminated last line is
+/// one.
 #[expect(
     clippy::indexing_slicing,
     reason = "each index is one the slice's own range yields"
 )]
-pub fn tail(b: &[u8], n: usize) -> &[u8] {
-    let body = b.strip_suffix(b"\n").unwrap_or(b);
+pub fn tail(bytes: &[u8], n: usize) -> &[u8] {
+    let body = bytes.strip_suffix(b"\n").unwrap_or(bytes);
     let cut = (0..body.len())
         .rev()
         .filter(|&i| body[i] == b'\n')
         .nth(n.saturating_sub(1));
-    &b[cut.map_or(0, |i| i.saturating_add(1))..]
+    &bytes[cut.map_or(0, |i| i.saturating_add(1))..]
 }
 
 /// Once `file` holds more than `max` lines (bytes unless `lines`), its last `keep` lines,
 /// renamed into place — never rewritten in the reader's fd.
 pub fn keep_tail(file: &Path, lines: bool, max: usize, keep: usize) {
-    let Ok(b) = fs::read(file) else { return };
+    let Ok(bytes) = fs::read(file) else { return };
     if (if lines {
-        b.split(|&c| c == b'\n').count().saturating_sub(1)
+        bytes.split(|&byte| byte == b'\n').count().saturating_sub(1)
     } else {
-        b.len()
+        bytes.len()
     }) > max
     {
         let mut tmp = file.as_os_str().to_owned();
         tmp.push(format!(".trim.{}", process::id()));
-        drop(fs::write(&tmp, tail(&b, keep)).and_then(|()| fs::rename(&tmp, file)));
+        drop(fs::write(&tmp, tail(&bytes, keep)).and_then(|()| fs::rename(&tmp, file)));
         drop(fs::remove_file(tmp));
     }
 }
 
 /// A line in the sweep's own journal, `<states>/tick.log`, bounded at ~1 MB.
 pub fn tick_log(states: &Path, now: i64, msg: &str) {
-    let f = states.join("tick.log");
+    let log = states.join("tick.log");
     drop(fs::create_dir_all(states));
-    drop(append(&f, &format!("{} {msg}\n", iso(now))));
-    keep_tail(&f, false, 1 << 20, 2000);
+    drop(append(&log, &format!("{} {msg}\n", iso(now))));
+    keep_tail(&log, false, 1 << 20, 2000);
 }
 
 /// The `degraded` marker: the log is per-run and the exit code the block's, so without it a
@@ -113,12 +114,12 @@ pub fn log_file(dir: &Path, started: i64) -> PathBuf {
         clippy::filetype_is_file,
         reason = "find's -type f: only a regular file is pruned"
     )]
-    for e in fs::read_dir(&logs).into_iter().flatten().flatten() {
-        if e.file_type().is_ok_and(|t| t.is_file())
-            && e.file_name().as_encoded_bytes().ends_with(b".log")
-            && state::age(&e.path()).is_some_and(|a| a >= 15 * 86400)
+    for entry in fs::read_dir(&logs).into_iter().flatten().flatten() {
+        if entry.file_type().is_ok_and(|kind| kind.is_file())
+            && entry.file_name().as_encoded_bytes().ends_with(b".log")
+            && state::age(&entry.path()).is_some_and(|age| age >= 15 * 86400)
         {
-            drop(fs::remove_file(e.path()));
+            drop(fs::remove_file(entry.path()));
         }
     }
     let stamp = iso(started).replace(['-', ':'], "");
@@ -151,17 +152,17 @@ mod tests {
         ];
         let dir = scratch("keep_tail");
         let ours: Vec<_> = (cases.iter().enumerate())
-            .map(|(i, c)| {
-                let f = dir.join(format!("{i}.rs"));
-                fs::write(&f, c.0).unwrap();
-                let mut args = c.1.split(' ');
+            .map(|(i, case)| {
+                let file = dir.join(format!("{i}.rs"));
+                fs::write(&file, case.0).unwrap();
+                let mut args = case.1.split(' ');
                 let lines = args.next() == Some("l");
                 let max = args.next().unwrap().parse().unwrap();
-                keep_tail(&f, lines, max, args.next().unwrap().parse().unwrap());
-                fs::read_to_string(f).unwrap()
+                keep_tail(&file, lines, max, args.next().unwrap().parse().unwrap());
+                fs::read_to_string(file).unwrap()
             })
             .collect();
-        let want: Vec<_> = cases.iter().map(|c| c.2.to_owned()).collect();
+        let want: Vec<_> = cases.iter().map(|case| case.2.to_owned()).collect();
         assert_eq!(ours, want);
         keep_tail(&dir.join("missing"), true, 0, 1);
         assert!(!dir.join("missing").exists());
@@ -180,14 +181,14 @@ mod tests {
         .into_iter()
         .enumerate()
         {
-            let d = dir.join(i.to_string());
-            fs::create_dir_all(&d).unwrap();
+            let run_dir = dir.join(i.to_string());
+            fs::create_dir_all(&run_dir).unwrap();
             if before {
-                fs::write(d.join("degraded"), "").unwrap();
+                fs::write(run_dir.join("degraded"), "").unwrap();
             }
-            record(&d, 1_786_698_000, 1_786_698_065, rc);
-            let mut names: Vec<_> = (fs::read_dir(&d).unwrap())
-                .map(|e| format!("{}\n", e.unwrap().file_name().into_string().unwrap()))
+            record(&run_dir, 1_786_698_000, 1_786_698_065, rc);
+            let mut names: Vec<_> = (fs::read_dir(&run_dir).unwrap())
+                .map(|entry| format!("{}\n", entry.unwrap().file_name().into_string().unwrap()))
                 .collect();
             names.sort();
             let line = format!(
@@ -197,8 +198,8 @@ mod tests {
             assert_eq!(
                 format!(
                     "{}{}{}",
-                    fs::read_to_string(d.join("last-run.json")).unwrap(),
-                    fs::read_to_string(d.join("runs.jsonl")).unwrap(),
+                    fs::read_to_string(run_dir.join("last-run.json")).unwrap(),
+                    fs::read_to_string(run_dir.join("runs.jsonl")).unwrap(),
                     names.concat()
                 ),
                 format!("{line}{line}{held}last-run.json\nruns.jsonl\n")
@@ -231,20 +232,20 @@ mod tests {
             ("old.txt", 30 * day),
             ("dir.log", 30 * day),
         ] {
-            let p = logs.join(name);
+            let path = logs.join(name);
             fs::create_dir_all(&logs).unwrap();
             if name == "dir.log" {
-                fs::create_dir_all(&p).unwrap();
+                fs::create_dir_all(&path).unwrap();
             } else {
-                fs::write(&p, "").unwrap();
+                fs::write(&path, "").unwrap();
             }
-            let t = SystemTime::now() - Duration::from_secs(age);
-            fs::File::open(&p).unwrap().set_modified(t).unwrap();
+            let mtime = SystemTime::now() - Duration::from_secs(age);
+            fs::File::open(&path).unwrap().set_modified(mtime).unwrap();
         }
         symlink("old.log", logs.join("link.log")).unwrap();
         let log = log_file(&st.join("r"), 1_786_698_000);
         let mut left: Vec<_> = (fs::read_dir(&logs).unwrap())
-            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
             .collect();
         left.sort();
         assert_eq!(

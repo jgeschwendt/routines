@@ -26,13 +26,15 @@ fn kids() -> MutexGuard<'static, (Vec<i32>, Option<i32>)> {
 #[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn due(now: i64) -> i32 {
     let (dir, states, _) = state::roots();
-    let log = |m: &str| record::tick_log(&states, state::now().unwrap_or(now), m);
+    let log = |message: &str| record::tick_log(&states, state::now().unwrap_or(now), message);
     rotate(&states);
     let due = sweep(&dir, &states, now);
     sys::catch(|sig| {
-        let mut k = kids();
-        k.1 = Some(sig.saturating_add(128));
-        k.0.iter().for_each(|&p| _ = sys::signal(p, sys::TERM));
+        let mut held = kids();
+        held.1 = Some(sig.saturating_add(128));
+        held.0
+            .iter()
+            .for_each(|&pid| _ = sys::signal(pid, sys::TERM));
     });
     let pmset = state::var("ROUTINE_PMSET").unwrap_or_else(|| "pmset".into());
     // a signal during the probe falls through to the dispatch, which then starts none
@@ -45,26 +47,28 @@ pub fn due(now: i64) -> i32 {
     // spawned under the lock: a signal either sees the pid or stops the spawn
     let runs: Vec<_> = (due.iter())
         .filter_map(|name| {
-            let mut k = kids();
-            k.1.is_none().then(|| {
+            let mut held = kids();
+            held.1.is_none().then(|| {
                 log(&format!("dispatch {name}"));
-                let mut c = Command::new(&exe);
-                let child = sys::background(c.args(["run", name]).stdin(Stdio::null())).spawn();
-                k.0.extend(child.as_ref().map(|c| c.id().cast_signed()));
+                let mut command = Command::new(&exe);
+                let child =
+                    sys::background(command.args(["run", name]).stdin(Stdio::null())).spawn();
+                held.0
+                    .extend(child.as_ref().map(|spawned| spawned.id().cast_signed()));
                 (name, child)
             })
         })
         .collect();
     let mut rc = 0;
     for (name, child) in runs {
-        let s = child.and_then(|mut c| c.wait());
+        let exit = child.and_then(|mut process| process.wait());
         #[expect(
             clippy::or_fun_call,
             reason = "eager: a lazy default runs in no test, and the line coverage drops"
         )]
-        let code = s.map_or(127, |s| {
-            s.code()
-                .unwrap_or(s.signal().unwrap_or(0).saturating_add(128))
+        let code = exit.map_or(127, |exit| {
+            exit.code()
+                .unwrap_or(exit.signal().unwrap_or(0).saturating_add(128))
         });
         if kids().1.is_none() {
             rc |= i32::from(code != 0);
@@ -81,11 +85,11 @@ pub fn due(now: i64) -> i32 {
     reason = "a named step of the tick: due.log's copy-truncate"
 )]
 fn rotate(states: &Path) {
-    let f = states.join("due.log");
-    if fs::metadata(&f).is_ok_and(|m| m.len() > 5_242_880)
-        && fs::copy(&f, states.join("due.log.1")).is_ok()
+    let log = states.join("due.log");
+    if fs::metadata(&log).is_ok_and(|metadata| metadata.len() > 5_242_880)
+        && fs::copy(&log, states.join("due.log.1")).is_ok()
     {
-        drop(fs::write(&f, ""));
+        drop(fs::write(&log, ""));
     }
 }
 
@@ -96,8 +100,8 @@ fn rotate(states: &Path) {
     reason = "a named step of the tick: the due list and its tick line"
 )]
 fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
-    let names = state::routines(dir, |f, why| {
-        record::tick_log(states, now, &format!("skip {f}: {why}"));
+    let names = state::routines(dir, |file, why| {
+        record::tick_log(states, now, &format!("skip {file}: {why}"));
     });
     let (mut due, mut next) = (vec![], vec![]);
     for name in &names {
@@ -110,11 +114,11 @@ fn sweep(dir: &Path, states: &Path, now: i64) -> Vec<String> {
             None => next.push(format!("{name}@bad")),
         }
     }
-    let or_dash = |v: &[String]| {
-        if v.is_empty() {
+    let or_dash = |parts: &[String]| {
+        if parts.is_empty() {
             "-".into()
         } else {
-            v.join(",")
+            parts.join(",")
         }
     };
     let line = format!(
@@ -139,12 +143,12 @@ fn dark_wake(pmset: &OsStr) -> bool {
         .args(["-g", "systemstate"])
         .stderr(Stdio::null())
         .output()
-        .map(|o| o.stdout)
+        .map(|output| output.stdout)
         .unwrap_or_default();
     let out = String::from_utf8_lossy(&out);
     let mut caps = out
         .lines()
-        .filter(|l| l.starts_with("Current System Capabilities are:"))
+        .filter(|line| line.starts_with("Current System Capabilities are:"))
         .peekable();
-    caps.peek().is_some() && !caps.any(|l| l.contains("Graphics"))
+    caps.peek().is_some() && !caps.any(|line| line.contains("Graphics"))
 }

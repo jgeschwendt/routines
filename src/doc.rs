@@ -1,18 +1,22 @@
 //! The document: frontmatter and fenced blocks.
 
-/// Up to `n` leading spaces off `line`.
+/// Up to `max` leading spaces off `line`.
 #[expect(
     clippy::string_slice,
     reason = "the cut counts ASCII spaces: a char boundary"
 )]
-fn dedent(line: &str, n: usize) -> &str {
-    &line[line.bytes().take(n).take_while(|&b| b == b' ').count()..]
+fn dedent(line: &str, max: usize) -> &str {
+    &line[line
+        .bytes()
+        .take(max)
+        .take_while(|&byte| byte == b' ')
+        .count()..]
 }
 
 /// Each line, cut at its first NUL — where awk's C strings end.
 fn lines(text: &str) -> impl Iterator<Item = &str> {
     text.split_terminator('\n')
-        .map(|l| l.split('\0').next().unwrap_or(l))
+        .map(|line| line.split('\0').next().unwrap_or(line))
 }
 
 /// A flat `key: value` from the leading `---` fence pair; the first match wins.
@@ -22,28 +26,28 @@ fn lines(text: &str) -> impl Iterator<Item = &str> {
     reason = "the cut is an ASCII blank's offset: a char boundary"
 )]
 pub fn frontmatter_get(text: &str, key: &str) -> Option<String> {
-    let mut lines = lines(text).map(|l| l.trim_end_matches([' ', '\t', '\r']));
+    let mut lines = lines(text).map(|line| line.trim_end_matches([' ', '\t', '\r']));
     let first = lines.next()?;
     if first.strip_prefix('\u{feff}').unwrap_or(first) != "---" {
         return None;
     }
-    for line in lines.take_while(|&l| l != "---") {
-        let Some((k, v)) = line.split_once(':') else {
+    for line in lines.take_while(|&line| line != "---") {
+        let Some((field, value)) = line.split_once(':') else {
             continue;
         };
         // ` # …` is a comment; `#` with no blank before it is value
-        let cut = v
+        let cut = value
             .as_bytes()
             .windows(2)
-            .position(|w| matches!(w, [b' ' | b'\t', b'#']))
-            .unwrap_or(v.len());
-        let v = v[..cut].trim_matches([' ', '\t']);
-        if k.trim_matches([' ', '\t']) == key {
+            .position(|pair| matches!(pair, [b' ' | b'\t', b'#']))
+            .unwrap_or(value.len());
+        let value = value[..cut].trim_matches([' ', '\t']);
+        if field.trim_matches([' ', '\t']) == key {
             // `*/15 * * * *` is a YAML alias unquoted, so a quoted value is the natural spelling
             let unquoted = ['"', '\'']
                 .into_iter()
-                .find_map(|q| v.strip_prefix(q)?.strip_suffix(q));
-            return Some(unquoted.unwrap_or(v).to_owned());
+                .find_map(|quote| value.strip_prefix(quote)?.strip_suffix(quote));
+            return Some(unquoted.unwrap_or(value).to_owned());
         }
     }
     None
@@ -60,22 +64,25 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
     let mut comment = false;
     for line in lines(text) {
         let line = line.strip_suffix('\r').unwrap_or(line);
-        let t = dedent(line, 3);
+        let dedented = dedent(line, 3);
         if let Some((ch, len, ind, keep)) = fence {
-            let f = t.trim_end_matches([' ', '\t']);
-            if f.len() >= len && f.chars().all(|c| c == ch) {
+            let closer = dedented.trim_end_matches([' ', '\t']);
+            if closer.len() >= len && closer.chars().all(|glyph| glyph == ch) {
                 fence = None;
-            } else if let (true, Some(b)) = (keep, blocks.last_mut()) {
-                *b += dedent(line, ind);
-                b.push('\n');
+            } else if let (true, Some(block)) = (keep, blocks.last_mut()) {
+                *block += dedent(line, ind);
+                block.push('\n');
             }
         } else if comment {
             comment = !line.contains("-->");
-        } else if let Some(rest) = t.strip_prefix("<!").filter(|r| r.starts_with("--")) {
+        } else if let Some(rest) = dedented
+            .strip_prefix("<!")
+            .filter(|after| after.starts_with("--"))
+        {
             comment = !rest.contains("-->");
-        } else if let Some(ch @ ('`' | '~')) = t.chars().next() {
-            let info = t.trim_start_matches(ch);
-            let len = t.len().saturating_sub(info.len());
+        } else if let Some(ch @ ('`' | '~')) = dedented.chars().next() {
+            let info = dedented.trim_start_matches(ch);
+            let len = dedented.len().saturating_sub(info.len());
             if len < 3 || ch == '`' && info.contains('`') {
                 continue;
             }
@@ -88,7 +95,7 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
             if keep {
                 blocks.push(String::new());
             }
-            fence = Some((ch, len, line.len().saturating_sub(t.len()), keep));
+            fence = Some((ch, len, line.len().saturating_sub(dedented.len()), keep));
         }
     }
     blocks
@@ -151,8 +158,11 @@ pub mod tests {
             ("---\nk: a\0b\n---\n", "k", Some("a")), // awk's lines end at a NUL
             ("---\0\nk: v\n---\n", "k", Some("v")),
         ];
-        let ours: Vec<_> = cases.iter().map(|c| frontmatter_get(c.0, c.1)).collect();
-        let want: Vec<_> = cases.iter().map(|c| c.2.map(str::to_owned)).collect();
+        let ours: Vec<_> = cases
+            .iter()
+            .map(|case| frontmatter_get(case.0, case.1))
+            .collect();
+        let want: Vec<_> = cases.iter().map(|case| case.2.map(str::to_owned)).collect();
         assert_eq!(ours, want);
     }
 
@@ -191,10 +201,10 @@ pub mod tests {
             ("```sh\necho a\0b\n```\n", &["echo a\n"]), // awk's lines end at a NUL
             ("```sh\0\nx\n```\n", &["x\n"]),
         ];
-        let ours: Vec<_> = cases.iter().map(|c| extract_blocks(c.0)).collect();
+        let ours: Vec<_> = cases.iter().map(|case| extract_blocks(case.0)).collect();
         let want: Vec<Vec<_>> = cases
             .iter()
-            .map(|c| c.1.iter().map(|&b| b.to_owned()).collect())
+            .map(|case| case.1.iter().map(|&block| block.to_owned()).collect())
             .collect();
         assert_eq!(ours, want);
     }

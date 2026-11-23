@@ -82,8 +82,8 @@ fn action(sig: c_int, new: *const Action) -> Action {
 /// A signal ignored at entry stays ignored, as bash's traps leave it (`nohup`, a background
 /// job's INT).
 pub fn catch<F: FnOnce(c_int) + Send + 'static>(on: F) {
-    let Ok((mut r, w)) = io::pipe() else { return };
-    FD.store(w.into_raw_fd(), Relaxed);
+    let Ok((mut rx, tx)) = io::pipe() else { return };
+    FD.store(tx.into_raw_fd(), Relaxed);
     PID.store(process::id(), Relaxed);
     #[expect(
         trivial_casts,
@@ -102,9 +102,9 @@ pub fn catch<F: FnOnce(c_int) + Send + 'static>(on: F) {
         }
     }
     drop(thread::spawn(move || {
-        let mut b = [0];
-        drop(r.read_exact(&mut b));
-        on(b[0].into());
+        let mut byte = [0];
+        drop(rx.read_exact(&mut byte));
+        on(byte[0].into());
     }));
 }
 

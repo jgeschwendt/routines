@@ -36,11 +36,11 @@ mod tests {
     );
 
     /// Exit code, stdout, stderr.
-    fn out(o: Output) -> (Option<i32>, String, String) {
+    fn out(output: Output) -> (Option<i32>, String, String) {
         (
-            o.status.code(),
-            String::from_utf8(o.stdout).unwrap(),
-            String::from_utf8_lossy(&o.stderr).into_owned(),
+            output.status.code(),
+            String::from_utf8(output.stdout).unwrap(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
         )
     }
 
@@ -56,7 +56,7 @@ mod tests {
     fn help() {
         let run = |args: &[&[u8]]| {
             out(Command::new(EXE)
-                .args(args.iter().map(|a| OsStr::from_bytes(a)))
+                .args(args.iter().map(|arg| OsStr::from_bytes(arg)))
                 .output()
                 .unwrap())
         };
@@ -70,8 +70,8 @@ mod tests {
             assert_eq!(run(&[verb, b"x"]), (Some(64), String::new(), err));
         }
         let version = option_env!("ROUTINE_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"));
-        let v = (Some(0), format!("routine {version}\n"), String::new());
-        assert_eq!((run(&[b"--version"]), run(&[b"-V"])), (v.clone(), v));
+        let want = (Some(0), format!("routine {version}\n"), String::new());
+        assert_eq!((run(&[b"--version"]), run(&[b"-V"])), (want.clone(), want));
     }
 
     // `routine status` — stdout, stderr and exit code — for every fixture home: missing, empty, and
@@ -82,7 +82,7 @@ mod tests {
         let lock = |mode| fs::set_permissions(tmp.join("locked"), Permissions::from_mode(mode));
         drop(lock(0o700));
         drop(fs::remove_dir_all(&tmp));
-        let sched = |s: &str| format!("---\nschedule: \"{s}\"\n---\n");
+        let sched = |expr: &str| format!("---\nschedule: \"{expr}\"\n---\n");
         let hourly = sched("0 * * * *");
         let run = |epoch: &str| {
             format!(
@@ -119,9 +119,9 @@ mod tests {
             ("full/.hidden.md", &hourly),
             ("full/notes.txt", &hourly),
         ] {
-            let p = tmp.join(path);
-            fs::create_dir_all(p.parent().unwrap()).unwrap();
-            fs::write(p, body).unwrap();
+            let path = tmp.join(path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
         }
         fs::create_dir_all(tmp.join("full/dir.md")).unwrap();
         fs::create_dir_all(tmp.join("empty")).unwrap();
@@ -129,11 +129,11 @@ mod tests {
         lock(0o600).unwrap(); // readable, unsearchable: a.md fails [ -e ] and [ -L ] alike
         let full = tmp.join("full").to_string_lossy().into_owned();
         let status = |env: &[(&str, &str)]| {
-            let mut c = Command::new(EXE);
-            for k in "HOME ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW".split(' ') {
-                _ = c.env_remove(k);
+            let mut command = Command::new(EXE);
+            for var in "HOME ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_NOW".split(' ') {
+                _ = command.env_remove(var);
             }
-            out(c
+            out(command
                 .arg("status")
                 .envs(env.iter().copied())
                 .current_dir(&tmp)
@@ -144,7 +144,7 @@ mod tests {
         let head =
             "NAME                 SCHEDULE         DUE    EXIT  FINISHED              SECS\n";
         // without ROUTINE_NOW the clock is real, long past recent's next fire
-        let rows = |recent: &str| {
+        let rows = |due_cell: &str| {
             format!(
             "{head}a-routine-name-past-21-columns0 * * * *        due    —     —                     —
 ahead                0 * * * *        due    0     2026-08-14T09:00:05Z  5
@@ -155,7 +155,7 @@ never                0 * * * *        due    —     —                     —
 nul                  0 * * * *        due    —     —                     —
 past                 0 * * * *        due    0     2026-08-14T09:00:05Z  5
 paused               0 * * * *        paused 0     2026-08-14T09:00:05Z  5
-recent               0 * * * *        {recent}0     2026-08-14T09:00:05Z  5
+recent               0 * * * *        {due_cell}0     2026-08-14T09:00:05Z  5
 two                  —                n/a    \n9    —                     3 · degraded since since — then
 "
         )
@@ -181,15 +181,16 @@ two                  —                n/a    \n9    —                     3 
                 Some("—      "),
             ),
         ] {
-            let want = want.map_or_else(|| (head.to_owned(), ""), |r| (rows(r), skips));
+            let want =
+                want.map_or_else(|| (head.to_owned(), ""), |due_cell| (rows(due_cell), skips));
             assert_eq!(status(env), (Some(0), want.0, want.1.to_owned()), "{env:?}");
         }
         lock(0o700).unwrap();
         // only space, tab and newline are blanks
-        for v in ["x", "\u{a0}5", "\u{b}5", "\u{c}5", "5\r"] {
-            let err = format!("routine: ROUTINE_NOW={v} is not an integer\n");
+        for value in ["x", "\u{a0}5", "\u{b}5", "\u{c}5", "5\r"] {
+            let err = format!("routine: ROUTINE_NOW={value} is not an integer\n");
             assert_eq!(
-                status(&[("ROUTINE_NOW", v)]),
+                status(&[("ROUTINE_NOW", value)]),
                 (Some(64), String::new(), err)
             );
         }
@@ -212,18 +213,18 @@ two                  —                n/a    \n9    —                     3 
             if blocked {
                 fs::create_dir_all(wfs.join("routines.yaml")).unwrap();
             }
-            let mut c = Command::new(EXE);
+            let mut command = Command::new(EXE);
             let cwd = tmp.join("link").join(&name);
             // without a matching PWD, the resolved path
             let shown = pwd.map_or_else(
                 || cwd.canonicalize().unwrap().display().to_string(),
                 |suffix| format!("{}{suffix}", cwd.display()),
             );
-            _ = c.env("PWD", if pwd.is_some() { &shown } else { "relative" });
-            let o = c.arg("sync-ci").current_dir(&cwd).output().unwrap();
+            _ = command.env("PWD", if pwd.is_some() { &shown } else { "relative" });
+            let output = command.arg("sync-ci").current_dir(&cwd).output().unwrap();
             (
-                o.status.code(),
-                String::from_utf8(o.stdout)
+                output.status.code(),
+                String::from_utf8(output.stdout)
                     .unwrap()
                     .replace(&shown, "<cwd>"),
                 fs::read_to_string(wfs.join("routines.yaml")).ok(),
@@ -245,20 +246,20 @@ two                  —                n/a    \n9    —                     3 
         for (env, shown) in [("", "<cwd>"), ("-u PWD", ".")] {
             let gone = tmp.join(format!("gone{}", env.len()));
             fs::create_dir_all(&gone).unwrap();
-            let g = gone.display();
-            let o = Command::new("/bin/sh")
+            let gone_shown = gone.display();
+            let output = Command::new("/bin/sh")
                 .arg("-c")
                 .arg(format!(
-                    "cd {g} && rmdir {g} && exec env {env} \"$0\" sync-ci"
+                    "cd {gone_shown} && rmdir {gone_shown} && exec env {env} \"$0\" sync-ci"
                 ))
                 .arg(EXE)
                 .output()
                 .unwrap();
-            let out = String::from_utf8(o.stdout)
+            let out = String::from_utf8(output.stdout)
                 .unwrap()
-                .replace(&*g.to_string(), "<cwd>");
+                .replace(&*gone_shown.to_string(), "<cwd>");
             assert_eq!(
-                (o.status.code(), out),
+                (output.status.code(), out),
                 (
                     Some(0),
                     format!("wrote {shown}/.github/workflows/routines.yaml\n")
@@ -307,12 +308,13 @@ two                  —                n/a    \n9    —                     3 
     /// `exe args` as launchd runs it under `tmp`'s HOME and stubs: exit code, stdout and stderr, then
     /// the stubs' log, `tmp` read as `~` and the uid as `$UID`.
     fn launchd(tmp: &Path, exe: &Path, args: &[&str], env: &[(&str, &Path)]) -> String {
-        let mut c = Command::new(exe);
-        for k in "MISE_DATA_DIR XDG_DATA_HOME XPC_SERVICE_NAME ROUTINE_DIR ROUTINE_STATE".split(' ')
+        let mut command = Command::new(exe);
+        for var in
+            "MISE_DATA_DIR XDG_DATA_HOME XPC_SERVICE_NAME ROUTINE_DIR ROUTINE_STATE".split(' ')
         {
-            _ = c.env_remove(k);
+            _ = command.env_remove(var);
         }
-        let o = (c.args(args).env("HOME", tmp).current_dir(tmp))
+        let output = (command.args(args).env("HOME", tmp).current_dir(tmp))
             .env(
                 "PATH",
                 format!("{}:/usr/bin:/bin", tmp.join("bin").display()),
@@ -325,21 +327,21 @@ two                  —                n/a    \n9    —                     3 
         let calls = fs::read_to_string(tmp.join("log")).unwrap_or_default();
         drop(fs::remove_file(tmp.join("log")));
         let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
-        let out = String::from_utf8([o.stdout, o.stderr].concat()).unwrap();
-        format!("{}\n{out}{calls}", o.status.code().unwrap())
+        let out = String::from_utf8([output.stdout, output.stderr].concat()).unwrap();
+        format!("{}\n{out}{calls}", output.status.code().unwrap())
             .replace(&format!("gui/{}", uid.trim()), "gui/$UID")
             .replace(&tmp.display().to_string(), "~")
     }
 
     /// `p` XML-escaped, as a plist carries it.
-    fn esc(p: &Path) -> String {
-        let p = p.display().to_string().replace('&', "&amp;");
-        p.replace('<', "&lt;").replace('>', "&gt;")
+    fn esc(path: &Path) -> String {
+        let path = path.display().to_string().replace('&', "&amp;");
+        path.replace('<', "&lt;").replace('>', "&gt;")
     }
 
     /// The tick's plist under `tmp`, running `~/.local/bin/routine`.
     fn due_plist(tmp: &Path) -> String {
-        let t = esc(tmp);
+        let escaped = esc(tmp);
         format!(
             r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -348,22 +350,22 @@ two                  —                n/a    \n9    —                     3 
   <key>Label</key><string>dev.gigantic.routines.due</string>
   <key>ProgramArguments</key>
   <array>
-    <string>{t}/.local/bin/routine</string>
+    <string>{escaped}/.local/bin/routine</string>
     <string>run</string>
     <string>--due</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
-    <key>PATH</key><string>{t}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
-    <key>ROUTINE_HOME</key><string>{t}/home</string>
-    <key>ROUTINE_DIR</key><string>{t}/home</string>
-    <key>ROUTINE_STATE</key><string>{t}/home/.state</string>
+    <key>PATH</key><string>{escaped}/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>ROUTINE_HOME</key><string>{escaped}/home</string>
+    <key>ROUTINE_DIR</key><string>{escaped}/home</string>
+    <key>ROUTINE_STATE</key><string>{escaped}/home/.state</string>
   </dict>
   <key>StartInterval</key><integer>60</integer>
   <key>RunAtLoad</key><true/>
   <key>ProcessType</key><string>Background</string>
-  <key>StandardOutPath</key><string>{t}/home/.state/due.log</string>
-  <key>StandardErrorPath</key><string>{t}/home/.state/due.log</string>
+  <key>StandardOutPath</key><string>{escaped}/home/.state/due.log</string>
+  <key>StandardErrorPath</key><string>{escaped}/home/.state/due.log</string>
 </dict>
 </plist>
 "#
@@ -380,7 +382,7 @@ two                  —                n/a    \n9    —                     3 
         let tmp = host("setup");
         let run = |args: &[&str], env: &[(&str, &Path)]| launchd(&tmp, Path::new(EXE), args, env);
         let (agents, local) = (tmp.join("Library/LaunchAgents"), tmp.join(".local/bin"));
-        let mode = |p: &Path, m| fs::set_permissions(p, Permissions::from_mode(m));
+        let mode = |path: &Path, bits| fs::set_permissions(path, Permissions::from_mode(bits));
         let layout = tmp.join(".local/share/hotswap/routines");
         fs::create_dir_all(layout.join("1")).unwrap();
         symlink(EXE, layout.join("1/routine")).unwrap();
@@ -389,7 +391,7 @@ two                  —                n/a    \n9    —                     3 
             agents.join("dev.gigantic.routines.due.plist"),
             agents.join("dev.gigantic.routines.upgrade.plist"),
         );
-        let (d, u) = (
+        let (due_shown, up_shown) = (
             "~/Library/LaunchAgents/dev.gigantic.routines.due.plist",
             "~/Library/LaunchAgents/dev.gigantic.routines.upgrade.plist",
         );
@@ -400,15 +402,15 @@ two                  —                n/a    \n9    —                     3 
             "launchctl print gui/$UID/dev.gigantic.routines.",
         );
         let load_up =
-            format!("launchctl print-disabled gui/$UID\nlaunchctl bootstrap gui/$UID {u}\n");
+            format!("launchctl print-disabled gui/$UID\nlaunchctl bootstrap gui/$UID {up_shown}\n");
         assert_eq!(
             run(&["setup"], &[]),
             format!(
-                "0\n{linked}loaded {d}\n{old}{print}upgrade\n{load_up}{print}due\n\
-             launchctl bootstrap gui/$UID {d}\n"
+                "0\n{linked}loaded {due_shown}\n{old}{print}upgrade\n{load_up}{print}due\n\
+             launchctl bootstrap gui/$UID {due_shown}\n"
             )
         );
-        let read = |p: &Path| fs::read_to_string(p).unwrap();
+        let read = |path: &Path| fs::read_to_string(path).unwrap();
         assert_eq!(read(&due), due_plist(&tmp));
         assert!(read(&up).contains(&format!("{}/.local/bin/routine</string>", esc(&tmp))));
         assert_eq!(
@@ -429,13 +431,13 @@ two                  —                n/a    \n9    —                     3 
         assert_eq!(
             run(&["install"], &[]),
             format!(
-                "0\n{linked}reloaded {d}\n{probes}\
-             launchctl bootout gui/$UID/dev.gigantic.routines.due\nlaunchctl bootstrap gui/$UID {d}\n"
+                "0\n{linked}reloaded {due_shown}\n{probes}\
+             launchctl bootout gui/$UID/dev.gigantic.routines.due\nlaunchctl bootstrap gui/$UID {due_shown}\n"
             )
         );
         assert_eq!(
             run(&["setup"], &[]),
-            format!("0\n{linked}current {d}\n{probes}")
+            format!("0\n{linked}current {due_shown}\n{probes}")
         );
         let latest = "curl -q -fsSIL -o /dev/null -w %{url_effective} https://github.com/jgeschwendt/routines/releases/latest\n";
         let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
@@ -468,9 +470,9 @@ two                  —                n/a    \n9    —                     3 
         assert_eq!(
             run(&["setup"], &[]),
             format!(
-                "1\n{linked}hotswap: gui/$UID/dev.gigantic.routines.upgrade not loaded from {u}: \n\
+                "1\n{linked}hotswap: gui/$UID/dev.gigantic.routines.upgrade not loaded from {up_shown}: \n\
              routine: launchctl bootstrap failed\n{old}{print}upgrade\n{load_up}{print}due\n\
-             launchctl bootstrap gui/$UID {d}\n"
+             launchctl bootstrap gui/$UID {due_shown}\n"
             )
         );
         fs::remove_file(tmp.join("bootstrap.code")).unwrap();
@@ -479,7 +481,7 @@ two                  —                n/a    \n9    —                     3 
         mode(&agents, 0o755).unwrap();
         assert_eq!(
             blocked,
-            format!("1\n{linked}routine: cannot write {d}\n{old}{print}upgrade\n{load_up}")
+            format!("1\n{linked}routine: cannot write {due_shown}\n{old}{print}upgrade\n{load_up}")
         );
         // the link that cannot land stops setup before any agent is written
         mode(&local, 0o555).unwrap();
@@ -500,13 +502,13 @@ two                  —                n/a    \n9    —                     3 
         // the upgrade agent loaded from this HOME's plist: hotswap boots it out
         fs::write(tmp.join("loaded"), "").unwrap();
         let removed = format!(
-            "0\nremoved {d}\n{old}launchctl bootout gui/$UID/dev.gigantic.routines.due\n\
+            "0\nremoved {due_shown}\n{old}launchctl bootout gui/$UID/dev.gigantic.routines.due\n\
          {print}upgrade\nlaunchctl bootout gui/$UID/dev.gigantic.routines.upgrade\n"
         );
         assert_eq!(run(&["uninstall"], &[]), removed);
         assert!(!due.exists() && !up.exists() && !rec.exists() && !layout.exists());
         assert_eq!(
-            (local.join("routine").symlink_metadata().err()).map(|e| e.kind()),
+            (local.join("routine").symlink_metadata().err()).map(|error| error.kind()),
             Some(ErrorKind::NotFound)
         );
         assert_eq!(run(&["setup", "--remove"], &linux), "0\n");
@@ -548,13 +550,13 @@ two                  —                n/a    \n9    —                     3 
         );
         let agent_log = tmp.join("Library/Logs/dev.gigantic.routines.upgrade.log");
         let record = tmp.join(".local/state/hotswap/routines.json");
-        let exe = |p: &Path, body: &str| {
-            fs::create_dir_all(p.parent().unwrap()).unwrap();
-            fs::write(p, body).unwrap();
-            fs::set_permissions(p, Permissions::from_mode(0o755)).unwrap();
+        let exe = |path: &Path, body: &str| {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, body).unwrap();
+            fs::set_permissions(path, Permissions::from_mode(0o755)).unwrap();
         };
         let put = |name: &str, body: &str| fs::write(tmp.join(name), body).unwrap();
-        let read = |p: &Path| fs::read_to_string(p).unwrap();
+        let read = |path: &Path| fs::read_to_string(path).unwrap();
         let (mise_tick, mise_up) = (
             "the tick, on mise's shim\n",
             "the upgrade agent, on mise's shim\n",
@@ -617,7 +619,7 @@ two                  —                n/a    \n9    —                     3 
         let reloaded = || {
             loaded(&shim, "not running");
             for _ in 0..200 {
-                if fs::read_to_string(&agent_log).is_ok_and(|l| !l.is_empty()) {
+                if fs::read_to_string(&agent_log).is_ok_and(|log| !log.is_empty()) {
                     break;
                 }
                 thread::sleep(Duration::from_millis(50));
@@ -631,29 +633,30 @@ two                  —                n/a    \n9    —                     3 
             out.replace(&format!("gui/{}", uid.trim()), "gui/$UID")
         };
         let versions = || {
-            let mut v = (fs::read_dir(&layout).unwrap().flatten())
-                .map(|e| e.file_name().to_string_lossy().into_owned())
+            let mut names = (fs::read_dir(&layout).unwrap().flatten())
+                .map(|entry| entry.file_name().to_string_lossy().into_owned())
                 .collect::<Vec<_>>();
-            v.sort();
+            names.sort();
             format!(
                 "{} → {}",
-                v.join(" "),
+                names.join(" "),
                 fs::read_link(layout.join("current")).unwrap().display()
             )
         };
-        let on_link =
-            |p: &Path| read(p).contains(&format!("{}/.local/bin/routine</string>", esc(&tmp)));
+        let on_link = |path: &Path| {
+            read(path).contains(&format!("{}/.local/bin/routine</string>", esc(&tmp)))
+        };
         let xdg_env = [("XDG_DATA_HOME", &*xdg)];
         let print = "launchctl print gui/$UID/dev.gigantic.routines.";
         let latest = "curl -q -fsSIL -o /dev/null -w %{url_effective} https://github.com/jgeschwendt/routines/releases/latest\n";
         let back = "hotswap: gui/$UID/dev.gigantic.routines.upgrade reloaded from ~/Library/LaunchAgents/dev.gigantic.routines.upgrade.plist\n";
-        let d = "~/Library/LaunchAgents/dev.gigantic.routines.due.plist";
+        let due_shown = "~/Library/LaunchAgents/dev.gigantic.routines.due.plist";
         let linked =
             "linked ~/.local/bin/routine → ~/.local/share/hotswap/routines/current/routine\n";
         let old = "launchctl bootout gui/$UID/com.routines.due\n";
         let moved = format!(
             "{old}{print}upgrade\n{print}due\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
-         launchctl bootstrap gui/$UID {d}\n"
+         launchctl bootstrap gui/$UID {due_shown}\n"
         );
         let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
 
@@ -661,7 +664,7 @@ two                  —                n/a    \n9    —                     3 
         on_mise();
         assert_eq!(
             launchd(&tmp, &shim, &["setup"], &xdg_env),
-            format!("0\n{linked}reloaded {d}\n{moved}")
+            format!("0\n{linked}reloaded {due_shown}\n{moved}")
         );
         assert_eq!(versions(), "1 2 current → 2");
         assert_eq!(read(&due), due_plist(&tmp));
@@ -725,7 +728,7 @@ two                  —                n/a    \n9    —                     3 
         loaded(&link, "running");
         assert_eq!(
             launchd(&tmp, &shim, &["setup"], &xdg_env),
-            format!("0\n{linked}reloaded {d}\n{moved}")
+            format!("0\n{linked}reloaded {due_shown}\n{moved}")
         );
         assert_eq!(versions(), "1 2 3 current → 3");
         assert_eq!(
@@ -785,7 +788,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         } else {
             format!("---\n{fm}\n---\n")
         };
-        let block = block.map_or(String::new(), |b| format!("```sh\n{b}\n```\n"));
+        let block = block.map_or(String::new(), |body| format!("```sh\n{body}\n```\n"));
         fs::create_dir_all(home.join("tmp")).unwrap();
         fs::write(
             home.join(format!("{name}.md")),
@@ -797,46 +800,46 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     /// `routine <args>` against `home`, the clock frozen, claude the sandbox's stub and `TMPDIR` the
     /// home's own.
     fn routine_cmd(home: &Path, args: &[&str], env: &[(&str, String)]) -> Command {
-        let mut c = Command::new(EXE);
-        for k in "ROUTINE_DIR ROUTINE_STATE MODE".split(' ') {
-            _ = c.env_remove(k);
+        let mut command = Command::new(EXE);
+        for var in "ROUTINE_DIR ROUTINE_STATE MODE".split(' ') {
+            _ = command.env_remove(var);
         }
-        _ = c
+        _ = command
             .args(args)
             .env("ROUTINE_HOME", home)
             .env("ROUTINE_NOW", "1786698000")
             .env("ROUTINE_CLAUDE", home.parent().unwrap().join("claude"))
             .env("TMPDIR", home.join("tmp"))
             .envs(env.iter().map(|pair| (pair.0, &pair.1)));
-        c
+        command
     }
 
     /// `b` with `home` as `<h>` and each elapsed second (`· 3s`, `elapsed=3s`) as `N`.
-    fn masked(b: &[u8], home: &Path) -> String {
-        let s = String::from_utf8_lossy(b).replace(&*home.to_string_lossy(), "<h>");
+    fn masked(bytes: &[u8], home: &Path) -> String {
+        let text = String::from_utf8_lossy(bytes).replace(&*home.to_string_lossy(), "<h>");
         let (mut out, mut digits) = (String::new(), String::new());
-        for c in s.chars() {
-            if c.is_ascii_digit() {
-                digits.push(c);
+        for ch in text.chars() {
+            if ch.is_ascii_digit() {
+                digits.push(ch);
                 continue;
             }
-            if c == 's' && !digits.is_empty() && out.ends_with([' ', '=']) {
+            if ch == 's' && !digits.is_empty() && out.ends_with([' ', '=']) {
                 digits = "N".into();
             }
             out.push_str(&digits);
             digits.clear();
-            out.push(c);
+            out.push(ch);
         }
         format!("{out}{digits}")
     }
 
     /// Whether `pid` (in `file`) still runs, given three seconds to go.
     fn alive(file: &Path) -> bool {
-        let p = fs::read_to_string(file).unwrap();
+        let pid = fs::read_to_string(file).unwrap();
         (0..30).all(|_| {
             thread::sleep(Duration::from_millis(100));
             Command::new("kill")
-                .args(["-0", p.trim()])
+                .args(["-0", pid.trim()])
                 .stderr(Stdio::null())
                 .status()
                 .unwrap()
@@ -848,7 +851,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         clippy::single_call_fn,
         reason = "the run table, named apart from the test"
     )]
-    fn run_cases(h: &str) -> [Case; 18] {
+    fn run_cases(root: &str) -> [Case; 18] {
         let fail = "on_error: fail";
         let fixed = r#"[ -f "$ROUTINE_STATE_DIR/fixed" ] || exit 7"#;
         let leak = r#"sleep 30 & echo $! > "$ROUTINE_STATE_DIR/leak.pid""#;
@@ -873,16 +876,16 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 fail,
                 Some("true"),
                 vec![
-                    ("ROUTINE_HOME", format!("{h}/gone")),
-                    ("ROUTINE_DIR", h.into()),
-                    ("ROUTINE_STATE", format!("{h}/.state")),
+                    ("ROUTINE_HOME", format!("{root}/gone")),
+                    ("ROUTINE_DIR", root.into()),
+                    ("ROUTINE_STATE", format!("{root}/.state")),
                 ],
             ),
             (
                 "notmp",
                 fail,
                 Some("true"),
-                vec![("TMPDIR", format!("{h}/gone"))],
+                vec![("TMPDIR", format!("{root}/gone"))],
             ),
             ("ro", fail, Some("true"), vec![]),
             ("held", fail, Some("true"), vec![]),
@@ -891,7 +894,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 "unavail",
                 "",
                 Some("exit 5"),
-                vec![("ROUTINE_CLAUDE", format!("{h}/no-claude"))],
+                vec![("ROUTINE_CLAUDE", format!("{root}/no-claude"))],
             ),
             (
                 "loggedout",
@@ -925,14 +928,14 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     fn run() {
         let tmp = sandbox("run");
         let home = tmp.join("home");
-        let h = home.to_string_lossy().into_owned();
+        let home_text = home.to_string_lossy().into_owned();
         let st = home.join(".state");
         let usage = String::from_utf8(Command::new(EXE).output().unwrap().stdout).unwrap();
-        let got = run_cases(&h).map(|(name, fm, block, env)| {
+        let got = run_cases(&home_text).map(|(name, fm, block, env)| {
             if !matches!(name, "gone" | "") {
                 routine_doc(&home, name, fm, block);
             }
-            let ro = |m| fs::set_permissions(st.join("ro"), Permissions::from_mode(m));
+            let ro = |bits| fs::set_permissions(st.join("ro"), Permissions::from_mode(bits));
             match name {
                 "ro" => {
                     fs::create_dir_all(st.join("ro")).unwrap();
@@ -953,7 +956,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             } else {
                 &["run", name]
             };
-            let o = routine_cmd(&home, args, &env).output().unwrap();
+            let output = routine_cmd(&home, args, &env).output().unwrap();
             drop(ro(0o755));
             if name == "leak" {
                 assert!(
@@ -962,15 +965,15 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 );
             }
             let mut names: Vec<_> = (fs::read_dir(st.join(name)).into_iter().flatten())
-                .map(|e| e.unwrap().file_name().into_string().unwrap())
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .filter(|n| n != "leak.pid")
                 .collect();
             names.sort();
             (
                 name,
-                o.status.code(),
-                masked(&o.stdout, &home),
-                masked(&o.stderr, &home),
+                output.status.code(),
+                masked(&output.stdout, &home),
+                masked(&output.stderr, &home),
                 fs::read_to_string(st.join(name).join("last-run.json")).ok(),
                 names.join(" "),
                 fs::read_dir(home.join("tmp")).unwrap().count(),
@@ -1009,7 +1012,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             "x".repeat(1 << 20),
             exit(0)
         );
-        let refused = |e: &str| (String::new(), format!("routine: {e}\n"));
+        let refused = |message: &str| (String::new(), format!("routine: {message}\n"));
         let (all, deg) = (
             "last-run.json logs runs.jsonl",
             "degraded last-run.json logs runs.jsonl",
@@ -1119,9 +1122,17 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
              unavail unrepaired",
             ),
         ];
-        for (got, (name, code, (stdout, stderr), rec, names)) in got.iter().zip(want) {
-            let want = (name, Some(code), stdout, stderr, rec, names.to_owned(), 0);
-            assert_eq!(got, &want, "{name}");
+        for (outcome, (name, code, (stdout, stderr), record, names)) in got.iter().zip(want) {
+            let expected = (
+                name,
+                Some(code),
+                stdout,
+                stderr,
+                record,
+                names.to_owned(),
+                0,
+            );
+            assert_eq!(outcome, &expected, "{name}");
         }
         assert_eq!(
             masked(&fs::read(st.join("tick.log")).unwrap(), &home),
@@ -1138,12 +1149,12 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     fn run_stops_on_a_signal() {
         let tmp = sandbox("signal");
         let block = r#"sh -c 'trap "" TERM; echo $$ > "$ROUTINE_STATE_DIR/member.pid"; exec sleep 30' & wait"#;
-        thread::scope(|s| {
+        thread::scope(|scope| {
             for (sig, code) in [("HUP", 129), ("INT", 130), ("TERM", 143)] {
                 let home = tmp.join(sig);
                 routine_doc(&home, "sig", "on_error: fail", Some(block));
-                drop(s.spawn(move || {
-                    let mut c = routine_cmd(&home, &["run", "sig"], &[])
+                drop(scope.spawn(move || {
+                    let mut child = routine_cmd(&home, &["run", "sig"], &[])
                         .stdout(Stdio::null())
                         .spawn()
                         .unwrap();
@@ -1151,10 +1162,10 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                     while !st.join("member.pid").exists() {
                         thread::sleep(Duration::from_millis(50));
                     }
-                    let pid = c.id().to_string();
-                    let kill = |sig: &str| {
+                    let pid = child.id().to_string();
+                    let kill = |signal: &str| {
                         Command::new("kill")
-                            .args([&format!("-{sig}"), &pid])
+                            .args([&format!("-{signal}"), &pid])
                             .status()
                     };
                     _ = kill(sig).unwrap();
@@ -1162,7 +1173,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                         thread::sleep(Duration::from_millis(500));
                         drop(kill(sig));
                     }
-                    let rc = c.wait().unwrap().code();
+                    let rc = child.wait().unwrap().code();
                     let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
                     assert_eq!(rc, Some(code), "{sig}");
                     assert!(rec.contains(&format!("\"exit\":{code},")), "{sig}");
@@ -1186,17 +1197,17 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             ("late", "exit 3", "hang", "watchdog: deadline reached"),
             ("gap", "exit 3", "gap", "claude exit=143"),
         ];
-        thread::scope(|s| {
+        thread::scope(|scope| {
             for (name, block, mode, want) in cases {
                 let home = tmp.join(name);
                 routine_doc(&home, name, "timeout: 1", Some(block));
-                drop(s.spawn(move || {
+                drop(scope.spawn(move || {
                     let env = [("MODE", mode.to_owned())];
-                    let o = routine_cmd(&home, &["run", name], &env).output().unwrap();
-                    let out = String::from_utf8_lossy(&o.stdout);
+                    let output = routine_cmd(&home, &["run", name], &env).output().unwrap();
+                    let out = String::from_utf8_lossy(&output.stdout);
                     let st = home.join(".state").join(name);
                     let rec = fs::read_to_string(st.join("last-run.json")).unwrap();
-                    assert_eq!(o.status.code(), Some(124), "{name}");
+                    assert_eq!(output.status.code(), Some(124), "{name}");
                     assert!(
                         out.contains(want) && rec.contains("\"exit\":124,"),
                         "{name}: {out}"
@@ -1218,23 +1229,23 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         let st = home.join(".state");
         let mut out = vec![masked(&fs::read(st.join("tick.log")).unwrap(), home)];
         let mut names: Vec<_> = (fs::read_dir(&st).unwrap())
-            .map(|e| e.unwrap().path())
+            .map(|entry| entry.unwrap().path())
             .collect();
         names.sort();
-        for p in names {
-            let mut inner: Vec<_> = (fs::read_dir(&p).into_iter().flatten())
-                .map(|e| e.unwrap().file_name().into_string().unwrap())
+        for path in names {
+            let mut inner: Vec<_> = (fs::read_dir(&path).into_iter().flatten())
+                .map(|entry| entry.unwrap().file_name().into_string().unwrap())
                 .filter(|n| n != "pid")
                 .collect();
             inner.sort();
-            let rec = fs::read_to_string(p.join("last-run.json")).unwrap_or_default();
-            let size = if p.is_file() {
-                fs::metadata(&p).unwrap().len()
+            let rec = fs::read_to_string(path.join("last-run.json")).unwrap_or_default();
+            let size = if path.is_file() {
+                fs::metadata(&path).unwrap().len()
             } else {
                 0
             };
             out.push(
-                format!("{} {size} {inner:?} {rec}", p.display())
+                format!("{} {size} {inner:?} {rec}", path.display())
                     .replace(&*home.to_string_lossy(), "<h>"),
             );
         }
@@ -1294,39 +1305,41 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     #[test]
     fn due() {
         let tmp = sandbox("due");
-        let pmset = |name: &str, body: &str| {
-            let p = tmp.join(name);
-            fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-            fs::set_permissions(&p, Permissions::from_mode(0o755)).unwrap();
-            p.to_string_lossy().into_owned()
+        let probe = |name: &str, body: &str| {
+            let path = tmp.join(name);
+            fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+            fs::set_permissions(&path, Permissions::from_mode(0o755)).unwrap();
+            path.to_string_lossy().into_owned()
         };
         let caps = "Current System Capabilities are:";
         let (dark, lit, open) = (
-            pmset("dark", &format!("echo '{caps} CPU Network'")),
-            pmset("lit", &format!("printf 'x\\n{caps} CPU Graphics\\n'")),
-            pmset("open", "echo 'Current Power State: 4'; exit 1"),
+            probe("dark", &format!("echo '{caps} CPU Network'")),
+            probe("lit", &format!("printf 'x\\n{caps} CPU Graphics\\n'")),
+            probe("open", "echo 'Current Power State: 4'; exit 1"),
         );
-        let t = "2026-08-14T09:00:00Z";
+        let stamp = "2026-08-14T09:00:00Z";
         let ran = |name: &str, exit: i32| {
-            let r = format!(
-                "<h>/.state/{name} 0 [\"last-run.json\", \"logs\", \"runs.jsonl\"] {{\"started\":\"{t}\",\
-             \"started_epoch\":1786698000,\"finished\":\"{t}\",\"exit\":{exit},\"duration\":0,\
+            let record_line = format!(
+                "<h>/.state/{name} 0 [\"last-run.json\", \"logs\", \"runs.jsonl\"] {{\"started\":\"{stamp}\",\
+             \"started_epoch\":1786698000,\"finished\":\"{stamp}\",\"exit\":{exit},\"duration\":0,\
              \"degraded\":false}}\n"
             );
             let lines = [
-                format!("routine {name} · {t}"),
+                format!("routine {name} · {stamp}"),
                 "block 1".into(),
                 format!("block 1 · exit {exit} · Ns"),
                 format!("routine {name} · exit {exit}"),
             ];
-            (lines.map(|l| rule(&l)).to_vec(), r)
+            (lines.map(|label| rule(&label)).to_vec(), record_line)
         };
         let (ra, mut rb, hourly) = (ran("a", 0), ran("b", 3), ran("hourly", 0));
         rb.0.push(rule("block 1 · caught exit 3 · Ns"));
         let (empty, last) = (
             |n: &str, size| format!("<h>/.state/{n} {size} [] "),
-            |n: &str, e| {
-                format!("<h>/.state/{n} 0 [\"last-run.json\"] {{\"started_epoch\":{e}}}\n")
+            |routine: &str, epoch| {
+                format!(
+                    "<h>/.state/{routine} 0 [\"last-run.json\"] {{\"started_epoch\":{epoch}}}\n"
+                )
             },
         );
         // (case, pmset, docs, exit, stdout, stderr, tick.log, each state entry)
@@ -1338,7 +1351,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 0,
                 vec![],
                 "",
-                format!("{t} tick docs=0 due=- next=-\n"),
+                format!("{stamp} tick docs=0 due=- next=-\n"),
                 vec![empty("tick.log", 46)],
             ),
             (
@@ -1349,7 +1362,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 vec![],
                 "",
                 format!(
-                    "{t} tick docs=2 due=- next=later@2027-01-01T00:00:00Z,manual@unscheduled\n"
+                    "{stamp} tick docs=2 due=- next=later@2027-01-01T00:00:00Z,manual@unscheduled\n"
                 ),
                 vec![last("later", 1_786_698_000), empty("tick.log", 90)],
             ),
@@ -1361,8 +1374,8 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 [hourly.0, vec!["out\n".into(), "err\n".into()]].concat(),
                 "",
                 format!(
-                    "{t} tick docs=1 due=hourly next=-\n{t} dispatch hourly\n\
-                 {t} dispatched hourly exit=0\n"
+                    "{stamp} tick docs=1 due=hourly next=-\n{stamp} dispatch hourly\n\
+                 {stamp} dispatched hourly exit=0\n"
                 ),
                 vec![hourly.1, empty("tick.log", 134)],
             ),
@@ -1374,8 +1387,8 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 [ra.0, vec!["a\n".into()], rb.0].concat(),
                 "routine: c already running (pid 1)\n",
                 format!(
-                    "{t} tick docs=3 due=a,b,c next=-\n{t} dispatch a\n{t} dispatch b\n{t} dispatch c\n\
-                 {t} dispatched a exit=0\n{t} dispatched b exit=3\n{t} dispatched c exit=75\n"
+                    "{stamp} tick docs=3 due=a,b,c next=-\n{stamp} dispatch a\n{stamp} dispatch b\n{stamp} dispatch c\n\
+                 {stamp} dispatched a exit=0\n{stamp} dispatched b exit=3\n{stamp} dispatched c exit=75\n"
                 ),
                 vec![
                     ra.1,
@@ -1393,9 +1406,9 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 vec![],
                 "",
                 format!(
-                    "{t} skip Not_Slug.md: name not a slug\n{t} skip dangling.md: dangling symlink\n\
-                 {t} tick docs=7 due=ahead,hourly,nul next=bad@bad,blank@unscheduled,\
-                 held@paused,yearly@2027-01-01T00:00:00Z\n{t} defer dark-wake due=ahead,hourly,nul\n"
+                    "{stamp} skip Not_Slug.md: name not a slug\n{stamp} skip dangling.md: dangling symlink\n\
+                 {stamp} tick docs=7 due=ahead,hourly,nul next=bad@bad,blank@unscheduled,\
+                 held@paused,yearly@2027-01-01T00:00:00Z\n{stamp} defer dark-wake due=ahead,hourly,nul\n"
                 ),
                 vec![
                     last("ahead", 1_786_699_999),
@@ -1411,22 +1424,22 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             let home = tmp.join(format!("home-{case}"));
             due_home(&home, docs);
             let env = [("ROUTINE_PMSET", pmset.clone())];
-            let o = routine_cmd(&home, &["run", "--due"], &env)
+            let output = routine_cmd(&home, &["run", "--due"], &env)
                 .output()
                 .unwrap();
-            let lines = |b: &[u8]| {
-                let mut l: Vec<_> = (masked(b, &home).split_inclusive('\n'))
+            let lines = |bytes: &[u8]| {
+                let mut sorted: Vec<_> = (masked(bytes, &home).split_inclusive('\n'))
                     .map(String::from)
                     .collect();
-                l.sort();
-                l
+                sorted.sort();
+                sorted
             };
             stdout.sort();
             let stderr = stderr.split_inclusive('\n').map(String::from).collect();
             let got = (
-                o.status.code(),
-                lines(&o.stdout),
-                lines(&o.stderr),
+                output.status.code(),
+                lines(&output.stdout),
+                lines(&output.stderr),
                 due_state(&home),
             );
             let want = (Some(code), stdout, stderr, [vec![tick], state].concat());
@@ -1441,16 +1454,16 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     fn due_stops_on_a_signal() {
         let tmp = sandbox("due-signal");
         let block = r#"echo $$ > "$ROUTINE_STATE_DIR/pid"; exec sleep 30"#;
-        let t = "2026-08-14T09:00:00Z";
+        let stamp = "2026-08-14T09:00:00Z";
         let stopped = |n: &str| {
             format!(
-                "<h>/.state/{n} 0 [\"last-run.json\", \"logs\", \"runs.jsonl\"] {{\"started\":\"{t}\",\
-             \"started_epoch\":1786698000,\"finished\":\"{t}\",\"exit\":143,\"duration\":0,\
+                "<h>/.state/{n} 0 [\"last-run.json\", \"logs\", \"runs.jsonl\"] {{\"started\":\"{stamp}\",\
+             \"started_epoch\":1786698000,\"finished\":\"{stamp}\",\"exit\":143,\"duration\":0,\
              \"degraded\":false}}\n"
             )
         };
         let want = [
-            format!("{t} tick docs=2 due=a,b next=-\n{t} dispatch a\n{t} dispatch b\n"),
+            format!("{stamp} tick docs=2 due=a,b next=-\n{stamp} dispatch a\n{stamp} dispatch b\n"),
             stopped("a"),
             stopped("b"),
             "<h>/.state/tick.log 112 [] ".into(),
@@ -1465,7 +1478,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                     Some(block),
                 );
             }
-            let mut c = routine_cmd(&home, &["run", "--due"], &[])
+            let mut child = routine_cmd(&home, &["run", "--due"], &[])
                 .process_group(0)
                 .stdout(Stdio::null())
                 .spawn()
@@ -1474,12 +1487,12 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             while !(st.join("a/pid").exists() && st.join("b/pid").exists()) {
                 thread::sleep(Duration::from_millis(50));
             }
-            let pid = format!("{}{}", if group { "-" } else { "" }, c.id());
+            let pid = format!("{}{}", if group { "-" } else { "" }, child.id());
             _ = Command::new("kill")
                 .args([&format!("-{sig}"), "--", &pid])
                 .status()
                 .unwrap();
-            assert_eq!(c.wait().unwrap().code(), Some(code), "{sig}");
+            assert_eq!(child.wait().unwrap().code(), Some(code), "{sig}");
             assert!(!alive(&st.join("a/pid")) && !alive(&st.join("b/pid")));
             assert_eq!(due_state(&home), want, "{sig}");
         }
@@ -1492,12 +1505,15 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String, String) {
         let bin = home.parent().unwrap().join("bin");
         fs::create_dir_all(&bin).unwrap();
-        let t = bin.parent().unwrap().display();
+        let bin_dir = bin.parent().unwrap().display();
         for (n, stub) in [
-            ("launchctl", format!("#!/bin/sh\n[ -e '{t}/loaded' ]\n")),
+            (
+                "launchctl",
+                format!("#!/bin/sh\n[ -e '{bin_dir}/loaded' ]\n"),
+            ),
             (
                 "sysctl",
-                format!("#!/bin/sh\nexec /bin/cat '{t}/waketime'\n"),
+                format!("#!/bin/sh\nexec /bin/cat '{bin_dir}/waketime'\n"),
             ),
         ] {
             fs::write(bin.join(n), stub).unwrap();
@@ -1508,32 +1524,32 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         } else {
             "/usr/bin".into()
         };
-        let o = routine_cmd(home, args, &[("PATH", path)]).output().unwrap();
+        let output = routine_cmd(home, args, &[("PATH", path)]).output().unwrap();
         let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
-        let fix = |b: Vec<u8>| {
-            String::from_utf8(b)
+        let fix = |bytes: Vec<u8>| {
+            String::from_utf8(bytes)
                 .unwrap()
                 .replace(&*home.to_string_lossy(), "<h>")
                 .replace(&format!("gui/{}/", uid.trim()), "gui/$UID/")
         };
-        (o.status.code(), fix(o.stdout), fix(o.stderr))
+        (output.status.code(), fix(output.stdout), fix(output.stderr))
     }
 
     /// `<home>/<rel>` written with `body`, its parents made, modified at epoch `at` when given.
     fn put(home: &Path, rel: &str, body: Option<&str>, at: Option<u64>) {
-        let p = home.join(rel);
+        let path = home.join(rel);
         fs::create_dir_all(if body.is_some() {
-            p.parent().unwrap()
+            path.parent().unwrap()
         } else {
-            &p
+            &path
         })
         .unwrap();
-        if let Some(b) = body {
-            fs::write(&p, b).unwrap();
+        if let Some(contents) = body {
+            fs::write(&path, contents).unwrap();
         }
-        if let Some(t) = at {
-            let t = UNIX_EPOCH.checked_add(Duration::from_secs(t)).unwrap();
-            fs::File::open(&p).unwrap().set_modified(t).unwrap();
+        if let Some(time) = at {
+            let time = UNIX_EPOCH.checked_add(Duration::from_secs(time)).unwrap();
+            fs::File::open(&path).unwrap().set_modified(time).unwrap();
         }
     }
 
@@ -1681,14 +1697,17 @@ unhealthy — 7 red · 1 finding(s)
             r#""due":true,"running":false"#,
             r#""verdict":"ok","finding":null,"fix":null"#,
         );
-        let plain = |l: &str, deg: &str, ack: &str, v: &str| {
-            format!(r#""last":{l},"degraded":{deg},"ack":{ack},"paused":null,{v}"#)
-        };
-        let fixed =
-            |v: &str, f: &str, x: &str| format!(r#""verdict":"{v}","finding":"{f}","fix":"{x}""#);
-        let manual = |n: &str, log: &str| {
+        let plain = |last_json: &str, deg: &str, ack_json: &str, verdict: &str| {
             format!(
-                "read <h>/.state/{n}/logs{log}, then <h>/{n}.md — its prose is the repair manual"
+                r#""last":{last_json},"degraded":{deg},"ack":{ack_json},"paused":null,{verdict}"#
+            )
+        };
+        let fixed = |verdict: &str, finding: &str, fix: &str| {
+            format!(r#""verdict":"{verdict}","finding":"{finding}","fix":"{fix}""#)
+        };
+        let manual_fix = |routine: &str, log: &str| {
+            format!(
+                "read <h>/.state/{routine}/logs{log}, then <h>/{routine}.md — its prose is the repair manual"
             )
         };
         let rows = [
@@ -1704,7 +1723,7 @@ unhealthy — 7 red · 1 finding(s)
                 &fixed(
                     "acknowledged",
                     "exit 5 at 2026-08-14T08:59:00Z",
-                    &manual("acked", ""),
+                    &manual_fix("acked", ""),
                 ),
             ),
         ),
@@ -1727,7 +1746,7 @@ unhealthy — 7 red · 1 finding(s)
                 &fixed(
                     "failed",
                     "exit 2 at 2026-08-14T08:59:00Z",
-                    &manual("failed", "/20260814T085900Z-2.log"),
+                    &manual_fix("failed", "/20260814T085900Z-2.log"),
                 ),
             ),
         ),
@@ -1782,7 +1801,7 @@ unhealthy — 7 red · 1 finding(s)
                 &fixed(
                     "failed",
                     "exit 4 at 2026-08-14T08:59:00Z",
-                    &manual("moved", ""),
+                    &manual_fix("moved", ""),
                 ),
             ),
         ),
@@ -1877,29 +1896,29 @@ unhealthy — 7 red · 1 finding(s)
         ("held", None, old, true, true, 0, "healthy — 1 routines\n".into(), r#""verdict":"ok","swept":null,"finding":null,"fix":null"#.into()),
         ("heard", None, "2026-08-14T08:59:00Z tick docs=0 due=- next=-\n".into(), false, true, 0, "healthy — 0 routines\n".into(), r#""verdict":"ok","swept":1786697940,"finding":null,"fix":null"#.into()),
     ];
-        for (case, wake, log, busy, loaded, code, report, tick) in cases {
-            let home = tmp.join(case).join("home");
+        for (case, wake, log, busy, loaded, code, report, want_tick) in cases {
+            let case_home = tmp.join(case).join("home");
             if let Some(w) = wake {
                 put(&tmp, &format!("{case}/waketime"), Some(w), None);
             }
-            put(&home, ".state/tick.log", Some(&log), None);
+            put(&case_home, ".state/tick.log", Some(&log), None);
             if busy {
-                put(&home, "busy.md", Some(&held), None);
-                put(&home, ".state/busy/lock/pid", pid.as_deref(), None);
-                put(&home, ".state/busy/lock", None, Some(now - 10));
+                put(&case_home, "busy.md", Some(&held), None);
+                put(&case_home, ".state/busy/lock/pid", pid.as_deref(), None);
+                put(&case_home, ".state/busy/lock", None, Some(now - 10));
             }
             if loaded {
                 put(&tmp, &format!("{case}/loaded"), Some(""), None);
             }
-            let json = health_run(&home, &["health", "--json"], true);
-            let tick = format!(r#""tick":{{{tick}}}"#);
+            let json = health_run(&case_home, &["health", "--json"], true);
+            let tick_field = format!(r#""tick":{{{want_tick}}}"#);
             assert_eq!(
-                health_run(&home, &["health"], true),
+                health_run(&case_home, &["health"], true),
                 (Some(code), report, String::new()),
                 "{case}"
             );
             assert!(
-                json.0 == Some(code) && json.1.contains(&tick),
+                json.0 == Some(code) && json.1.contains(&tick_field),
                 "{case}: {}",
                 json.1
             );
@@ -1909,11 +1928,11 @@ unhealthy — 7 red · 1 finding(s)
             health_run(&home, &["health", "x"], false),
             (Some(64), String::new(), usage)
         );
-        let o = routine_cmd(&home, &["health"], &[("ROUTINE_NOW", "x".into())])
+        let output = routine_cmd(&home, &["health"], &[("ROUTINE_NOW", "x".into())])
             .output()
             .unwrap();
         let err = "routine: ROUTINE_NOW=x is not an integer\n".to_owned();
-        assert_eq!(out(o), (Some(64), String::new(), err));
+        assert_eq!(out(output), (Some(64), String::new(), err));
     }
 
     // `routine ack`: refused (64) for an unknown routine and a last run that is no failure, usage
@@ -1935,7 +1954,7 @@ unhealthy — 7 red · 1 finding(s)
             run(&["run", "f"]).0
         };
         let ack = || fs::read_to_string(st.join("ack")).ok();
-        let refused = |m: &str| (Some(64), String::new(), format!("routine: {m}\n"));
+        let refused = |message: &str| (Some(64), String::new(), format!("routine: {message}\n"));
         assert_eq!(
             run(&["ack", "f"]),
             refused("f's last run is no failure to acknowledge")
@@ -2000,13 +2019,13 @@ unhealthy — 7 red · 1 finding(s)
         fs::set_permissions(&st, Permissions::from_mode(0o555)).unwrap();
         let denied = run(&["ack", "f"]);
         fs::set_permissions(&st, Permissions::from_mode(0o755)).unwrap();
-        let h = home.display();
+        let home_shown = home.display();
         assert_eq!(
             denied,
             (
                 Some(73),
                 String::new(),
-                format!("routine: cannot write {h}/.state/f/ack\n")
+                format!("routine: cannot write {home_shown}/.state/f/ack\n")
             )
         );
     }
@@ -2033,17 +2052,17 @@ unhealthy — 7 red · 1 finding(s)
             out(routine_cmd(&home, args, &env).output().unwrap())
         };
         let now = 1_786_698_000;
-        let read = |f: &str| fs::read_to_string(st.join(f)).ok();
+        let read = |file: &str| fs::read_to_string(st.join(file)).ok();
         let (done, tick) = ((Some(0), String::new(), String::new()), || {
             fs::read_to_string(home.join(".state/tick.log")).unwrap()
         });
-        for v in ["pause", "resume"] {
-            for args in [&[v][..], &[v, ""]] {
+        for command in ["pause", "resume"] {
+            for args in [&[command][..], &[command, ""]] {
                 assert_eq!(at(now, args), (Some(64), String::new(), usage.clone()));
             }
             for n in ["nope", "Bad_Name"] {
                 let err = format!("routine: no routine {n}\n");
-                assert_eq!(at(now, &[v, n]), (Some(64), String::new(), err));
+                assert_eq!(at(now, &[command, n]), (Some(64), String::new(), err));
             }
         }
         assert_eq!(
@@ -2051,7 +2070,9 @@ unhealthy — 7 red · 1 finding(s)
             (done.clone(), false)
         );
         assert_eq!(at(now, &["pause", "p", "on", "\"hold\""]), done);
-        let held = |t: &str, r: &str| Some(format!("{{\"at\":\"{t}\",\"reason\":\"{r}\"}}\n"));
+        let held = |stamp: &str, reason: &str| {
+            Some(format!("{{\"at\":\"{stamp}\",\"reason\":\"{reason}\"}}\n"))
+        };
         assert_eq!(
             read("paused"),
             held("2026-08-14T09:00:00Z", "on \\\"hold\\\"")
@@ -2073,32 +2094,34 @@ unhealthy — 7 red · 1 finding(s)
             (None, Some(format!("{}\n", now + 7260)))
         );
         let env = [("ROUTINE_NOW", (now + 7270).to_string())];
-        let h = out(routine_cmd(&home, &["health", "--json"], &env)
+        let health_out = out(routine_cmd(&home, &["health", "--json"], &env)
             .output()
             .unwrap());
         let row = r#""due":true,"running":false"#;
         assert!(
-            h.0 == Some(0) && h.1.contains(row) && h.1.contains(r#""paused":null,"verdict":"ok""#),
+            health_out.0 == Some(0)
+                && health_out.1.contains(row)
+                && health_out.1.contains(r#""paused":null,"verdict":"ok""#),
             "{}",
-            h.1
+            health_out.1
         );
         assert_eq!(at(now + 7300, &["run", "--due"]).0, Some(0));
         assert!(tick().ends_with("Z dispatched p exit=0\n"));
         assert_eq!(at(now + 7300, &["pause", "p"]), done);
-        for (mode, v, verb, code) in [
+        for (mode, command, verb, code) in [
             (0o555, "resume", "lift", 73),
             (0o755, "resume", "", 0),
             (0o555, "pause", "write", 73),
         ] {
             fs::set_permissions(&st, Permissions::from_mode(mode)).unwrap();
-            let got = at(now, &[v, "p"]);
+            let got = at(now, &[command, "p"]);
             fs::set_permissions(&st, Permissions::from_mode(0o755)).unwrap();
             let err = format!(
                 "routine: cannot {verb} {}/.state/p/paused\n",
                 home.display()
             );
             let err = if code == 0 { String::new() } else { err };
-            assert_eq!(got, (Some(code), String::new(), err), "{v} {mode:o}");
+            assert_eq!(got, (Some(code), String::new(), err), "{command} {mode:o}");
         }
     }
 }

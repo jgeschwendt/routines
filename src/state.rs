@@ -11,7 +11,7 @@ use std::{
 
 /// bash `${VAR:-}`: unset and empty alike are absent.
 pub fn var(name: &str) -> Option<OsString> {
-    env::var_os(name).filter(|v| !v.is_empty())
+    env::var_os(name).filter(|value| !value.is_empty())
 }
 
 /// `abspath "${VAR:-default}"`: a relative root joins the working directory. bash spells these
@@ -48,14 +48,15 @@ pub fn now() -> Result<i64, String> {
         || {
             Ok(SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs().cast_signed()))
+                .map_or(0, |elapsed| elapsed.as_secs().cast_signed()))
         },
-        |v| {
-            let v = v.to_string_lossy();
+        |value| {
+            let value = value.to_string_lossy();
             // bash's own blanks only: `\v`, `\f`, `\r` or NBSP fail its arithmetic as well
-            v.trim_matches([' ', '\t', '\n'])
+            value
+                .trim_matches([' ', '\t', '\n'])
                 .parse()
-                .map_err(|_| v.into_owned())
+                .map_err(|_| value.into_owned())
         },
     )
 }
@@ -67,20 +68,21 @@ pub fn json_get(file: &Path, key: &str) -> String {
     let text = read(file);
     let vals: Vec<_> = text
         .split('\n')
-        .filter_map(|l| {
-            let v = l.rsplit_once(&pat)?.1;
-            let v = v.strip_prefix('"').unwrap_or(v);
-            v.split(['"', ',', '}']).next()
+        .filter_map(|line| {
+            let value = line.rsplit_once(&pat)?.1;
+            let value = value.strip_prefix('"').unwrap_or(value);
+            value.split(['"', ',', '}']).next()
         })
         .collect();
     vals.join("\n").trim_end_matches('\n').to_owned()
 }
 
-/// Whole seconds since `p` was modified, a future stamp 0, as macOS find's `-mmin`/`-mtime`
-/// count them (whole minutes and days, floored); `None` when `p` is gone. Never follows a symlink.
-pub fn age(p: &Path) -> Option<u64> {
-    let m = fs::symlink_metadata(p).ok()?.modified().ok()?;
-    Some(m.elapsed().map_or(0, |d| d.as_secs()))
+/// Whole seconds since `path` was modified, a future stamp 0, as macOS find's `-mmin`/`-mtime`
+/// count them (whole minutes and days, floored); `None` when `path` is gone. Never follows a
+/// symlink.
+pub fn age(path: &Path) -> Option<u64> {
+    let modified = fs::symlink_metadata(path).ok()?.modified().ok()?;
+    Some(modified.elapsed().map_or(0, |elapsed| elapsed.as_secs()))
 }
 
 /// The last `max` bytes of `file` and the count cut ahead of them; none when it cannot open.
@@ -89,14 +91,18 @@ pub fn last_bytes(file: &Path, max: u64) -> (u64, Vec<u8>) {
         clippy::verbose_file_reads,
         reason = "it reads from the seek on, which fs::read cannot"
     )]
-    let tail = |mut f: File| {
-        let cut = f.metadata().map_or(0, |m| m.len()).saturating_sub(max);
-        let mut b = Vec::new();
+    let tail = |mut opened: File| {
+        let cut = opened
+            .metadata()
+            .map_or(0, |metadata| metadata.len())
+            .saturating_sub(max);
+        let mut bytes = Vec::new();
         drop(
-            f.seek(SeekFrom::Start(cut))
-                .and_then(|_| f.read_to_end(&mut b)),
+            opened
+                .seek(SeekFrom::Start(cut))
+                .and_then(|_| opened.read_to_end(&mut bytes)),
         );
-        (cut, b)
+        (cut, bytes)
     };
     File::open(file).map(tail).unwrap_or_default()
 }
@@ -106,7 +112,7 @@ pub fn slug(n: &str) -> bool {
     !n.is_empty()
         && !n.starts_with('-')
         && n.bytes()
-            .all(|b| matches!(b, b'a'..=b'z' | b'0'..=b'9' | b'-'))
+            .all(|byte| matches!(byte, b'a'..=b'z' | b'0'..=b'9' | b'-'))
 }
 
 /// A file's text as a shell's `$(cat …)` holds it: NUL bytes dropped, empty when unreadable.
@@ -122,17 +128,17 @@ pub fn routines<F: FnMut(&str, &str)>(dir: &Path, mut skip: F) -> Vec<String> {
         .into_iter()
         .flatten()
         .flatten()
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|f| !f.starts_with('.'))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|file| !file.starts_with('.'))
         .collect();
     files.sort();
     files
         .into_iter()
-        .filter_map(|f| {
-            let n = f.strip_suffix(".md")?;
-            let p = dir.join(&f);
-            let why = if !p.exists() {
-                if !p.is_symlink() {
+        .filter_map(|file| {
+            let n = file.strip_suffix(".md")?;
+            let path = dir.join(&file);
+            let why = if !path.exists() {
+                if !path.is_symlink() {
                     return None;
                 }
                 "dangling symlink"
@@ -141,7 +147,7 @@ pub fn routines<F: FnMut(&str, &str)>(dir: &Path, mut skip: F) -> Vec<String> {
             } else {
                 return Some(n.to_owned());
             };
-            skip(&f, why);
+            skip(&file, why);
             None
         })
         .collect()

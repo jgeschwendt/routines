@@ -17,7 +17,7 @@ use std::{env, process::ExitCode};
 /// The release's `YYYY.M.N`, stamped through `ROUTINE_VERSION` by the release workflow, else the
 /// crate's.
 const VERSION: &str = match option_env!("ROUTINE_VERSION") {
-    Some(v) => v,
+    Some(version) => version,
     None => env!("CARGO_PKG_VERSION"),
 };
 
@@ -48,7 +48,7 @@ env: ROUTINE_HOME ROUTINE_DIR ROUTINE_STATE ROUTINE_CLAUDE ROUTINE_NOW ROUTINE_P
 fn main() -> ExitCode {
     let args: Vec<_> = env::args_os()
         .skip(1)
-        .map(|a| a.to_string_lossy().into_owned())
+        .map(|arg| arg.to_string_lossy().into_owned())
         .collect();
     #[expect(
         clippy::indexing_slicing,
@@ -76,21 +76,23 @@ fn main() -> ExitCode {
             64
         }
         [
-            v @ ("ack" | "health" | "pause" | "resume" | "run" | "status"),
+            verb @ ("ack" | "health" | "pause" | "resume" | "run" | "status"),
             rest @ ..,
         ] => match state::now() {
-            Ok(now) if *v == "ack" => health::ack(rest, now),
-            Ok(now) if *v == "health" => health::health(!rest.is_empty(), now),
-            Ok(now) if matches!(*v, "pause" | "resume") => health::pause(*v == "pause", rest, now),
-            Ok(now) if *v == "run" && rest[0] == "--due" => due::due(now),
-            Ok(now) if *v == "run" => run::run(rest[0], now),
+            Ok(now) if *verb == "ack" => health::ack(rest, now),
+            Ok(now) if *verb == "health" => health::health(!rest.is_empty(), now),
+            Ok(now) if matches!(*verb, "pause" | "resume") => {
+                health::pause(*verb == "pause", rest, now)
+            }
+            Ok(now) if *verb == "run" && rest[0] == "--due" => due::due(now),
+            Ok(now) if *verb == "run" => run::run(rest[0], now),
             Ok(now) => {
                 let (dir, states, _) = state::roots();
                 status::status(&dir, &states, now);
                 0
             }
-            Err(v) => {
-                eprintln!("routine: ROUTINE_NOW={v} is not an integer");
+            Err(value) => {
+                eprintln!("routine: ROUTINE_NOW={value} is not an integer");
                 64
             }
         },
@@ -98,10 +100,12 @@ fn main() -> ExitCode {
             sync_ci::sync_ci();
             0
         }
-        [v @ ("install" | "uninstall"), ..] | [v @ "setup"] | [v @ "setup", "--remove"] => {
-            setup::setup(*v == "uninstall" || args.len() > 1 && *v == "setup").map_or_else(
-                |e| {
-                    eprintln!("routine: {e}");
+        [verb @ ("install" | "uninstall"), ..]
+        | [verb @ "setup"]
+        | [verb @ "setup", "--remove"] => {
+            setup::setup(*verb == "uninstall" || args.len() > 1 && *verb == "setup").map_or_else(
+                |error| {
+                    eprintln!("routine: {error}");
                     1
                 },
                 |()| 0,

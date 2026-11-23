@@ -15,13 +15,14 @@ use std::{
 /// `cmd` under the C locale (kill's message is matched) and UTC (ps's zone must not differ by
 /// caller); one that cannot run (the agent sandbox denies `ps`) exits 1 printing nothing.
 fn run(cmd: &str, args: &[&OsStr]) -> Output {
-    let mut c = Command::new(cmd);
+    let mut command = Command::new(cmd);
     let failed = Output {
         status: ExitStatus::from_raw(256),
         stdout: Vec::new(),
         stderr: Vec::new(),
     };
-    c.args(args)
+    command
+        .args(args)
         .env("LC_ALL", "C")
         .env("TZ", "UTC0")
         .output()
@@ -30,14 +31,14 @@ fn run(cmd: &str, args: &[&OsStr]) -> Output {
 
 /// The holder's pid as `$(cat lock/pid)` reads it.
 pub fn holder(dir: &Path) -> String {
-    let p = state::read(&dir.join("lock/pid"));
-    p.trim_end_matches('\n').to_owned()
+    let pid = state::read(&dir.join("lock/pid"));
+    pid.trim_end_matches('\n').to_owned()
 }
 
 /// `ps -o lstart=` of `pid` — its start time, the pid's identity; empty when ps cannot say.
 fn started_at(pid: &str) -> String {
-    let o = run("ps", &["-o", "lstart=", "-p", pid].map(OsStr::new));
-    String::from_utf8_lossy(&o.stdout).into()
+    let output = run("ps", &["-o", "lstart=", "-p", pid].map(OsStr::new));
+    String::from_utf8_lossy(&output.stdout).into()
 }
 
 #[expect(
@@ -58,20 +59,20 @@ fn take(dir: &Path) -> bool {
 /// verdict stands while the lock it judged does: the pid re-read after the probe (its holder may
 /// have released and a fresh run taken the lock meanwhile); no lock at all is no verdict.
 pub fn stale(dir: &Path) -> bool {
-    let p = holder(dir);
-    if p.is_empty() {
-        return state::age(&dir.join("lock")).is_some_and(|a| a >= 60);
+    let pid = holder(dir);
+    if pid.is_empty() {
+        return state::age(&dir.join("lock")).is_some_and(|age| age >= 60);
     }
-    let kill = || run("/bin/kill", &["-0", &p].map(OsStr::new)).stderr;
-    let dead = !p.bytes().all(|b| b.is_ascii_digit())
+    let kill = || run("/bin/kill", &["-0", &pid].map(OsStr::new)).stderr;
+    let dead = !pid.bytes().all(|byte| byte.is_ascii_digit())
         || String::from_utf8_lossy(&kill()).contains("No such process")
         || {
-            let s = state::read(&dir.join("lock/started"));
-            let (s, c) = (s.trim_end_matches('\n'), started_at(&p));
-            let c = c.trim_end_matches('\n');
-            !s.is_empty() && !c.is_empty() && c != s
+            let recorded = state::read(&dir.join("lock/started"));
+            let (recorded, current) = (recorded.trim_end_matches('\n'), started_at(&pid));
+            let current = current.trim_end_matches('\n');
+            !recorded.is_empty() && !current.is_empty() && current != recorded
         };
-    dead && holder(dir) == p
+    dead && holder(dir) == pid
 }
 
 /// `Some(true)` when this run now holds the lock, `Some(false)` when another does, `None` when
@@ -91,23 +92,24 @@ pub fn stale(dir: &Path) -> bool {
     )
 )]
 pub fn acquire(dir: &Path) -> Option<bool> {
-    let w = || run("test", &[OsStr::new("-w"), dir.as_os_str()]).status;
-    if fs::create_dir_all(dir).is_err() || !w().success() {
+    let writable = || run("test", &[OsStr::new("-w"), dir.as_os_str()]).status;
+    if fs::create_dir_all(dir).is_err() || !writable().success() {
         return None;
     }
-    let g = dir.join("lock.reap");
+    let reap = dir.join("lock.reap");
     Some(
         take(dir)
             || if stale(dir) {
-                (fs::create_dir(&g).is_ok() || state::age(&g).is_some_and(|a| a >= 60)) && {
-                    let won = take(dir)
-                        || stale(dir) && {
-                            drop(fs::remove_dir_all(dir.join("lock")));
-                            take(dir)
-                        };
-                    drop(fs::remove_dir_all(&g));
-                    won
-                }
+                (fs::create_dir(&reap).is_ok() || state::age(&reap).is_some_and(|age| age >= 60))
+                    && {
+                        let won = take(dir)
+                            || stale(dir) && {
+                                drop(fs::remove_dir_all(dir.join("lock")));
+                                take(dir)
+                            };
+                        drop(fs::remove_dir_all(&reap));
+                        won
+                    }
             } else {
                 take(dir) // released since the mkdir: free, so taken
             },
@@ -138,15 +140,15 @@ pub fn release(dir: &Path) {
     )
 )]
 pub fn blocked(dir: &Path, started: i64) -> String {
-    let p = Some(holder(dir)).filter(|p| !p.is_empty());
-    let p = p.unwrap_or_else(|| "unknown".into());
+    let pid = Some(holder(dir)).filter(|pid| !pid.is_empty());
+    let pid = pid.unwrap_or_else(|| "unknown".into());
     let log = dir.join("lock-blocked.log");
     drop(record::append(
         &log,
-        &format!("{} lock-blocked holder-pid={p}\n", iso(started)),
+        &format!("{} lock-blocked holder-pid={pid}\n", iso(started)),
     ));
     record::keep_tail(&log, true, 200, 200);
-    p
+    pid
 }
 
 #[cfg(test)]
@@ -199,22 +201,24 @@ mod tests {
         for (name, pid, started, aged, guard, want) in cases {
             let dir = scratch(&format!("lock-{name}")).join("st"); // mkdir -p'd by acquire
             let (lock, reap) = (dir.join("lock"), dir.join("lock.reap"));
-            let touch = |p, old_| {
-                fs::File::open(p)
-                    .unwrap()
-                    .set_modified(if old_ { old } else { SystemTime::now() })
+            let touch = |path, old_| {
+                fs::File::open(path).unwrap().set_modified(if old_ {
+                    old
+                } else {
+                    SystemTime::now()
+                })
             };
-            if let Some(p) = pid {
+            if let Some(written) = pid {
                 fs::create_dir_all(&lock).unwrap();
-                fs::write(lock.join("pid"), p).unwrap();
-                if let Some(s) = started.as_ref() {
-                    fs::write(lock.join("started"), s).unwrap();
+                fs::write(lock.join("pid"), written).unwrap();
+                if let Some(stamp) = started.as_ref() {
+                    fs::write(lock.join("started"), stamp).unwrap();
                 }
                 touch(&lock, aged).unwrap();
             }
-            if let Some(g) = guard {
+            if let Some(guard_aged) = guard {
                 fs::create_dir_all(&reap).unwrap();
-                touch(&reap, g).unwrap();
+                touch(&reap, guard_aged).unwrap();
             }
             let held = acquire(&dir);
             let mine = holder(&dir) == me;
