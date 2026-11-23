@@ -844,6 +844,10 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         })
     }
 
+    #[expect(
+        clippy::single_call_fn,
+        reason = "the run table, named apart from the test"
+    )]
     fn run_cases(h: &str) -> [Case; 18] {
         let fail = "on_error: fail";
         let fixed = r#"[ -f "$ROUTINE_STATE_DIR/fixed" ] || exit 7"#;
@@ -1240,6 +1244,10 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     /// A tick's home: `docs` a line per routine, `name|schedule|block` (an empty block `true`);
     /// `later` and `yearly` ran at 09:00, `ahead` past the clock, `c`'s lock is held, `held` is paused, and a dark
     /// home holds a NUL schedule, a non-doc, a dangling link and a due.log past 5 MB.
+    #[expect(
+        clippy::single_call_fn,
+        reason = "the due fixture, named apart from its table"
+    )]
     fn due_home(home: &Path, docs: &str) {
         let st = home.join(".state");
         for doc in docs.lines() {

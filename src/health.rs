@@ -68,6 +68,10 @@ fn stamped(file: &Path) -> Option<(String, String, String)> {
 }
 
 /// `<dir>/ack` as `(exit, at, reason)`.
+#[expect(
+    clippy::single_call_fn,
+    reason = "the ack marker's parser, named beside paused"
+)]
 fn acked(dir: &Path) -> Option<(i64, String, String)> {
     let (head, at, r) = stamped(&dir.join("ack"))?;
     Some((
@@ -78,6 +82,10 @@ fn acked(dir: &Path) -> Option<(i64, String, String)> {
 }
 
 /// `<dir>/paused` as `(at, reason)`, both empty when a hand made it.
+#[expect(
+    clippy::single_call_fn,
+    reason = "the pause marker's parser, named beside acked"
+)]
 fn paused(dir: &Path) -> Option<(String, String)> {
     let f = dir.join("paused");
     (f.is_file()).then(|| stamped(&f).map_or_else(Default::default, |p| (p.1, p.2)))
@@ -101,6 +109,10 @@ fn last_run(dir: &Path) -> Option<(i64, String, i64, i64)> {
 
 /// tick.log's tail as `(heard, swept)`: its last line's stamp, and the last sweep that could
 /// dispatch — a `tick docs=` line no `defer dark-wake` follows.
+#[expect(
+    clippy::single_call_fn,
+    reason = "tick.log's reading, named apart from the verdicts"
+)]
 fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
     let (cut, log) = state::last_bytes(&states.join("tick.log"), 1 << 16);
     let log = String::from_utf8_lossy(&log);
@@ -130,6 +142,10 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
 #[expect(
     clippy::pattern_type_mismatch,
     reason = "a tuple's fields bind by reference only through ref, which ref_patterns forbids"
+)]
+#[expect(
+    clippy::single_call_fn,
+    reason = "one routine's verdict, the unit health loops over"
 )]
 fn routine(
     (dir, states): (&Path, &Path),
@@ -240,6 +256,7 @@ fn routine(
 }
 
 /// When the machine last woke, `sysctl -n kern.waketime`'s `sec`; none when the probe fails.
+#[expect(clippy::single_call_fn, reason = "the wake-time probe")]
 fn wake() -> Option<i64> {
     let o = Command::new("sysctl")
         .args(["-n", "kern.waketime"])
@@ -257,6 +274,7 @@ fn wake() -> Option<i64> {
     clippy::arithmetic_side_effects,
     reason = "now is ROUTINE_NOW's to set: saturating would change what a hostile clock prints"
 )]
+#[expect(clippy::single_call_fn, reason = "the tick's verdict")]
 fn tick(
     states: &Path,
     now: i64,
@@ -298,6 +316,7 @@ fn tick(
     clippy::pattern_type_mismatch,
     reason = "a tuple's fields bind by reference only through ref, which ref_patterns forbids"
 )]
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn health(as_json: bool, now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let mut skipped = Vec::new();
@@ -393,6 +412,7 @@ fn known(dir: &Path, name: &str) -> bool {
     clippy::indexing_slicing,
     reason = "main's usage gate passes a name first"
 )]
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn ack(args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, why) = (args[0], &args[1..]);
@@ -428,6 +448,7 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
     clippy::indexing_slicing,
     reason = "main's usage gate passes a name first"
 )]
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn pause(on: bool, args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, st) = (args[0], states.join(args[0]));

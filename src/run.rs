@@ -213,6 +213,13 @@ pub fn on_error(doc: &str) -> Result<String, String> {
 
 /// Each `requires` name `env` (the blocks' environment) holds unset or empty — as `$(printenv)`
 /// reads it, so newlines alone are empty — each with a leading space: bash's `$missing`.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the requires gate, unit-tested on its own"
+    )
+)]
 pub fn missing<F: Fn(&str) -> Option<OsString>>(doc: &str, env: F) -> String {
     let req = frontmatter_get(doc, "requires").unwrap_or_default();
     (req.split([' ', '\t']).filter(|v| !v.is_empty()))
@@ -236,6 +243,13 @@ fn subst(b: &[u8]) -> Vec<u8> {
 /// markers carry the run's random suffix `k`, so output printing `=== end output ===` cannot
 /// step outside its section.
 #[expect(clippy::indexing_slicing, reason = "the start is at most the length")]
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the agent's prompt, unit-tested on its own"
+    )
+)]
 pub fn catch_prompt(
     name: &str,
     doc: &Path,
@@ -327,6 +341,10 @@ fn kill_tree(sig: i32, pid: i32) -> bool {
 /// A signal lands mid-sequence or mid-escalation: stop the block's group (TERM, two seconds,
 /// KILL) before the record and the lock release tell the next run the routine is idle.
 #[expect(clippy::arithmetic_side_effects, reason = "n counts to 20")]
+#[expect(
+    clippy::single_call_fn,
+    reason = "the signal path, handed to sys::catch"
+)]
 fn on_signal(sig: i32) {
     let p = {
         let mut g = lock();
@@ -358,6 +376,7 @@ fn show(f: &Path) {
     clippy::arithmetic_side_effects,
     reason = "n counts the watch's seconds"
 )]
+#[expect(clippy::single_call_fn, reason = "the watchdog thread's body")]
 fn watchdog(limit: Duration, done: &Receiver<()>, tmp: &Path) {
     if done.recv_timeout(limit) != Err(RecvTimeoutError::Timeout) {
         return;
@@ -392,6 +411,10 @@ fn refuse(states: &Path, now: i64, rc: i32, why: &str, msg: &str) -> ! {
 }
 
 /// `mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX"`, the suffix six hex digits; 73 when it fails.
+#[expect(
+    clippy::single_call_fn,
+    reason = "mktemp -d, named for the command it replaces"
+)]
 fn mktemp() -> PathBuf {
     let (base, s) = (state::root("TMPDIR", "/tmp".into()), RandomState::new());
     let mut tmp = (0..64).map(|i| base.join(format!("routine.{:06x}", s.hash_one(i) & 0xff_ffff)));
@@ -408,6 +431,7 @@ fn mktemp() -> PathBuf {
 
 /// `cmd_run`: the name and document gates, the lock, `requires`, the log and temp dir, the
 /// blocks, `on_error`, the home, then the sequence under the watchdog.
+#[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn run(name: &str, now: i64) -> ! {
     let (rdir, states, home) = state::roots();
     if !state::slug(name) {

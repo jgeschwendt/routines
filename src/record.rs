@@ -67,6 +67,13 @@ pub fn degrade(dir: &Path, now: i64) {
 /// empty record, read as never run), the same line appended to `runs.jsonl`. A clean exit
 /// clears `degraded` before stamping, so the record and the marker never disagree; an exit
 /// other than the acked one drops `ack`, which never outlives the failure it held.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the run's record, unit-tested on its own"
+    )
+)]
 pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
     drop(fs::create_dir_all(dir));
     if rc == 0 {
@@ -92,6 +99,13 @@ pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
 /// `logs/` made and rid of `*.log` files at least 15 days old (find's `-mtime +14`), then this
 /// run's log: the stamp is second-resolution and a routine can run twice inside one, so the pid
 /// keeps two runs apart.
+#[cfg_attr(
+    not(test),
+    expect(
+        clippy::single_call_fn,
+        reason = "the log's name and pruning, unit-tested on its own"
+    )
+)]
 pub fn log_file(dir: &Path, started: i64) -> PathBuf {
     let logs = dir.join("logs");
     drop(fs::create_dir_all(&logs));
