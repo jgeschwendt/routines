@@ -1581,7 +1581,7 @@ fn health() {
             None,
         ),
         ("paused.md", Some(hourly.clone()), None),
-        ("stale.md", Some(hourly.clone()), None),
+        ("stale.md", Some(hourly), None),
         ("touched.md", Some(blk.into()), None),
         ("wedged.md", Some(held.clone()), None),
     ] {
@@ -2013,7 +2013,7 @@ fn pause() {
     assert_eq!(read("paused"), held("2026-08-14T09:01:00Z", ""));
     // swept an hour after the 10:00 fire fell due, resumed after that: due, not stale
     assert_eq!(at(now + 7200, &["run", "--due"]), done);
-    assert_eq!(at(now + 7260, &["resume", "p"]), done.clone());
+    assert_eq!(at(now + 7260, &["resume", "p"]), done);
     assert_eq!(
         (read("paused"), read("resumed")),
         (None, Some(format!("{}\n", now + 7260)))
