@@ -87,12 +87,12 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-pub(crate) mod tests {
+pub mod tests {
     use super::{extract_blocks, frontmatter_get};
     use std::{env, fs, path::PathBuf, process};
 
     /// A fresh, empty dir `name.<pid>` beside the test binary: two runs of it never share one.
-    pub(crate) fn scratch(name: &str) -> PathBuf {
+    pub fn scratch(name: &str) -> PathBuf {
         let dir = env::current_exe()
             .unwrap()
             .with_file_name(format!("{name}.{}", process::id()));
