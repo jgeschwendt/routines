@@ -11,9 +11,9 @@ use std::{fs, path::Path};
 )]
 fn cells(texts: [&str; 6]) -> String {
     let mut row = String::new();
-    for (t, w) in texts.iter().zip([21usize, 17, 7, 6, 22]) {
-        row += t;
-        row += &" ".repeat(w.saturating_sub(t.len() - 2 * t.matches('—').count()));
+    for (text, width) in texts.iter().zip([21usize, 17, 7, 6, 22]) {
+        row += text;
+        row += &" ".repeat(width.saturating_sub(text.len() - 2 * text.matches('—').count()));
     }
     format!("{row}{}\n", texts[5])
 }
@@ -38,12 +38,12 @@ pub fn next_fire_of(states: &Path, name: &str, sched: &str, now: i64) -> Option<
 
 #[expect(clippy::single_call_fn, reason = "a module per verb")]
 pub fn status(dir: &Path, states: &Path, now: i64) {
-    let or_dash = |s: String| if s.is_empty() { "—".into() } else { s };
+    let or_dash = |text: String| if text.is_empty() { "—".into() } else { text };
     print!(
         "{}",
         cells(["NAME", "SCHEDULE", "DUE", "EXIT", "FINISHED", "SECS"])
     );
-    for name in state::routines(dir, |f, why| eprintln!("routine: skip {f}: {why}")) {
+    for name in state::routines(dir, |file, why| eprintln!("routine: skip {file}: {why}")) {
         let sched = schedule(dir, &name);
         let (st, last) = (states.join(&name), states.join(&name).join("last-run.json"));
         let due = if st.join("paused").is_file() {

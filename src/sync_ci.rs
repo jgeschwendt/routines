@@ -20,13 +20,18 @@ const WORKFLOW: &str = include_str!("../.github/workflows/routines.yaml");
     reason = "a shell's $PWD, its rules documented on their own"
 )]
 fn pwd() -> OsString {
-    let id = |p: &Path| fs::metadata(p).map(|m| (m.dev(), m.ino())).ok();
-    let pwd = env::var_os("PWD").filter(|p| !p.is_empty());
+    let id = |path: &Path| {
+        fs::metadata(path)
+            .map(|metadata| (metadata.dev(), metadata.ino()))
+            .ok()
+    };
+    let pwd = env::var_os("PWD").filter(|inherited| !inherited.is_empty());
     match env::current_dir() {
         Err(_) => pwd.unwrap_or_else(|| ".".into()),
         Ok(cwd) => pwd
-            .filter(|p| {
-                Path::new(p).is_absolute() && id(p.as_ref()).is_some_and(|i| id(&cwd) == Some(i))
+            .filter(|inherited| {
+                Path::new(inherited).is_absolute()
+                    && id(inherited.as_ref()).is_some_and(|i| id(&cwd) == Some(i))
             })
             .unwrap_or_else(|| cwd.into()),
     }
@@ -42,8 +47,8 @@ pub fn sync_ci() {
     let wf = dir.join("routines.yaml");
     drop(fs::create_dir_all(&dir));
     drop(fs::remove_file(dir.join("routines.yml")));
-    if let Err(e) = fs::write(&wf, WORKFLOW) {
-        eprintln!("routine: {}: {e}", wf.display());
+    if let Err(error) = fs::write(&wf, WORKFLOW) {
+        eprintln!("routine: {}: {error}", wf.display());
     }
     println!("wrote {}", wf.display());
 }

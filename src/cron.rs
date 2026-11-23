@@ -28,9 +28,9 @@ pub fn civil(epoch: i64) -> (i64, i64, i64, i64) {
     reason = "the time of day is the epoch's remainders by the day, hour and minute"
 )]
 pub fn iso(epoch: i64) -> String {
-    let (y, m, d, _) = civil(epoch);
+    let (year, month, day, _) = civil(epoch);
     format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}Z",
         epoch % 86400 / 3600,
         epoch % 3600 / 60,
         epoch % 60
@@ -53,7 +53,7 @@ pub fn iso(epoch: i64) -> String {
     )
 )]
 pub fn epoch(stamp: &str) -> Option<i64> {
-    let field = |a: usize, b: usize| num(stamp.get(a..b)?);
+    let field = |from: usize, to: usize| num(stamp.get(from..to)?);
     let (mon, day) = (field(5, 7)?, field(8, 10)?);
     let yr = field(0, 4)? - i64::from(mon < 3);
     let doy = (153 * ((mon + 9) % 12) + 2) / 5 + day - 1;
@@ -63,8 +63,9 @@ pub fn epoch(stamp: &str) -> Option<i64> {
 }
 
 /// 1-18 ASCII digits: bash `$((…))` wraps from 2^63, so 18 is the safe cap.
-pub fn num(s: &str) -> Option<i64> {
-    (s.len() < 19 && s.bytes().all(|b| b.is_ascii_digit())).then(|| s.parse().ok())?
+pub fn num(digits: &str) -> Option<i64> {
+    (digits.len() < 19 && digits.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| digits.parse().ok())?
 }
 
 /// The values one field allows, or `None` when it is no field this parser takes.
@@ -82,16 +83,16 @@ fn expand(field: &str, lo: i64, hi: i64) -> Option<Vec<i64>> {
             (Some((head, _)), Some((_, step))) => (head, step, Some(hi)),
             _ => (part, "1", None),
         };
-        let step = num(step).filter(|&s| s >= 1)?;
-        let (s, e) = match head.split_once('-') {
+        let step = num(step).filter(|&n| n >= 1)?;
+        let (first, last) = match head.split_once('-') {
             _ if head == "*" => (lo, hi),
-            Some((s, e)) => (num(s)?, num(e)?),
-            None => num(head).map(|s| (s, end.unwrap_or(s)))?,
+            Some((from, to)) => (num(from)?, num(to)?),
+            None => num(head).map(|value| (value, end.unwrap_or(value)))?,
         };
-        if s < lo || e > hi || s > e {
+        if first < lo || last > hi || first > last {
             return None;
         }
-        out.extend((s..=e).step_by(usize::try_from(step).ok()?));
+        out.extend((first..=last).step_by(usize::try_from(step).ok()?));
     }
     (!out.is_empty()).then_some(out)
 }
@@ -108,7 +109,7 @@ pub fn next_fire_after(start: i64, expr: &str) -> Option<i64> {
     // bash's default IFS: blanks around and between fields collapse
     let fields: Vec<_> = expr
         .split([' ', '\t', '\n'])
-        .filter(|f| !f.is_empty())
+        .filter(|field| !field.is_empty())
         .collect();
     let [min, hour, dom, mon, dow] = fields[..] else {
         return None;
@@ -127,23 +128,28 @@ pub fn next_fire_after(start: i64, expr: &str) -> Option<i64> {
     // other; only two restricted fields OR together
     let both = i64::from(dom.starts_with('*') || dow.starts_with('*'));
     let midnight = start - start % 86400;
-    let mut d = 0;
-    while d <= 2922 {
-        let de = midnight + d * 86400;
-        d += 1;
-        let (_, m, md, wd) = civil(de);
+    let mut ahead = 0;
+    while ahead <= 2922 {
+        let de = midnight + ahead * 86400;
+        ahead += 1;
+        let (_, month, day_of_month, weekday) = civil(de);
         // a dead month jumps to its 28th, then walks — never past a next month's 1st
-        if !months.contains(&m) {
-            d += (27 - md).max(0);
+        if !months.contains(&month) {
+            ahead += (27 - day_of_month).max(0);
             continue;
         }
-        if i64::from(days.contains(&md)) + i64::from(weekdays.contains(&wd)) <= both {
+        if i64::from(days.contains(&day_of_month)) + i64::from(weekdays.contains(&weekday)) <= both
+        {
             continue;
         }
         let fire = hours
             .iter()
-            .flat_map(|h| minutes.iter().map(move |m| de + h * 3600 + m * 60))
-            .filter(|&t| t > start)
+            .flat_map(|clock_hour| {
+                minutes
+                    .iter()
+                    .map(move |clock_minute| de + clock_hour * 3600 + clock_minute * 60)
+            })
+            .filter(|&time| time > start)
             .min();
         if fire.is_some() {
             return fire;
@@ -212,28 +218,31 @@ mod tests {
 
     #[test]
     fn civil_and_iso() {
-        for (t, s, w) in [
+        for (secs, stamp, weekday) in [
             (0, "1970-01-01T00:00:00Z", 4),
             (951_782_400, "2000-02-29T00:00:00Z", 2), // 2000 is a leap year: 400 divides it
             (1_835_404_263, "2028-02-29T02:31:03Z", 2),
             (4_105_036_800, "2100-01-31T00:00:00Z", 0),
             (4_107_542_400, "2100-03-01T00:00:00Z", 1), // 2100 is not: Feb 28 runs into Mar 1
         ] {
-            assert_eq!((iso(t).as_str(), civil(t).3, epoch(s)), (s, w, Some(t)));
+            assert_eq!(
+                (iso(secs).as_str(), civil(secs).3, epoch(stamp)),
+                (stamp, weekday, Some(secs))
+            );
         }
-        for s in [
+        for stamp in [
             "2026-02-30T00:00:00Z",
             "2026-08-14 09:00:00Z",
             "2026-08-14T09:00:00Z ",
         ] {
-            assert_eq!(epoch(s), None, "{s}");
+            assert_eq!(epoch(stamp), None, "{stamp}");
         }
     }
 
     #[test]
     fn next_fire_after_matches_the_table() {
-        for &(t, e, want) in CASES {
-            assert_eq!(next_fire_after(t, e), want, "{t} {e:?}");
+        for &(start, expr, want) in CASES {
+            assert_eq!(next_fire_after(start, expr), want, "{start} {expr:?}");
         }
     }
 }

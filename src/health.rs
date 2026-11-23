@@ -8,43 +8,49 @@ use crate::{
 };
 use std::{fmt::Write as _, fs, path::Path, process::Command, time::UNIX_EPOCH};
 
-/// `s` as a JSON string: `"` and `\` escaped, every other control character `\u00XX`.
-fn json(s: &str) -> String {
-    let mut o = String::from('"');
-    for c in s.chars() {
-        match c {
-            '"' | '\\' => o.extend(['\\', c]),
-            c if c < ' ' => _ = write!(o, "\\u{:04x}", u32::from(c)),
-            c => o.push(c),
+/// `text` as a JSON string: `"` and `\` escaped, every other control character `\u00XX`.
+fn json(text: &str) -> String {
+    let mut out = String::from('"');
+    for ch in text.chars() {
+        match ch {
+            '"' | '\\' => out.extend(['\\', ch]),
+            control if control < ' ' => _ = write!(out, "\\u{:04x}", u32::from(control)),
+            other => out.push(other),
         }
     }
-    format!("{o}\"")
+    format!("{out}\"")
 }
 
 /// `json`'s escapes undone: `\uXXXX` its code point, `\X` the `X`.
-fn unjson(s: &str) -> String {
-    let (mut cs, mut o) = (s.chars(), String::new());
-    while let Some(mut c) = cs.next() {
-        if c == '\\' {
-            c = cs.next().unwrap_or_default();
-            if c == 'u' {
-                let h: String = cs.by_ref().take(4).collect();
-                let u = u32::from_str_radix(&h, 16).ok().and_then(char::from_u32);
-                c = u.unwrap_or_default();
+fn unjson(text: &str) -> String {
+    let (mut cs, mut out) = (text.chars(), String::new());
+    while let Some(mut ch) = cs.next() {
+        if ch == '\\' {
+            ch = cs.next().unwrap_or_default();
+            if ch == 'u' {
+                let hex: String = cs.by_ref().take(4).collect();
+                let code = u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32);
+                ch = code.unwrap_or_default();
             }
         }
-        o.push(c);
+        out.push(ch);
     }
-    o
+    out
 }
 
-fn opt(v: Option<String>) -> String {
-    v.unwrap_or_else(|| "null".into())
+fn opt(value: Option<String>) -> String {
+    value.unwrap_or_else(|| "null".into())
 }
 
-fn mtime(p: &Path) -> Option<i64> {
-    let t = fs::metadata(p).ok()?.modified().ok()?;
-    Some(t.duration_since(UNIX_EPOCH).ok()?.as_secs().cast_signed())
+fn mtime(path: &Path) -> Option<i64> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    Some(
+        modified
+            .duration_since(UNIX_EPOCH)
+            .ok()?
+            .as_secs()
+            .cast_signed(),
+    )
 }
 
 /// `<kind>: <name> — <finding>` and its fix, one finding as the plain report prints it.
@@ -60,11 +66,11 @@ fn stamp(head: &str, at: &str, reason: &str) -> String {
 
 /// `file` as `(head, at, reason)`, when it holds the line `stamp` writes.
 fn stamped(file: &Path) -> Option<(String, String, String)> {
-    let a = state::read(file);
-    let (head, r) = a.strip_prefix('{')?.split_once("\"at\":\"")?;
-    let (at, r) = r.split_once("\",\"reason\":\"")?;
-    let r = r.trim_end().strip_suffix("\"}")?;
-    Some((head.into(), unjson(at), unjson(r)))
+    let line = state::read(file);
+    let (head, rest) = line.strip_prefix('{')?.split_once("\"at\":\"")?;
+    let (at, rest) = rest.split_once("\",\"reason\":\"")?;
+    let rest = rest.trim_end().strip_suffix("\"}")?;
+    Some((head.into(), unjson(at), unjson(rest)))
 }
 
 /// `<dir>/ack` as `(exit, at, reason)`.
@@ -73,11 +79,11 @@ fn stamped(file: &Path) -> Option<(String, String, String)> {
     reason = "the ack marker's parser, named beside paused"
 )]
 fn acked(dir: &Path) -> Option<(i64, String, String)> {
-    let (head, at, r) = stamped(&dir.join("ack"))?;
+    let (head, at, reason) = stamped(&dir.join("ack"))?;
     Some((
         cron::num(head.strip_prefix("\"exit\":")?.strip_suffix(',')?)?,
         at,
-        r,
+        reason,
     ))
 }
 
@@ -87,8 +93,9 @@ fn acked(dir: &Path) -> Option<(i64, String, String)> {
     reason = "the pause marker's parser, named beside acked"
 )]
 fn paused(dir: &Path) -> Option<(String, String)> {
-    let f = dir.join("paused");
-    (f.is_file()).then(|| stamped(&f).map_or_else(Default::default, |p| (p.1, p.2)))
+    let file = dir.join("paused");
+    (file.is_file())
+        .then(|| stamped(&file).map_or_else(Default::default, |parsed| (parsed.1, parsed.2)))
 }
 
 fn ack_json(exit: i64, at: &str, reason: &str) -> String {
@@ -97,8 +104,8 @@ fn ack_json(exit: i64, at: &str, reason: &str) -> String {
 
 /// `<dir>/last-run.json` as `(started_epoch, finished, exit, duration)`, when each is there.
 fn last_run(dir: &Path) -> Option<(i64, String, i64, i64)> {
-    let get = |k| state::json_get(&dir.join("last-run.json"), k);
-    let n = |k| cron::num(&get(k));
+    let get = |key| state::json_get(&dir.join("last-run.json"), key);
+    let n = |key| cron::num(&get(key));
     Some((
         n("started_epoch")?,
         get("finished"),
@@ -117,9 +124,9 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
     let (cut, log) = state::last_bytes(&states.join("tick.log"), 1 << 16);
     let log = String::from_utf8_lossy(&log);
     let mut lines: Vec<_> = log.lines().skip(usize::from(cut > 0)).collect();
-    let stamp = |l: &str| l.get(..20).and_then(cron::epoch);
-    let is = |l: &str, m: &str| l.get(20..).is_some_and(|r| r.starts_with(m));
-    let heard = lines.last().and_then(|l| stamp(l));
+    let stamp = |line: &str| line.get(..20).and_then(cron::epoch);
+    let is = |line: &str, marker: &str| line.get(20..).is_some_and(|rest| rest.starts_with(marker));
+    let heard = lines.last().and_then(|line| stamp(line));
     lines.push("");
     let swept = (lines.iter().zip(lines.iter().skip(1)).rev())
         .filter(|&(line, next)| is(line, " tick docs=") && !is(next, " defer dark-wake"))
@@ -160,8 +167,9 @@ fn routine(
     let (limit, bad) = run::timeout(&text);
     let lint: Vec<_> = [
         (doc::extract_blocks(&text).is_empty()).then(|| "no sh or bash block".into()),
-        (run::on_error(&text).err()).map(|v| format!("on_error {v} is neither claude nor fail")),
-        bad.map(|v| format!("timeout {v} is no positive number of seconds")),
+        (run::on_error(&text).err())
+            .map(|value| format!("on_error {value} is neither claude nor fail")),
+        bad.map(|value| format!("timeout {value} is no positive number of seconds")),
         (!sched.is_empty() && next.is_none()).then(|| format!("schedule {sched} never fires")),
     ]
     .into_iter()
@@ -170,10 +178,10 @@ fn routine(
     let (last, ack, paused) = (last_run(&st), acked(&st), paused(&st));
     let due = paused.is_none() && next.is_some_and(|n| n <= now);
     let running = st.join("lock").exists() && !lock::stale(&st);
-    let held = mtime(&st.join("lock")).map_or(0, |t| now - t);
+    let held = mtime(&st.join("lock")).map_or(0, |taken| now - taken);
     let resumed = cron::num(state::read(&st.join("resumed")).trim_end()).unwrap_or(0);
     let since = (next.filter(|_| due)).and_then(|n| if n == 0 { mtime(&doc) } else { Some(n) });
-    let since = since.map(|d| d.max(resumed));
+    let since = since.map(|fell_due| fell_due.max(resumed));
     let (verdict, says) = if !lint.is_empty() {
         let fix = format!(
             "edit {}: the smallest change the runner takes",
@@ -181,42 +189,52 @@ fn routine(
         );
         ("lint", Some((lint.join("; "), fix)))
     } else if running && held > limit.saturating_add(60) {
-        let p = lock::holder(&st);
-        let f = format!("pid {p} has held the lock {held}s, past its {limit}s timeout");
-        let x = format!(
-            "ps -p {p} -o command= — its watchdog missed it: kill {p}, and the next run reaps the lock"
+        let pid = lock::holder(&st);
+        let finding = format!("pid {pid} has held the lock {held}s, past its {limit}s timeout");
+        let fix = format!(
+            "ps -p {pid} -o command= — its watchdog missed it: kill {pid}, and the next run reaps the lock"
         );
-        ("wedged", Some((f, x)))
+        ("wedged", Some((finding, fix)))
     } else if paused.is_some() {
         ("paused", None)
-    } else if let Some((_, fin, e, _)) = last.as_ref().filter(|l| l.2 != 0) {
+    } else if let Some((_, fin, exit, _)) = last.as_ref().filter(|ran| ran.2 != 0) {
         let logs = st.join("logs");
         let newest = (fs::read_dir(&logs).into_iter().flatten().flatten())
-            .map(|e| e.path())
+            .map(|entry| entry.path())
             .max()
             .unwrap_or(logs);
-        let (n, d) = (newest.display(), doc.display());
-        let (v, x) = if *e == 1 {
-            let x = format!("it ran and found something — read {n}; {d} says whose move it is");
-            ("finding", x)
+        let (log_shown, doc_shown) = (newest.display(), doc.display());
+        let (kind, fix) = if *exit == 1 {
+            let fix = format!(
+                "it ran and found something — read {log_shown}; {doc_shown} says whose move it is"
+            );
+            ("finding", fix)
         } else {
-            let x = format!("read {n}, then {d} — its prose is the repair manual");
-            ("failed", x)
+            let fix =
+                format!("read {log_shown}, then {doc_shown} — its prose is the repair manual");
+            ("failed", fix)
         };
-        let v = if ack.as_ref().is_some_and(|a| a.0 == *e) {
+        let kind = if ack.as_ref().is_some_and(|marker| marker.0 == *exit) {
             "acknowledged"
         } else {
-            v
+            kind
         };
-        (v, Some((format!("exit {e} at {fin}"), x)))
-    } else if let Some((d, s)) = since.zip(swept).filter(|&(d, s)| !running && s - d > 1800) {
-        let f = format!("due since {}, swept {} without a run", iso(d), iso(s));
+        (kind, Some((format!("exit {exit} at {fin}"), fix)))
+    } else if let Some((due_at, swept_at)) = since
+        .zip(swept)
+        .filter(|&(due_at, swept_at)| !running && swept_at - due_at > 1800)
+    {
+        let finding = format!(
+            "due since {}, swept {} without a run",
+            iso(due_at),
+            iso(swept_at)
+        );
         let log = states.join("tick.log");
-        let x = format!(
+        let fix = format!(
             "routine run {name}, and read {} for its refusal",
             log.display()
         );
-        ("stale", Some((f, x)))
+        ("stale", Some((finding, fix)))
     } else {
         ("ok", None)
     };
@@ -225,14 +243,14 @@ fn routine(
         ack.as_ref().filter(|_| verdict == "acknowledged"),
         paused.as_ref().filter(|_| verdict == "paused"),
     ) {
-        (_, Some((e, at, r)), _) => Some((
+        (_, Some((exit, at, reason)), _) => Some((
             2,
-            format!("acknowledged: {name} — exit {e} since {at}: {r}\n"),
+            format!("acknowledged: {name} — exit {exit} since {at}: {reason}\n"),
         )),
-        (_, _, Some((at, r))) => Some((2, format!("paused: {name} — since {at}: {r}\n"))),
-        (Some((f, x)), ..) => Some((
+        (_, _, Some((at, reason))) => Some((2, format!("paused: {name} — since {at}: {reason}\n"))),
+        (Some((finding, fix)), ..) => Some((
             usize::from(verdict == "finding"),
-            report(verdict, name, f, x),
+            report(verdict, name, finding, fix),
         )),
         _ => None,
     };
@@ -242,15 +260,15 @@ fn routine(
         json(name),
         opt((!sched.is_empty()).then(|| json(&sched))),
         opt(next.map(|n| n.to_string())),
-        opt(last.map(|(s, f, e, d)| format!(
-            "{{\"started\":{s},\"finished\":{},\"exit\":{e},\"duration\":{d}}}",
-            json(&f)
+        opt(last.map(|(started, finished, exit, duration)| format!(
+            "{{\"started\":{started},\"finished\":{},\"exit\":{exit},\"duration\":{duration}}}",
+            json(&finished)
         ))),
         opt((degraded.is_file()).then(|| json(state::read(&degraded).trim_end_matches('\n')))),
-        opt(ack.map(|(e, at, r)| ack_json(e, &at, &r))),
-        opt(paused.map(|(at, r)| stamp("", &at, &r))),
-        opt(says.as_ref().map(|s| json(&s.0))),
-        opt(says.map(|s| json(&s.1))),
+        opt(ack.map(|(exit, at, reason)| ack_json(exit, &at, &reason))),
+        opt(paused.map(|(at, reason)| stamp("", &at, &reason))),
+        opt(says.as_ref().map(|found| json(&found.0))),
+        opt(says.map(|found| json(&found.1))),
     );
     (row, running, said)
 }
@@ -258,12 +276,12 @@ fn routine(
 /// When the machine last woke, `sysctl -n kern.waketime`'s `sec`; none when the probe fails.
 #[expect(clippy::single_call_fn, reason = "the wake-time probe")]
 fn wake() -> Option<i64> {
-    let o = Command::new("sysctl")
+    let output = Command::new("sysctl")
         .args(["-n", "kern.waketime"])
         .output()
         .ok()?;
-    let o = String::from_utf8_lossy(&o.stdout).into_owned();
-    cron::num(o.strip_prefix("{ sec = ")?.split(',').next()?)
+    let output = String::from_utf8_lossy(&output.stdout).into_owned();
+    cron::num(output.strip_prefix("{ sec = ")?.split(',').next()?)
 }
 
 /// The tick's verdict and its finding: `unmanaged` with no launchctl, `not-loaded`, or `stale`
@@ -285,29 +303,29 @@ fn tick(
     if !setup::launchd() {
         return ("unmanaged", None);
     } else if !setup::launchctl(&["print", &target]) {
-        let f = format!("{target} is not loaded");
-        return ("not-loaded", Some((f, "routine setup".into())));
+        let finding = format!("{target} is not loaded");
+        return ("not-loaded", Some((finding, "routine setup".into())));
     }
     let quiet = heard.max(wake());
-    if busy || quiet.is_some_and(|t| now - t <= 600) {
+    if busy || quiet.is_some_and(|last| now - last <= 600) {
         return ("ok", None);
     }
-    let f = quiet.map_or_else(
+    let finding = quiet.map_or_else(
         || "tick.log has no line".into(),
-        |t| {
+        |last| {
             format!(
                 "tick.log quiet {}s since {}, its last line or the last wake",
-                now - t,
-                iso(t)
+                now - last,
+                iso(last)
             )
         },
     );
     let out = states.join("due.log");
-    let x = format!(
+    let fix = format!(
         "launchctl kickstart -k {target} — its output is {}",
         out.display()
     );
-    ("stale", Some((f, x)))
+    ("stale", Some((finding, fix)))
 }
 
 /// One verdict over the home, as a JSON line when `as_json` whose every finding carries the fix
@@ -320,9 +338,9 @@ fn tick(
 pub fn health(as_json: bool, now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let mut skipped = Vec::new();
-    let names = state::routines(&dir, |f, why| {
-        let opens = state::read(&dir.join(f)).lines().next() == Some("---");
-        skipped.push((f.to_owned(), why.to_owned(), opens));
+    let names = state::routines(&dir, |file, why| {
+        let opens = state::read(&dir.join(file)).lines().next() == Some("---");
+        skipped.push((file.to_owned(), why.to_owned(), opens));
     });
     let (heard, swept) = sweeps(&states);
     let (mut rows, mut said, mut busy) = (vec![], [vec![], vec![], vec![]], false);
@@ -330,47 +348,49 @@ pub fn health(as_json: bool, now: i64) -> i32 {
         let (row, running, line) = routine((&dir, &states), name, now, swept);
         rows.push(row);
         busy |= running;
-        if let Some((k, l)) = line
-            && let Some(bucket) = said.get_mut(k)
+        if let Some((bucket, text)) = line
+            && let Some(lines) = said.get_mut(bucket)
         {
-            bucket.push(l);
+            lines.push(text);
         }
     }
-    let fix = "rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it";
+    let rename_fix = "rename it to a slug, [a-z0-9][a-z0-9-]*.md: the runner never fires it";
     let skips: Vec<_> = (skipped.iter())
-        .map(|(f, why, r)| {
-            if *r {
+        .map(|(file, why, red)| {
+            if *red {
                 let finding = format!("{why}, yet it opens with frontmatter");
-                said[0].push(report("skipped", f, &finding, fix));
+                said[0].push(report("skipped", file, &finding, rename_fix));
             }
-            let x = opt(r.then(|| json(fix)));
+            let fix_json = opt(red.then(|| json(rename_fix)));
             format!(
-                "{{\"file\":{},\"why\":{},\"red\":{r},\"fix\":{x}}}",
-                json(f),
+                "{{\"file\":{},\"why\":{},\"red\":{red},\"fix\":{fix_json}}}",
+                json(file),
                 json(why)
             )
         })
         .collect();
     let mut orphans: Vec<_> = (fs::read_dir(&states).into_iter().flatten().flatten())
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
-        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|n| !n.starts_with('.') && !dir.join(format!("{n}.md")).is_file())
         .collect();
     orphans.sort();
     let (archive, stamp) = (states.join(".archive"), iso(now).replace(['-', ':'], ""));
     let orphans: Vec<_> = (orphans.iter())
         .map(|name| {
-            let (st, a) = (states.join(name).display().to_string(), archive.display());
+            let (st, shown) = (states.join(name).display().to_string(), archive.display());
             let finding = format!("{st} has no {name}.md");
-            let fix = format!("mkdir -p {a} && mv {st} {a}/{name}-{stamp} — archive, never delete");
+            let fix = format!(
+                "mkdir -p {shown} && mv {st} {shown}/{name}-{stamp} — archive, never delete"
+            );
             said[0].push(report("orphan", name, &finding, &fix));
             let (name, finding, fix) = (json(name), json(&finding), json(&fix));
             format!("{{\"name\":{name},\"finding\":{finding},\"fix\":{fix}}}")
         })
         .collect();
     let tick = tick(&states, now, heard, busy);
-    if let Some((f, x)) = &tick.1 {
-        said[0].insert(0, report(tick.0, "tick", f, x));
+    if let Some((finding, fix)) = &tick.1 {
+        said[0].insert(0, report(tick.0, "tick", finding, fix));
     }
     if as_json {
         println!(
@@ -378,9 +398,9 @@ pub fn health(as_json: bool, now: i64) -> i32 {
             json(crate::VERSION),
             if said[0].is_empty() { "ok" } else { "red" },
             tick.0,
-            opt(swept.map(|s| s.to_string())),
-            opt(tick.1.as_ref().map(|t| json(&t.0))),
-            opt(tick.1.map(|t| json(&t.1))),
+            opt(swept.map(|at| at.to_string())),
+            opt(tick.1.as_ref().map(|found| json(&found.0))),
+            opt(tick.1.map(|found| json(&found.1))),
             rows.join(","),
             skips.join(","),
             orphans.join(","),
@@ -416,20 +436,25 @@ fn known(dir: &Path, name: &str) -> bool {
 pub fn ack(args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, why) = (args[0], &args[1..]);
-    let f = states.join(name).join("ack");
+    let file = states.join(name).join("ack");
     let (rc, msg) = if !known(&dir, name) {
         (64, format!("no routine {name}"))
     } else if why == ["--clear"] {
-        drop(fs::remove_file(&f));
+        drop(fs::remove_file(&file));
         return 0;
-    } else if let Some(e) = last_run(&states.join(name))
-        .map(|l| l.2)
-        .filter(|&e| e != 0)
+    } else if let Some(exit) = last_run(&states.join(name))
+        .map(|last| last.2)
+        .filter(|&exit| exit != 0)
     {
-        if fs::write(&f, format!("{}\n", ack_json(e, &iso(now), &why.join(" ")))).is_ok() {
+        if fs::write(
+            &file,
+            format!("{}\n", ack_json(exit, &iso(now), &why.join(" "))),
+        )
+        .is_ok()
+        {
             return 0;
         }
-        (73, format!("cannot write {}", f.display()))
+        (73, format!("cannot write {}", file.display()))
     } else {
         (
             64,
@@ -452,24 +477,25 @@ pub fn ack(args: &[&str], now: i64) -> i32 {
 pub fn pause(on: bool, args: &[&str], now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let (name, st) = (args[0], states.join(args[0]));
-    let f = st.join("paused");
+    let file = st.join("paused");
     let (rc, msg) = if !known(&dir, name) {
         (64, format!("no routine {name}"))
     } else if on {
         let line = format!("{}\n", stamp("", &iso(now), &args[1..].join(" ")));
         if fs::create_dir_all(&st)
-            .and_then(|()| fs::write(&f, line))
+            .and_then(|()| fs::write(&file, line))
             .is_ok()
         {
             return 0;
         }
-        (73, format!("cannot write {}", f.display()))
-    } else if !f.is_file()
-        || fs::remove_file(&f).is_ok() && fs::write(st.join("resumed"), format!("{now}\n")).is_ok()
+        (73, format!("cannot write {}", file.display()))
+    } else if !file.is_file()
+        || fs::remove_file(&file).is_ok()
+            && fs::write(st.join("resumed"), format!("{now}\n")).is_ok()
     {
         return 0;
     } else {
-        (73, format!("cannot lift {}", f.display()))
+        (73, format!("cannot lift {}", file.display()))
     };
     eprintln!("routine: {msg}");
     rc

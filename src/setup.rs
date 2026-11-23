@@ -17,8 +17,8 @@ pub const TICK: &str = "dev.gigantic.routines.due";
 /// what mise installed under `packslip-jgeschwendt-routines`.
 const TOOL: &str = "routines";
 
-fn xml(s: &str) -> String {
-    s.replace('&', "&amp;")
+fn xml(text: &str) -> String {
+    text.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
@@ -64,19 +64,23 @@ fn tick(exe: &Path, home: &Path) -> String {
 
 /// launchd is this host's: `launchctl` on `PATH` (none on Linux).
 pub fn launchd() -> bool {
-    env::split_paths(&state::var("PATH").unwrap_or_default()).any(|d| d.join("launchctl").is_file())
+    env::split_paths(&state::var("PATH").unwrap_or_default())
+        .any(|dir| dir.join("launchctl").is_file())
 }
 
 pub fn launchctl(args: &[&str]) -> bool {
     Command::new("launchctl")
         .args(args)
         .output()
-        .is_ok_and(|o| o.status.success())
+        .is_ok_and(|output| output.status.success())
 }
 
 /// `gui/<uid>`, the domain the agents load in.
 pub fn gui() -> String {
-    let uid = Command::new("id").arg("-u").output().map(|o| o.stdout);
+    let uid = Command::new("id")
+        .arg("-u")
+        .output()
+        .map(|output| output.stdout);
     format!(
         "gui/{}",
         String::from_utf8_lossy(&uid.unwrap_or_default()).trim()
@@ -119,8 +123,8 @@ pub fn setup(remove: bool) -> Result<(), String> {
     if !launchd {
         return Ok(());
     }
-    for p in [&agents, &rhome, &st] {
-        drop(fs::create_dir_all(p));
+    for dir in [&agents, &rhome, &st] {
+        drop(fs::create_dir_all(dir));
     }
     let body = tick(&link, &home);
     let fresh = fs::read_to_string(&plist).ok() != Some(body.clone());
@@ -155,7 +159,12 @@ pub fn setup(remove: bool) -> Result<(), String> {
 /// the home.
 fn manifest() -> hotswap::Manifest {
     let st = state::roots().1.display().to_string();
-    let strs = |a: &[&str]| a.iter().map(|&s| s.to_owned()).collect::<Vec<_>>();
+    let strs = |items: &[&str]| {
+        items
+            .iter()
+            .map(|&item| item.to_owned())
+            .collect::<Vec<_>>()
+    };
     hotswap::Manifest {
         agents: strs(&[TICK]),
         bin: "routine".into(),
