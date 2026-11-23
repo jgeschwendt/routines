@@ -9,13 +9,13 @@ use std::{
     os::unix::process::ExitStatusExt as _,
     path::Path,
     process::{Command, Stdio},
-    sync::{Mutex, PoisonError},
+    sync::{Mutex, MutexGuard, PoisonError},
 };
 
 /// The dispatched pids, and the stop's exit code once a signal lands.
 static KIDS: Mutex<(Vec<i32>, Option<i32>)> = Mutex::new((Vec::new(), None));
 
-fn kids() -> std::sync::MutexGuard<'static, (Vec<i32>, Option<i32>)> {
+fn kids() -> MutexGuard<'static, (Vec<i32>, Option<i32>)> {
     KIDS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 

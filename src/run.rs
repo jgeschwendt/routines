@@ -507,7 +507,7 @@ pub fn run(name: &str, now: i64) -> ! {
 #[cfg(test)]
 mod tests {
     use super::{missing, on_error, timeout};
-    use std::ffi::OsString;
+    use std::{ffi::OsString, ops::RangeInclusive, path::Path};
 
     // bytes, a `·` one column: an em dash takes three
     #[test]
@@ -577,7 +577,7 @@ mod tests {
             .map(|(i, t)| {
                 let p = super::catch_prompt(
                     "nm",
-                    std::path::Path::new(&i.to_string()),
+                    Path::new(&i.to_string()),
                     t.as_bytes(),
                     3,
                     7,
@@ -607,9 +607,8 @@ not run the remaining blocks — the runner retries block 3 once after you exit.
 "
             )
         );
-        let lines = |r: std::ops::RangeInclusive<i32>| {
-            r.map(|i| i.to_string()).collect::<Vec<_>>().join("\n")
-        };
+        let lines =
+            |r: RangeInclusive<i32>| r.map(|i| i.to_string()).collect::<Vec<_>>().join("\n");
         assert!(ours[1].contains(&format!(
             " · Ab3xYz ===\n{}\n=== end document",
             lines(1..=300)

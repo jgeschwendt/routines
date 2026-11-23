@@ -5,9 +5,16 @@
 
 use std::{
     ffi::OsStr,
-    os::unix::ffi::OsStrExt as _,
-    path::Path,
-    process::{Command, Output},
+    fs::{self, Permissions},
+    os::unix::{
+        ffi::OsStrExt as _,
+        fs::{PermissionsExt as _, symlink},
+        process::CommandExt as _,
+    },
+    path::{Path, PathBuf},
+    process::{Command, Output, Stdio},
+    thread,
+    time::{Duration, UNIX_EPOCH},
 };
 
 const EXE: &str = env!("CARGO_BIN_EXE_routine");
@@ -55,7 +62,6 @@ fn help() {
 // one holding each kind of row, a paused one among them, and each skipped name.
 #[test]
 fn status() {
-    use std::{fs, fs::Permissions, os::unix::fs::PermissionsExt as _, os::unix::fs::symlink};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("status");
     let lock = |mode| fs::set_permissions(tmp.join("locked"), Permissions::from_mode(mode));
     drop(lock(0o700));
@@ -177,7 +183,6 @@ two                  —                n/a    \n9    —                     3 
 // fails (a dir in its place).
 #[test]
 fn sync_ci() {
-    use std::{fs, os::unix::fs::symlink};
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sync-ci");
     drop(fs::remove_dir_all(&tmp));
     fs::create_dir_all(tmp.join("real")).unwrap();
@@ -251,8 +256,7 @@ fn sync_ci() {
 /// `print.out`, and fails for a label from its `bootout` to its `bootstrap`; `bootstrap` fails
 /// while `bootstrap.code` exists, `kickstart` once per `kickstart.once`. curl's `releases/latest` lands on the tag in `tag`; `mise use`
 /// writes its version to `active`, which the fake mise's shim execs.
-fn host(name: &str) -> std::path::PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
+fn host(name: &str) -> PathBuf {
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("{name} &<>"));
     drop(
         Command::new("chmod")
@@ -300,8 +304,8 @@ fn launchd(tmp: &Path, exe: &Path, args: &[&str], env: &[(&str, &Path)]) -> Stri
         .envs(env.iter().copied())
         .output()
         .unwrap();
-    let calls = std::fs::read_to_string(tmp.join("log")).unwrap_or_default();
-    drop(std::fs::remove_file(tmp.join("log")));
+    let calls = fs::read_to_string(tmp.join("log")).unwrap_or_default();
+    drop(fs::remove_file(tmp.join("log")));
     let uid = String::from_utf8(Command::new("id").arg("-u").output().unwrap().stdout).unwrap();
     let out = String::from_utf8([o.stdout, o.stderr].concat()).unwrap();
     format!("{}\n{out}{calls}", o.status.code().unwrap())
@@ -355,7 +359,6 @@ fn due_plist(tmp: &Path) -> String {
 // links; `setup --remove` undoes it all, the upgrade agent and the layout through hotswap.
 #[test]
 fn setup_and_upgrade() {
-    use std::{fs, os::unix::fs::PermissionsExt as _, os::unix::fs::symlink};
     let tmp = host("setup");
     let run = |args: &[&str], env: &[(&str, &Path)]| launchd(&tmp, Path::new(EXE), args, env);
     let (agents, local) = (tmp.join("Library/LaunchAgents"), tmp.join(".local/bin"));
@@ -503,9 +506,6 @@ fn setup_and_upgrade() {
 // again through its setup, and its first tick swaps green.
 #[test]
 fn migration() {
-    use std::{
-        fs, os::unix::fs::PermissionsExt as _, os::unix::fs::symlink, thread, time::Duration,
-    };
     let tmp = host("migration");
     let xdg = tmp.join("xdg");
     let installs = xdg.join("mise/installs/packslip-jgeschwendt-routines");
@@ -717,8 +717,7 @@ fn migration() {
 /// A fresh dir under the target's tmp, with the claude stub every run calls: `MODE` hangs the
 /// auth probe (`hang`), logs out (`out`), outlives the deadline past its TERM-ignoring probe
 /// into a TERM-honouring agent (`gap`), repairs (`fix`) or fails the agent (`fails`).
-fn sandbox(name: &str) -> std::path::PathBuf {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
+fn sandbox(name: &str) -> PathBuf {
     let tmp = Path::new(env!("CARGO_TARGET_TMPDIR")).join(name);
     drop(
         Command::new("chmod")
@@ -754,8 +753,8 @@ fn routine_doc(home: &Path, name: &str, fm: &str, block: Option<&str>) {
         format!("---\n{fm}\n---\n")
     };
     let block = block.map_or(String::new(), |b| format!("```sh\n{b}\n```\n"));
-    std::fs::create_dir_all(home.join("tmp")).unwrap();
-    std::fs::write(home.join(format!("{name}.md")), fm + "prose\n" + &block).unwrap();
+    fs::create_dir_all(home.join("tmp")).unwrap();
+    fs::write(home.join(format!("{name}.md")), fm + "prose\n" + &block).unwrap();
 }
 
 /// `routine <args>` against `home`, the clock frozen, claude the sandbox's stub and `TMPDIR` the
@@ -796,12 +795,12 @@ fn masked(b: &[u8], home: &Path) -> String {
 
 /// Whether `pid` (in `file`) still runs, given three seconds to go.
 fn alive(file: &Path) -> bool {
-    let p = std::fs::read_to_string(file).unwrap();
+    let p = fs::read_to_string(file).unwrap();
     (0..30).all(|_| {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(100));
         Command::new("kill")
             .args(["-0", p.trim()])
-            .stderr(std::process::Stdio::null())
+            .stderr(Stdio::null())
             .status()
             .unwrap()
             .success()
@@ -892,7 +891,6 @@ fn run_cases(h: &str) -> [Case; 18] {
 // and a runaway block's cut copy — then the tick journal's refusals.
 #[test]
 fn run() {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("run");
     let home = tmp.join("home");
     let h = home.to_string_lossy().into_owned();
@@ -1105,7 +1103,6 @@ fn run() {
 // lock; a second TERM half a second in cuts nothing short.
 #[test]
 fn run_stops_on_a_signal() {
-    use std::{fs, thread, time::Duration};
     let tmp = sandbox("signal");
     let block =
         r#"sh -c 'trap "" TERM; echo $$ > "$ROUTINE_STATE_DIR/member.pid"; exec sleep 30' & wait"#;
@@ -1115,7 +1112,7 @@ fn run_stops_on_a_signal() {
             routine_doc(&home, "sig", "on_error: fail", Some(block));
             drop(s.spawn(move || {
                 let mut c = routine_cmd(&home, &["run", "sig"], &[])
-                    .stdout(std::process::Stdio::null())
+                    .stdout(Stdio::null())
                     .spawn()
                     .unwrap();
                 let st = home.join(".state/sig");
@@ -1148,7 +1145,6 @@ fn run_stops_on_a_signal() {
 // and TERMs an agent forked past the deadline, skipping the retry.
 #[test]
 fn run_times_out() {
-    use std::{fs, thread};
     let tmp = sandbox("timeout");
     let stubborn =
         r#"sh -c 'trap "" TERM; echo $$ > "$ROUTINE_STATE_DIR/member.pid"; exec sleep 30' & wait"#;
@@ -1188,7 +1184,6 @@ fn run_times_out() {
 /// What a tick leaves in `home`'s state: tick.log, then each entry's name, and for a routine
 /// its record and what its dir holds.
 fn due_state(home: &Path) -> Vec<String> {
-    use std::fs;
     let st = home.join(".state");
     let mut out = vec![masked(&fs::read(st.join("tick.log")).unwrap(), home)];
     let mut names: Vec<_> = (fs::read_dir(&st).unwrap())
@@ -1215,7 +1210,6 @@ fn due_state(home: &Path) -> Vec<String> {
 /// `later` and `yearly` ran at 09:00, `ahead` past the clock, `c`'s lock is held, `held` is paused, and a dark
 /// home holds a NUL schedule, a non-doc, a dangling link and a due.log past 5 MB.
 fn due_home(home: &Path, docs: &str) {
-    use std::{fs, os::unix::fs::symlink};
     let st = home.join(".state");
     for doc in docs.lines() {
         let [name, sched, block] = [0, 1, 2].map(|i| doc.split('|').nth(i).unwrap());
@@ -1260,7 +1254,6 @@ fn due_home(home: &Path, docs: &str) {
 // 5 MB.
 #[test]
 fn due() {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("due");
     let pmset = |name: &str, body: &str| {
         let p = tmp.join(name);
@@ -1403,7 +1396,6 @@ fn due() {
 // block; the tick exits 143 or 130 with no `dispatched` line.
 #[test]
 fn due_stops_on_a_signal() {
-    use std::{os::unix::process::CommandExt as _, thread, time::Duration};
     let tmp = sandbox("due-signal");
     let block = r#"echo $$ > "$ROUTINE_STATE_DIR/pid"; exec sleep 30"#;
     let t = "2026-08-14T09:00:00Z";
@@ -1432,7 +1424,7 @@ fn due_stops_on_a_signal() {
         }
         let mut c = routine_cmd(&home, &["run", "--due"], &[])
             .process_group(0)
-            .stdout(std::process::Stdio::null())
+            .stdout(Stdio::null())
             .spawn()
             .unwrap();
         let st = home.join(".state");
@@ -1455,7 +1447,6 @@ fn due_stops_on_a_signal() {
 /// and failing without it) when `launchd`, else neither; exit code, stdout and stderr, the home
 /// read as `<h>` and the uid as `$UID`.
 fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String, String) {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
     let bin = home.parent().unwrap().join("bin");
     fs::create_dir_all(&bin).unwrap();
     let t = bin.parent().unwrap().display();
@@ -1487,10 +1478,6 @@ fn health_run(home: &Path, args: &[&str], launchd: bool) -> (Option<i32>, String
 
 /// `<home>/<rel>` written with `body`, its parents made, modified at epoch `at` when given.
 fn put(home: &Path, rel: &str, body: Option<&str>, at: Option<u64>) {
-    use std::{
-        fs,
-        time::{Duration, UNIX_EPOCH},
-    };
     let p = home.join(rel);
     fs::create_dir_all(if body.is_some() {
         p.parent().unwrap()
@@ -1600,7 +1587,7 @@ fn health() {
     ] {
         put(&home, rel, body.as_deref(), at);
     }
-    std::os::unix::fs::symlink("nowhere", home.join("dangling.md")).unwrap();
+    symlink("nowhere", home.join("dangling.md")).unwrap();
     let manual = "its prose is the repair manual";
     assert_eq!(
         health_run(&home, &["health"], false),
@@ -1884,7 +1871,6 @@ unhealthy — 7 red · 1 finding(s)
 // state dir 73.
 #[test]
 fn ack() {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("ack");
     let home = tmp.join("home");
     routine_doc(&home, "f", "on_error: fail", Some("exit \"$(cat code)\""));
@@ -1978,7 +1964,6 @@ fn ack() {
 // nothing, and an unwritable state dir is 73 either way.
 #[test]
 fn pause() {
-    use std::{fs, os::unix::fs::PermissionsExt as _};
     let tmp = sandbox("pause");
     let home = tmp.join("home");
     routine_doc(&home, "p", "schedule: \"0 * * * *\"", Some("true"));
