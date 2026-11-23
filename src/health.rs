@@ -262,13 +262,16 @@ fn tick(
     if busy || quiet.is_some_and(|t| now - t <= 600) {
         return ("ok", None);
     }
-    let f = quiet.map_or("tick.log has no line".into(), |t| {
-        format!(
-            "tick.log quiet {}s since {}, its last line or the last wake",
-            now - t,
-            iso(t)
-        )
-    });
+    let f = quiet.map_or_else(
+        || "tick.log has no line".into(),
+        |t| {
+            format!(
+                "tick.log quiet {}s since {}, its last line or the last wake",
+                now - t,
+                iso(t)
+            )
+        },
+    );
     let out = states.join("due.log");
     let x = format!(
         "launchctl kickstart -k {target} — its output is {}",
