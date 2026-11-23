@@ -24,6 +24,16 @@ const QUIT: c_int = 3;
 pub const KILL: c_int = 9;
 pub const TERM: c_int = 15;
 
+const SIG_IGN: usize = 1;
+const SA_RESTART: c_int = if cfg!(target_os = "macos") {
+    2
+} else {
+    0x1000_0000
+};
+
+static FD: AtomicI32 = AtomicI32::new(-1);
+static PID: AtomicU32 = AtomicU32::new(0);
+
 /// `struct sigaction`: macOS's, else glibc's and musl's.
 #[derive(Default)]
 #[repr(C)]
@@ -38,21 +48,11 @@ struct Action {
     restorer: usize,
 }
 
-const SIG_IGN: usize = 1;
-const SA_RESTART: c_int = if cfg!(target_os = "macos") {
-    2
-} else {
-    0x1000_0000
-};
-
 unsafe extern "C" {
     fn sigaction(sig: c_int, new: *const Action, old: *mut Action) -> c_int;
     fn write(fd: c_int, buf: *const u8, n: usize) -> isize;
     fn kill(pid: c_int, sig: c_int) -> c_int;
 }
-
-static FD: AtomicI32 = AtomicI32::new(-1);
-static PID: AtomicU32 = AtomicU32::new(0);
 
 /// Async-signal-safe: an atomic load, getpid and write. A child between fork and exec still
 /// holds this handler, and its pid keeps a signal meant for it out of the runner's pipe.

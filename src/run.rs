@@ -30,6 +30,161 @@ use std::{
     time::{Duration, Instant},
 };
 
+static HELD: Mutex<Held> = Mutex::new(Held {
+    child: 0,
+    owner: None,
+    stopping: false,
+    tmp: None,
+});
+static LOG: OnceLock<File> = OnceLock::new();
+static TIMEDOUT: AtomicBool = AtomicBool::new(false);
+
+/// What `on_exit` reads, under one lock: the current child, whether a signal is stopping the
+/// run, and — once this run holds the lock — its state dir and start (the record is the
+/// holder's), then the run's temp dir.
+struct Held {
+    child: i32,
+    owner: Option<(PathBuf, i64)>,
+    stopping: bool,
+    tmp: Option<PathBuf>,
+}
+
+/// One run's fixed facts, read by the sequence and the catch.
+struct Run {
+    claude: OsString,
+    dir: PathBuf,
+    doc: PathBuf,
+    /// what the runner exports to every child: `LC_ALL` and its absolute roots and seams
+    envs: Vec<(&'static str, OsString)>,
+    fail: bool,
+    home: PathBuf,
+    name: String,
+    tmp: PathBuf,
+}
+
+impl Run {
+    fn block(&self, i: usize, output: &Path) -> i32 {
+        let f = self.tmp.join(format!("blocks/{i:03}.sh"));
+        let mut bash = Command::new("/bin/bash");
+        (self.supervise(bash.arg("-e").arg(f), Path::new("/dev/null"), output)).unwrap_or(127)
+    }
+
+    // ※ catch-retry
+    /// One claude repair and one retry, the retry the verdict; a claude that is missing or
+    /// logged out degrades to the block's code.
+    fn catch(&self, i: usize, output: &Path, code: i32) -> i32 {
+        if self.fail {
+            return code;
+        }
+        let null = Path::new("/dev/null");
+        let mut claude = Command::new(&self.claude);
+        let why = match self.supervise(claude.args(["auth", "status"]), null, null) {
+            None => "unavailable",
+            Some(0) => "",
+            Some(_) if TIMEDOUT.load(Relaxed) => return code,
+            Some(_) => "not logged in",
+        };
+        if !why.is_empty() {
+            say(&format!("catch degraded: claude {why}\n"));
+            record::degrade(&self.dir, state::now().unwrap_or(0));
+            return code;
+        }
+        say(&divider(&format!("block {i} · catch")));
+        let (prompt, cout) = (
+            self.tmp.join("prompt"),
+            self.tmp.join(format!("catch-{i}.out")),
+        );
+        let k = self.tmp.to_string_lossy();
+        let text = catch_prompt(
+            &self.name,
+            &self.doc,
+            &fs::read(&self.doc).unwrap_or_default(),
+            i,
+            code,
+            &k[k.len() - 6..],
+            &fs::read(output).unwrap_or_default(),
+        );
+        drop(fs::write(&prompt, text));
+        let t0 = Instant::now();
+        let mut agent = Command::new(&self.claude);
+        let agent = agent.args(["--model", "opus", "--permission-mode=auto"]);
+        let crc = (self.supervise(
+            agent.args(["--no-session-persistence", "-p"]),
+            &prompt,
+            &cout,
+        ))
+        .unwrap_or(127);
+        show(&cout);
+        let secs = t0.elapsed().as_secs();
+        say(&format!("catch: claude exit={crc} elapsed={secs}s\n"));
+        // the watchdog fired once, on the agent, and is gone — a retry would be unbounded
+        if TIMEDOUT.load(Relaxed) {
+            return crc;
+        }
+        if crc == 0 {
+            drop(fs::remove_file(self.dir.join("degraded")));
+        } else {
+            record::degrade(&self.dir, state::now().unwrap_or(0));
+        }
+        say(&divider(&format!("block {i} · retry")));
+        let rc = self.block(i, output);
+        show(output);
+        rc
+    }
+
+    /// The blocks in order, each caught when it fails; the first nonzero code ends it.
+    fn sequence(&self, n: usize) -> i32 {
+        for i in 1..=n {
+            let output = self.tmp.join(format!("blk-{i}.out"));
+            say(&divider(&format!("block {i}")));
+            let t0 = Instant::now();
+            let mut code = self.block(i, &output);
+            show(&output);
+            let secs = t0.elapsed().as_secs();
+            say(&divider(&format!("block {i} · exit {code} · {secs}s")));
+            if code != 0 && !TIMEDOUT.load(Relaxed) {
+                let t0 = Instant::now();
+                code = self.catch(i, &output, code);
+                if TIMEDOUT.load(Relaxed) {
+                    return code;
+                }
+                let secs = t0.elapsed().as_secs();
+                say(&divider(&format!(
+                    "block {i} · caught exit {code} · {secs}s"
+                )));
+            }
+            if code != 0 || TIMEDOUT.load(Relaxed) {
+                return code;
+            }
+        }
+        0
+    }
+
+    /// `cmd` in its own process group, where the watchdog can reach it, cwd the routines
+    /// home; on exit, any member it left behind (`cmd &`) is sent TERM; `None` when it cannot run.
+    fn supervise(&self, cmd: &mut Command, input: &Path, output: &Path) -> Option<i32> {
+        let o = File::create(output).ok()?;
+        _ = cmd
+            .stdin(File::open(input).ok()?)
+            .stderr(o.try_clone().ok()?)
+            .stdout(o)
+            .current_dir(&self.home)
+            .envs(self.envs.iter().map(|(k, v)| (k, v)))
+            .env("PWD", &self.home)
+            .env("ROUTINE_NAME", &self.name)
+            .env("ROUTINE_STATE_DIR", &self.dir)
+            .process_group(0);
+        let mut g = held();
+        let mut c = cmd.spawn().ok()?;
+        g.child = c.id().cast_signed();
+        drop(g);
+        let s = c.wait().ok()?;
+        drop(held());
+        _ = kill_tree(TERM, c.id().cast_signed());
+        Some(s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)))
+    }
+}
+
 /// `label` ruled out to 80 columns as `LC_ALL=C` counts them: bytes, but a `·` as one.
 pub fn divider(label: &str) -> String {
     let n = 70_usize.saturating_sub(label.len() - label.matches('·').count());
@@ -96,25 +251,6 @@ pub fn catch_prompt(
     ]
     .concat()
 }
-
-/// What `on_exit` reads, under one lock: the current child, whether a signal is stopping the
-/// run, and — once this run holds the lock — its state dir and start (the record is the
-/// holder's), then the run's temp dir.
-struct Held {
-    child: i32,
-    stopping: bool,
-    owner: Option<(PathBuf, i64)>,
-    tmp: Option<PathBuf>,
-}
-
-static HELD: Mutex<Held> = Mutex::new(Held {
-    child: 0,
-    stopping: false,
-    owner: None,
-    tmp: None,
-});
-static LOG: OnceLock<File> = OnceLock::new();
-static TIMEDOUT: AtomicBool = AtomicBool::new(false);
 
 fn lock() -> MutexGuard<'static, Held> {
     HELD.lock().unwrap_or_else(PoisonError::into_inner)
@@ -226,142 +362,6 @@ fn watchdog(limit: Duration, done: &Receiver<()>, tmp: &Path) {
         if done.try_recv() == Err(TryRecvError::Disconnected) && !kill_tree(0, p) {
             return;
         }
-    }
-}
-
-/// One run's fixed facts, read by the sequence and the catch.
-struct Run {
-    name: String,
-    doc: PathBuf,
-    dir: PathBuf,
-    home: PathBuf,
-    tmp: PathBuf,
-    claude: OsString,
-    fail: bool,
-    /// what the runner exports to every child: `LC_ALL` and its absolute roots and seams
-    envs: Vec<(&'static str, OsString)>,
-}
-
-impl Run {
-    /// `cmd` in its own process group, where the watchdog can reach it, cwd the routines
-    /// home; on exit, any member it left behind (`cmd &`) is sent TERM; `None` when it cannot run.
-    fn supervise(&self, cmd: &mut Command, input: &Path, output: &Path) -> Option<i32> {
-        let o = File::create(output).ok()?;
-        _ = cmd
-            .stdin(File::open(input).ok()?)
-            .stderr(o.try_clone().ok()?)
-            .stdout(o)
-            .current_dir(&self.home)
-            .envs(self.envs.iter().map(|(k, v)| (k, v)))
-            .env("PWD", &self.home)
-            .env("ROUTINE_NAME", &self.name)
-            .env("ROUTINE_STATE_DIR", &self.dir)
-            .process_group(0);
-        let mut g = held();
-        let mut c = cmd.spawn().ok()?;
-        g.child = c.id().cast_signed();
-        drop(g);
-        let s = c.wait().ok()?;
-        drop(held());
-        _ = kill_tree(TERM, c.id().cast_signed());
-        Some(s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)))
-    }
-
-    fn block(&self, i: usize, output: &Path) -> i32 {
-        let f = self.tmp.join(format!("blocks/{i:03}.sh"));
-        let mut bash = Command::new("/bin/bash");
-        (self.supervise(bash.arg("-e").arg(f), Path::new("/dev/null"), output)).unwrap_or(127)
-    }
-
-    // ※ catch-retry
-    /// One claude repair and one retry, the retry the verdict; a claude that is missing or
-    /// logged out degrades to the block's code.
-    fn catch(&self, i: usize, output: &Path, code: i32) -> i32 {
-        if self.fail {
-            return code;
-        }
-        let null = Path::new("/dev/null");
-        let mut claude = Command::new(&self.claude);
-        let why = match self.supervise(claude.args(["auth", "status"]), null, null) {
-            None => "unavailable",
-            Some(0) => "",
-            Some(_) if TIMEDOUT.load(Relaxed) => return code,
-            Some(_) => "not logged in",
-        };
-        if !why.is_empty() {
-            say(&format!("catch degraded: claude {why}\n"));
-            record::degrade(&self.dir, state::now().unwrap_or(0));
-            return code;
-        }
-        say(&divider(&format!("block {i} · catch")));
-        let (prompt, cout) = (
-            self.tmp.join("prompt"),
-            self.tmp.join(format!("catch-{i}.out")),
-        );
-        let k = self.tmp.to_string_lossy();
-        let text = catch_prompt(
-            &self.name,
-            &self.doc,
-            &fs::read(&self.doc).unwrap_or_default(),
-            i,
-            code,
-            &k[k.len() - 6..],
-            &fs::read(output).unwrap_or_default(),
-        );
-        drop(fs::write(&prompt, text));
-        let t0 = Instant::now();
-        let mut agent = Command::new(&self.claude);
-        let agent = agent.args(["--model", "opus", "--permission-mode=auto"]);
-        let crc = (self.supervise(
-            agent.args(["--no-session-persistence", "-p"]),
-            &prompt,
-            &cout,
-        ))
-        .unwrap_or(127);
-        show(&cout);
-        let secs = t0.elapsed().as_secs();
-        say(&format!("catch: claude exit={crc} elapsed={secs}s\n"));
-        // the watchdog fired once, on the agent, and is gone — a retry would be unbounded
-        if TIMEDOUT.load(Relaxed) {
-            return crc;
-        }
-        if crc == 0 {
-            drop(fs::remove_file(self.dir.join("degraded")));
-        } else {
-            record::degrade(&self.dir, state::now().unwrap_or(0));
-        }
-        say(&divider(&format!("block {i} · retry")));
-        let rc = self.block(i, output);
-        show(output);
-        rc
-    }
-
-    /// The blocks in order, each caught when it fails; the first nonzero code ends it.
-    fn sequence(&self, n: usize) -> i32 {
-        for i in 1..=n {
-            let output = self.tmp.join(format!("blk-{i}.out"));
-            say(&divider(&format!("block {i}")));
-            let t0 = Instant::now();
-            let mut code = self.block(i, &output);
-            show(&output);
-            let secs = t0.elapsed().as_secs();
-            say(&divider(&format!("block {i} · exit {code} · {secs}s")));
-            if code != 0 && !TIMEDOUT.load(Relaxed) {
-                let t0 = Instant::now();
-                code = self.catch(i, &output, code);
-                if TIMEDOUT.load(Relaxed) {
-                    return code;
-                }
-                let secs = t0.elapsed().as_secs();
-                say(&divider(&format!(
-                    "block {i} · caught exit {code} · {secs}s"
-                )));
-            }
-            if code != 0 || TIMEDOUT.load(Relaxed) {
-                return code;
-            }
-        }
-        0
     }
 }
 
