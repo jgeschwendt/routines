@@ -5,6 +5,10 @@ use std::{fs, path::Path};
 
 /// Pads each text by display width as `LC_ALL=C` counts it: bytes, but `—`
 /// as one column. The last text is unpadded.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "each three-byte dash takes two off the length: never below zero"
+)]
 fn cells(texts: [&str; 6]) -> String {
     let mut row = String::new();
     for (t, w) in texts.iter().zip([21usize, 17, 7, 6, 22]) {

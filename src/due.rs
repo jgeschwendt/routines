@@ -30,7 +30,7 @@ pub fn due(now: i64) -> i32 {
     let due = sweep(&dir, &states, now);
     sys::catch(|sig| {
         let mut k = kids();
-        k.1 = Some(128 + sig);
+        k.1 = Some(sig.saturating_add(128));
         k.0.iter().for_each(|&p| _ = sys::signal(p, sys::TERM));
     });
     let pmset = state::var("ROUTINE_PMSET").unwrap_or_else(|| "pmset".into());
@@ -61,7 +61,10 @@ pub fn due(now: i64) -> i32 {
             clippy::or_fun_call,
             reason = "eager: a lazy default runs in no test, and the line coverage drops"
         )]
-        let code = s.map_or(127, |s| s.code().unwrap_or(128 + s.signal().unwrap_or(0)));
+        let code = s.map_or(127, |s| {
+            s.code()
+                .unwrap_or(s.signal().unwrap_or(0).saturating_add(128))
+        });
         if kids().1.is_none() {
             rc |= i32::from(code != 0);
             log(&format!("dispatched {name} exit={code}"));

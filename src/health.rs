@@ -124,6 +124,10 @@ fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
 /// never red) and failed for 2 and above — stale (due, idle, and passed over by a sweep that could dispatch half an hour after it fell
 /// due or was resumed — a slept machine's sweeps predate it), else ok.
 #[expect(
+    clippy::arithmetic_side_effects,
+    reason = "now is ROUTINE_NOW's to set: saturating would change what a hostile clock prints"
+)]
+#[expect(
     clippy::pattern_type_mismatch,
     reason = "a tuple's fields bind by reference only through ref, which ref_patterns forbids"
 )]
@@ -160,7 +164,7 @@ fn routine(
             doc.display()
         );
         ("lint", Some((lint.join("; "), fix)))
-    } else if running && held > limit + 60 {
+    } else if running && held > limit.saturating_add(60) {
         let p = lock::holder(&st);
         let f = format!("pid {p} has held the lock {held}s, past its {limit}s timeout");
         let x = format!(
@@ -249,6 +253,10 @@ fn wake() -> Option<i64> {
 /// when tick.log has been quiet ten minutes since its last line or the last wake, whichever is
 /// later (launchd ticks within a minute of a wake), and no routine runs (a long run holds the
 /// tick).
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "now is ROUTINE_NOW's to set: saturating would change what a hostile clock prints"
+)]
 fn tick(
     states: &Path,
     now: i64,

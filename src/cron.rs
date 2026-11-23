@@ -1,6 +1,13 @@
 //! Five-field cron in UTC: the civil calendar, field expansion and the next fire.
 
 /// `(year, month, day, weekday)` of `epoch` in UTC, weekday 0 = Sunday — Hinnant's `civil_from_days`.
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::integer_division,
+    clippy::integer_division_remainder_used,
+    clippy::modulo_arithmetic,
+    reason = "Hinnant's civil_from_days: integer division is the algorithm"
+)]
 pub fn civil(epoch: i64) -> (i64, i64, i64, i64) {
     let mut z = epoch / 86400 + 719_468; // days from 0000-03-01, a Wednesday
     let (wday, era) = ((z + 3) % 7, z / 146_097);
@@ -14,6 +21,12 @@ pub fn civil(epoch: i64) -> (i64, i64, i64, i64) {
 }
 
 /// The one timestamp shape every log line, log name and JSON field carries.
+#[expect(
+    clippy::integer_division,
+    clippy::integer_division_remainder_used,
+    clippy::modulo_arithmetic,
+    reason = "the time of day is the epoch's remainders by the day, hour and minute"
+)]
 pub fn iso(epoch: i64) -> String {
     let (y, m, d, _) = civil(epoch);
     format!(
@@ -25,6 +38,13 @@ pub fn iso(epoch: i64) -> String {
 }
 
 /// `iso`'s inverse — Hinnant's `days_from_civil`; `None` for any other shape.
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::integer_division,
+    clippy::integer_division_remainder_used,
+    clippy::modulo_arithmetic,
+    reason = "Hinnant's days_from_civil, on fields of at most four digits"
+)]
 pub fn epoch(stamp: &str) -> Option<i64> {
     let field = |a: usize, b: usize| num(stamp.get(a..b)?);
     let (mon, day) = (field(5, 7)?, field(8, 10)?);
@@ -71,6 +91,12 @@ fn expand(field: &str, lo: i64, hi: i64) -> Option<Vec<i64>> {
 
 /// The first fire strictly after `start`, within eight years (Feb 29 recurs every four,
 /// and 2100 skips one); `None` when `expr` is no schedule this parser takes or never fires.
+#[expect(
+    clippy::arithmetic_side_effects,
+    clippy::integer_division_remainder_used,
+    clippy::modulo_arithmetic,
+    reason = "the day walk: start's midnight plus at most 2922 days of seconds"
+)]
 pub fn next_fire_after(start: i64, expr: &str) -> Option<i64> {
     // bash's default IFS: blanks around and between fields collapse
     let fields: Vec<_> = expr

@@ -75,7 +75,7 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
             comment = !rest.contains("-->");
         } else if let Some(ch @ ('`' | '~')) = t.chars().next() {
             let info = t.trim_start_matches(ch);
-            let len = t.len() - info.len();
+            let len = t.len().saturating_sub(info.len());
             if len < 3 || ch == '`' && info.contains('`') {
                 continue;
             }
@@ -88,7 +88,7 @@ pub fn extract_blocks(text: &str) -> Vec<String> {
             if keep {
                 blocks.push(String::new());
             }
-            fence = Some((ch, len, line.len() - t.len(), keep));
+            fence = Some((ch, len, line.len().saturating_sub(t.len()), keep));
         }
     }
     blocks
