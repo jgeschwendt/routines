@@ -180,13 +180,16 @@ impl Run {
         let s = c.wait().ok()?;
         drop(held());
         _ = kill_tree(TERM, c.id().cast_signed());
-        Some(s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)))
+        Some(
+            s.code()
+                .unwrap_or_else(|| s.signal().unwrap_or(0).saturating_add(128)),
+        )
     }
 }
 
 /// `label` ruled out to 80 columns as `LC_ALL=C` counts them: bytes, but a `·` as one.
 pub fn divider(label: &str) -> String {
-    let n = 70usize.saturating_sub(label.len() - label.matches('·').count());
+    let n = 70usize.saturating_sub(label.len().saturating_sub(label.matches('·').count()));
     format!("──────── {label} {}\n", "─".repeat(n))
 }
 
@@ -221,7 +224,10 @@ pub fn missing<F: Fn(&str) -> Option<OsString>>(doc: &str, env: F) -> String {
 /// `$(…)` of `b`: NUL bytes dropped, then trailing newlines.
 fn subst(b: &[u8]) -> Vec<u8> {
     let mut v: Vec<u8> = b.iter().copied().filter(|&c| c != 0).collect();
-    v.truncate(v.len() - v.iter().rev().take_while(|&&c| c == b'\n').count());
+    v.truncate(
+        v.len()
+            .saturating_sub(v.iter().rev().take_while(|&&c| c == b'\n').count()),
+    );
     v
 }
 
@@ -315,11 +321,12 @@ fn die(rc: i32, msg: &str) -> ! {
 
 /// `kill_tree`: `pid`'s group, else `pid` alone; signal 0 asks whether either lives.
 fn kill_tree(sig: i32, pid: i32) -> bool {
-    pid != 0 && (sys::signal(-pid, sig) || sys::signal(pid, sig))
+    pid != 0 && (sys::signal(pid.saturating_neg(), sig) || sys::signal(pid, sig))
 }
 
 /// A signal lands mid-sequence or mid-escalation: stop the block's group (TERM, two seconds,
 /// KILL) before the record and the lock release tell the next run the routine is idle.
+#[expect(clippy::arithmetic_side_effects, reason = "n counts to 20")]
 fn on_signal(sig: i32) {
     let p = {
         let mut g = lock();
@@ -333,7 +340,7 @@ fn on_signal(sig: i32) {
         n += 1;
     }
     _ = n < 20 || kill_tree(KILL, p);
-    finish(&lock(), 128 + sig)
+    finish(&lock(), sig.saturating_add(128))
 }
 
 /// The capture's last MiB into the run log: a runaway block must not fill the disk twice.
@@ -347,6 +354,10 @@ fn show(f: &Path) {
 
 /// Past the deadline, TERM each child not yet seen and KILL whichever is current ten seconds
 /// on (and any born after); the watch ends once the sequence is done and its last child gone.
+#[expect(
+    clippy::arithmetic_side_effects,
+    reason = "n counts the watch's seconds"
+)]
 fn watchdog(limit: Duration, done: &Receiver<()>, tmp: &Path) {
     if done.recv_timeout(limit) != Err(RecvTimeoutError::Timeout) {
         return;
@@ -466,8 +477,8 @@ pub fn run(name: &str, now: i64) -> ! {
     );
     let blocks = extract_blocks(&text);
     drop(fs::create_dir_all(tmp.join("blocks")));
-    for (i, b) in blocks.iter().enumerate() {
-        drop(fs::write(tmp.join(format!("blocks/{:03}.sh", i + 1)), b));
+    for (i, b) in (1usize..).zip(&blocks) {
+        drop(fs::write(tmp.join(format!("blocks/{i:03}.sh")), b));
     }
     let shown = doc.display();
     if blocks.is_empty() {

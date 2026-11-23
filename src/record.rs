@@ -27,8 +27,8 @@ pub fn tail(b: &[u8], n: usize) -> &[u8] {
     let cut = (0..body.len())
         .rev()
         .filter(|&i| body[i] == b'\n')
-        .nth(n - 1);
-    &b[cut.map_or(0, |i| i + 1)..]
+        .nth(n.saturating_sub(1));
+    &b[cut.map_or(0, |i| i.saturating_add(1))..]
 }
 
 /// Once `file` holds more than `max` lines (bytes unless `lines`), its last `keep` lines,
@@ -36,7 +36,7 @@ pub fn tail(b: &[u8], n: usize) -> &[u8] {
 pub fn keep_tail(file: &Path, lines: bool, max: usize, keep: usize) {
     let Ok(b) = fs::read(file) else { return };
     if (if lines {
-        b.split(|&c| c == b'\n').count() - 1
+        b.split(|&c| c == b'\n').count().saturating_sub(1)
     } else {
         b.len()
     }) > max
@@ -79,7 +79,7 @@ pub fn record(dir: &Path, started: i64, finished: i64, rc: i32) {
         "{{\"started\":\"{}\",\"started_epoch\":{started},\"finished\":\"{}\",\"exit\":{rc},\"duration\":{},\"degraded\":{}}}\n",
         iso(started),
         iso(finished),
-        finished - started,
+        finished.saturating_sub(started),
         dir.join("degraded").is_file()
     );
     let tmp = dir.join(format!("last-run.json.{}", process::id()));

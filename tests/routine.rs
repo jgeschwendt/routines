@@ -46,7 +46,7 @@ mod tests {
 
     /// `label` ruled out to 80 columns: bytes, a `·` one column — the runner's divider.
     fn rule(label: &str) -> String {
-        let n = 70usize.saturating_sub(label.len() - label.matches('·').count());
+        let n = 70usize.saturating_sub(label.len().saturating_sub(label.matches('·').count()));
         format!("──────── {label} {}\n", "─".repeat(n))
     }
 
@@ -823,7 +823,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             if c == 's' && !digits.is_empty() && out.ends_with([' ', '=']) {
                 digits = "N".into();
             }
-            out += &digits;
+            out.push_str(&digits);
             digits.clear();
             out.push(c);
         }
@@ -1224,7 +1224,11 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
                 .collect();
             inner.sort();
             let rec = fs::read_to_string(p.join("last-run.json")).unwrap_or_default();
-            let size = fs::metadata(&p).unwrap().len() * u64::from(p.is_file());
+            let size = if p.is_file() {
+                fs::metadata(&p).unwrap().len()
+            } else {
+                0
+            };
             out.push(
                 format!("{} {size} {inner:?} {rec}", p.display())
                     .replace(&*home.to_string_lossy(), "<h>"),
@@ -1520,7 +1524,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             fs::write(&p, b).unwrap();
         }
         if let Some(t) = at {
-            let t = UNIX_EPOCH + Duration::from_secs(t);
+            let t = UNIX_EPOCH.checked_add(Duration::from_secs(t)).unwrap();
             fs::File::open(&p).unwrap().set_modified(t).unwrap();
         }
     }
