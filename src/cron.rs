@@ -123,26 +123,6 @@ pub fn next_fire_after(start: i64, expr: &str) -> Option<i64> {
 mod tests {
     use super::{civil, epoch, iso, next_fire_after};
 
-    #[test]
-    fn civil_and_iso() {
-        for (t, s, w) in [
-            (0, "1970-01-01T00:00:00Z", 4),
-            (951_782_400, "2000-02-29T00:00:00Z", 2), // 2000 is a leap year: 400 divides it
-            (1_835_404_263, "2028-02-29T02:31:03Z", 2),
-            (4_105_036_800, "2100-01-31T00:00:00Z", 0),
-            (4_107_542_400, "2100-03-01T00:00:00Z", 1), // 2100 is not: Feb 28 runs into Mar 1
-        ] {
-            assert_eq!((iso(t).as_str(), civil(t).3, epoch(s)), (s, w, Some(t)));
-        }
-        for s in [
-            "2026-02-30T00:00:00Z",
-            "2026-08-14 09:00:00Z",
-            "2026-08-14T09:00:00Z ",
-        ] {
-            assert_eq!(epoch(s), None, "{s}");
-        }
-    }
-
     // (start, schedule, next fire) — each answer is the bash runner's, which the port replaced
     // after diffing every case against it, not a recollection
     const CASES: &[(i64, &str, Option<i64>)] = &[
@@ -196,6 +176,26 @@ mod tests {
         (1_792_800_000, "0 * * *", None),
         (1_792_800_000, "0 * * * * *", None),
     ];
+
+    #[test]
+    fn civil_and_iso() {
+        for (t, s, w) in [
+            (0, "1970-01-01T00:00:00Z", 4),
+            (951_782_400, "2000-02-29T00:00:00Z", 2), // 2000 is a leap year: 400 divides it
+            (1_835_404_263, "2028-02-29T02:31:03Z", 2),
+            (4_105_036_800, "2100-01-31T00:00:00Z", 0),
+            (4_107_542_400, "2100-03-01T00:00:00Z", 1), // 2100 is not: Feb 28 runs into Mar 1
+        ] {
+            assert_eq!((iso(t).as_str(), civil(t).3, epoch(s)), (s, w, Some(t)));
+        }
+        for s in [
+            "2026-02-30T00:00:00Z",
+            "2026-08-14 09:00:00Z",
+            "2026-08-14T09:00:00Z ",
+        ] {
+            assert_eq!(epoch(s), None, "{s}");
+        }
+    }
 
     #[test]
     fn next_fire_after_matches_the_table() {

@@ -19,6 +19,15 @@ use std::{
 
 const EXE: &str = env!("CARGO_BIN_EXE_routine");
 
+/// (name, frontmatter, block, extra env) for a home at `h`: each gate, a pass, a fail, each
+/// catch outcome, a runaway block, a leftover child, no document, no name.
+type Case = (
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    Vec<(&'static str, String)>,
+);
+
 /// Exit code, stdout, stderr.
 fn out(o: Output) -> (Option<i32>, String, String) {
     (
@@ -806,15 +815,6 @@ fn alive(file: &Path) -> bool {
             .success()
     })
 }
-
-/// (name, frontmatter, block, extra env) for a home at `h`: each gate, a pass, a fail, each
-/// catch outcome, a runaway block, a leftover child, no document, no name.
-type Case = (
-    &'static str,
-    &'static str,
-    Option<&'static str>,
-    Vec<(&'static str, String)>,
-);
 
 fn run_cases(h: &str) -> [Case; 18] {
     let fail = "on_error: fail";
