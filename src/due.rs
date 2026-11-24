@@ -27,7 +27,14 @@ fn kids() -> MutexGuard<'static, (Vec<i32>, Option<i32>)> {
 pub fn due(now: i64) -> i32 {
     let (dir, states, _) = state::roots();
     let log = |message: &str| record::tick_log(&states, state::now().unwrap_or(now), message);
-    rotate(&states);
+    // launchd holds due.log's fd open (`StandardOutPath`), so a rename orphans every later write
+    // into an unlinked inode: past 5 MB it is copied to `due.log.1` and truncated
+    let due_log = states.join("due.log");
+    if fs::metadata(&due_log).is_ok_and(|metadata| metadata.len() > 5_242_880)
+        && fs::copy(&due_log, states.join("due.log.1")).is_ok()
+    {
+        drop(fs::write(&due_log, ""));
+    }
     let due = sweep(&dir, &states, now);
     sys::catch(|sig| {
         let mut held = kids();
@@ -76,21 +83,6 @@ pub fn due(now: i64) -> i32 {
         }
     }
     kids().1.unwrap_or(rc)
-}
-
-/// launchd holds due.log's fd open (`StandardOutPath`), so a rename orphans every later write
-/// into an unlinked inode: past 5 MB it is copied to `due.log.1` and truncated.
-#[expect(
-    clippy::single_call_fn,
-    reason = "a named step of the tick: due.log's copy-truncate"
-)]
-fn rotate(states: &Path) {
-    let log = states.join("due.log");
-    if fs::metadata(&log).is_ok_and(|metadata| metadata.len() > 5_242_880)
-        && fs::copy(&log, states.join("due.log.1")).is_ok()
-    {
-        drop(fs::write(&log, ""));
-    }
 }
 
 /// The due routines in byte order, journalled as one tick line — a skipped document ahead of
