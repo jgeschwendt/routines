@@ -87,17 +87,6 @@ fn acked(dir: &Path) -> Option<(i64, String, String)> {
     ))
 }
 
-/// `<dir>/paused` as `(at, reason)`, both empty when a hand made it.
-#[expect(
-    clippy::single_call_fn,
-    reason = "the pause marker's parser, named beside acked"
-)]
-fn paused(dir: &Path) -> Option<(String, String)> {
-    let file = dir.join("paused");
-    (file.is_file())
-        .then(|| stamped(&file).map_or_else(Default::default, |parsed| (parsed.1, parsed.2)))
-}
-
 fn ack_json(exit: i64, at: &str, reason: &str) -> String {
     stamp(&format!("\"exit\":{exit},"), at, reason)
 }
@@ -112,26 +101,6 @@ fn last_run(dir: &Path) -> Option<(i64, String, i64, i64)> {
         n("exit")?,
         n("duration")?,
     ))
-}
-
-/// tick.log's tail as `(heard, swept)`: its last line's stamp, and the last sweep that could
-/// dispatch — a `tick docs=` line no `defer dark-wake` follows.
-#[expect(
-    clippy::single_call_fn,
-    reason = "tick.log's reading, named apart from the verdicts"
-)]
-fn sweeps(states: &Path) -> (Option<i64>, Option<i64>) {
-    let (cut, log) = state::last_bytes(&states.join("tick.log"), 1 << 16);
-    let log = String::from_utf8_lossy(&log);
-    let mut lines: Vec<_> = log.lines().skip(usize::from(cut > 0)).collect();
-    let stamp = |line: &str| line.get(..20).and_then(cron::epoch);
-    let is = |line: &str, marker: &str| line.get(20..).is_some_and(|rest| rest.starts_with(marker));
-    let heard = lines.last().and_then(|line| stamp(line));
-    lines.push("");
-    let swept = (lines.iter().zip(lines.iter().skip(1)).rev())
-        .filter(|&(line, next)| is(line, " tick docs=") && !is(next, " defer dark-wake"))
-        .find_map(|(line, _)| stamp(line));
-    (heard, swept)
 }
 
 // ※ health-verdict
@@ -175,7 +144,13 @@ fn routine(
     .into_iter()
     .flatten()
     .collect();
-    let (last, ack, paused) = (last_run(&st), acked(&st), paused(&st));
+    let (last, ack) = (last_run(&st), acked(&st));
+    // `paused` as `(at, reason)`, both empty when a hand made it
+    let paused = {
+        let file = st.join("paused");
+        (file.is_file())
+            .then(|| stamped(&file).map_or_else(Default::default, |parsed| (parsed.1, parsed.2)))
+    };
     let due = paused.is_none() && next.is_some_and(|n| n <= now);
     let running = st.join("lock").exists() && !lock::stale(&st);
     let held = mtime(&st.join("lock")).map_or(0, |taken| now - taken);
@@ -342,7 +317,22 @@ pub fn health(as_json: bool, now: i64) -> i32 {
         let opens = state::read(&dir.join(file)).lines().next() == Some("---");
         skipped.push((file.to_owned(), why.to_owned(), opens));
     });
-    let (heard, swept) = sweeps(&states);
+    // tick.log's tail: its last line's stamp, and the last sweep that could dispatch — a
+    // `tick docs=` line no `defer dark-wake` follows
+    let (heard, swept) = {
+        let (cut, log) = state::last_bytes(&states.join("tick.log"), 1 << 16);
+        let log = String::from_utf8_lossy(&log);
+        let mut lines: Vec<_> = log.lines().skip(usize::from(cut > 0)).collect();
+        let stamp = |line: &str| line.get(..20).and_then(cron::epoch);
+        let is =
+            |line: &str, marker: &str| line.get(20..).is_some_and(|rest| rest.starts_with(marker));
+        let heard = lines.last().and_then(|line| stamp(line));
+        lines.push("");
+        let swept = (lines.iter().zip(lines.iter().skip(1)).rev())
+            .filter(|&(line, next)| is(line, " tick docs=") && !is(next, " defer dark-wake"))
+            .find_map(|(line, _)| stamp(line));
+        (heard, swept)
+    };
     let (mut rows, mut said, mut busy) = (vec![], [vec![], vec![], vec![]], false);
     for name in &names {
         let (row, running, line) = routine((&dir, &states), name, now, swept);

@@ -412,26 +412,6 @@ fn refuse(states: &Path, now: i64, rc: i32, why: &str, msg: &str) -> ! {
     die(rc, msg)
 }
 
-/// `mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX"`, the suffix six hex digits; 73 when it fails.
-#[expect(
-    clippy::single_call_fn,
-    reason = "mktemp -d, named for the command it replaces"
-)]
-fn mktemp() -> PathBuf {
-    let (base, hasher) = (state::root("TMPDIR", "/tmp".into()), RandomState::new());
-    let mut tmp =
-        (0..64).map(|i| base.join(format!("routine.{:06x}", hasher.hash_one(i) & 0xff_ffff)));
-    tmp.find(|path| fs::DirBuilder::new().mode(0o700).create(path).is_ok())
-        .unwrap_or_else(|| {
-            #[expect(
-                clippy::or_fun_call,
-                reason = "eager: a lazy default runs in no test, and the line coverage drops"
-            )]
-            let tmpdir = state::var("TMPDIR").unwrap_or("/tmp".into());
-            die(73, &format!("mktemp failed under {}", tmpdir.display()))
-        })
-}
-
 /// `cmd_run`: the name and document gates, the lock, `requires`, the log and temp dir, the
 /// blocks, `on_error`, the home, then the sequence under the watchdog.
 #[expect(clippy::single_call_fn, reason = "a module per verb")]
@@ -496,7 +476,22 @@ pub fn run(name: &str, now: i64) -> ! {
         );
     }
     let log = record::log_file(&dir, now);
-    let tmp = mktemp();
+    // `mktemp -d "${TMPDIR:-/tmp}/routine.XXXXXX"`, the suffix six hex digits; 73 when it fails
+    let tmp = {
+        let (base, hasher) = (state::root("TMPDIR", "/tmp".into()), RandomState::new());
+        let mut paths =
+            (0..64).map(|i| base.join(format!("routine.{:06x}", hasher.hash_one(i) & 0xff_ffff)));
+        paths
+            .find(|path| fs::DirBuilder::new().mode(0o700).create(path).is_ok())
+            .unwrap_or_else(|| {
+                #[expect(
+                    clippy::or_fun_call,
+                    reason = "eager: a lazy default runs in no test, and the line coverage drops"
+                )]
+                let tmpdir = state::var("TMPDIR").unwrap_or("/tmp".into());
+                die(73, &format!("mktemp failed under {}", tmpdir.display()))
+            })
+    };
     held().tmp = Some(tmp.clone());
     drop(
         fs::OpenOptions::new()
