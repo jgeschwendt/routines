@@ -70,8 +70,9 @@ impl Run {
     }
 
     // ※ catch-retry
-    /// One claude repair and one retry, the retry the verdict; a claude that is missing or
-    /// logged out degrades to the block's code.
+    /// One claude repair and one retry, the retry the verdict, a finding the repair left (exit 1)
+    /// escalated to a failure (exit 2); a claude that is missing or logged out degrades to the
+    /// block's code.
     fn catch(&self, i: usize, output: &Path, code: i32) -> i32 {
         if self.fail {
             return code;
@@ -128,7 +129,7 @@ impl Run {
         say(&divider(&format!("block {i} · retry")));
         let rc = self.block(i, output);
         show(output);
-        rc
+        if rc == 1 { 2 } else { rc }
     }
 
     /// The blocks in order, each caught when it fails; the first nonzero code ends it.
