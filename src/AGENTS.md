@@ -8,7 +8,7 @@ invariants:
     anchor: ※ due-derivation
   - claim: last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state
     anchor: ※ last-run-contract
-  - claim: a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code
+  - claim: a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code, and a retry still at exit 1 exits 2, a finding the repair could not clear escalated to a failure
     anchor: ※ catch-retry
   - claim: run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract
     anchor: ※ due-tick
