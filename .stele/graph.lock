@@ -28,7 +28,7 @@
     },
     "last-run-contract": {
       "file": "src/run.rs",
-      "line": 316,
+      "line": 315,
       "node": "src"
     },
     "parallel-due": {
@@ -79,7 +79,7 @@
           "text": "blocks are idempotent — a catch-retry, a cache eviction, or an overlapping tick can each double-fire; the lock serializes, idempotency absorbs",
           "verified": {
             "digest": null,
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         }
       ],
@@ -106,10 +106,10 @@
           "id": "catch-retry",
           "kind": "invariant",
           "resolved": "src/run.rs:72",
-          "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code, and a retry still at exit 1 exits 2, a finding the repair could not clear escalated to a failure",
+          "text": "a failed block gets exactly one claude repair and one deterministic retry — the retry is the verdict, never the agent's exit code",
           "verified": {
-            "digest": "5b55112f2db9987e2f64cca8150962e6af94a344854ae771580775a5d226570a",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "digest": "ef32e5aba228d9f58201992f311bbb253c0777dd7e3c354a370136caae69b1ac",
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -121,7 +121,7 @@
           "text": "run --due never dispatches during a macOS dark wake — the tick probes once before it dispatches, logs defer dark-wake with what stayed due and stops, and derived due-ness carries the routines to the next real wake",
           "verified": {
             "digest": "f16d6828c253eaa16d0de76da3552ca95b040b5bd94e084326a12f4b6a270eb5",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -133,7 +133,7 @@
           "text": "due-ness is derived — next-fire-after(last started run, schedule) ≤ now, evaluated in UTC — never matched against the current minute",
           "verified": {
             "digest": "8f04a846075db131e751bc0a1045ddb6bd9bb81a0f09d4bc127a4fe155a631b0",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -145,7 +145,7 @@
           "text": "run --due prints nothing when nothing is due — it fires every 60 seconds from launchd, so silence is the contract",
           "verified": {
             "digest": "fda668203424589ba79fce936a0fa7eb087d2c39f6d6749abbb20985b840b727",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -157,7 +157,7 @@
           "text": "health is derived from the runner's own parsers and state — a doc health calls lint is one run refuses, and an ack never outlives the exit it acknowledged",
           "verified": {
             "digest": "27ef5974ef1a6711ecada3429e15a873d8d4e3e1763354ecc3e3ff1fb8106159",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -165,11 +165,11 @@
           "enforced_by": null,
           "id": "last-run-contract",
           "kind": "invariant",
-          "resolved": "src/run.rs:316",
+          "resolved": "src/run.rs:315",
           "text": "last-run.json is written on every exit path a run that holds the lock takes, a signal's included, and a 75 lock refusal never clobbers the owner's state",
           "verified": {
             "digest": "275557b9604ff85bfbac21c35314b4ada439e2eac6cfe12a917477908e0e3f58",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -181,7 +181,7 @@
           "text": "run --due dispatches every due routine at once and waits for all — parallel dispatch unblocks routines within one sweep, but the tick lives until its slowest routine exits and launchd fires no new tick meanwhile, so one long run still holds every later sweep; a signal to the tick reaches every routine as TERM",
           "verified": {
             "digest": "fda668203424589ba79fce936a0fa7eb087d2c39f6d6749abbb20985b840b727",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         },
         {
@@ -193,7 +193,7 @@
           "text": "a pause is the paused marker's presence, whatever it holds — the tick never dispatches a paused routine, health never calls it due, stale or red, and run <name> still runs it",
           "verified": {
             "digest": "dffa7d25650f73e1c5139107a1d8df3efef92fa338cf00693e0fa1b3ea655139",
-            "sha": "a7436dac12a70c7fe920092c9e2f9e5096c80241"
+            "sha": "27802c4c34bd82120ba0af95ba2d86ed3f74cd75"
           }
         }
       ],

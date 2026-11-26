@@ -853,7 +853,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
     )]
     fn run_cases(root: &str) -> [Case; 18] {
         let fail = "on_error: fail";
-        let fixed = r#"[ -f "$ROUTINE_STATE_DIR/fixed" ] || exit 1"#;
+        let fixed = r#"[ -f "$ROUTINE_STATE_DIR/fixed" ] || exit 7"#;
         let leak = r#"sleep 30 & echo $! > "$ROUTINE_STATE_DIR/leak.pid""#;
         [
             (
@@ -906,7 +906,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             (
                 "unrepaired",
                 "",
-                Some("exit 1"),
+                Some("exit 7"),
                 vec![("MODE", "fails".into())],
             ),
             (
@@ -999,7 +999,7 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
         let catch = |agent: i32, n: i32| {
             format!(
                 "{}{}catch: claude exit={agent} elapsed=Ns\n{}{}",
-                exit(1),
+                exit(7),
                 rule("block 1 · catch"),
                 rule("block 1 · retry"),
                 caught(n)
@@ -1105,9 +1105,9 @@ case "${MODE:-}" in gap) exec sleep 30 ;; fix) : > "$ROUTINE_STATE_DIR/fixed" ;;
             ),
             (
                 "unrepaired",
-                2,
-                ran("unrepaired", &catch(1, 2), 2),
-                rec(2, true),
+                7,
+                ran("unrepaired", &catch(1, 7), 7),
+                rec(7, true),
                 deg,
             ),
             ("big", 0, ran("big", &big, 0), rec(0, false), all),
