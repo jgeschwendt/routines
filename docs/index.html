@@ -158,7 +158,7 @@ claude -p "summarize inbox.json …"   <i># a block may itself call claude — a
       <div class="panel-head">③ retry</div>
       <div class="panel-body">
         <ul role="list">
-          <li>the runner re-executes the failing block once — pass ⇒ continue to the next block; fail ⇒ the routine exits with that block's code, except that exit 1 becomes 2: a finding the repair could not clear is a failure, red in health (a routine whose findings are the owner's to act on runs <code class="code">on_error: fail</code> and stays yellow)</li>
+          <li>the runner re-executes the failing block once — pass ⇒ continue to the next block; fail ⇒ the routine exits with that block's code</li>
           <li>one repair attempt per block, no loops</li>
         </ul>
       </div>
