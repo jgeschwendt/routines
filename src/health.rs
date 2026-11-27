@@ -297,7 +297,7 @@ fn tick(
     );
     let out = states.join("due.log");
     let fix = format!(
-        "launchctl kickstart -k {target} — its output is {}",
+        "routine upgrade, which restarts {target} past its launch constraint — its output is {}",
         out.display()
     );
     ("stale", Some((finding, fix)))
