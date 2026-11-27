@@ -1919,7 +1919,7 @@ unhealthy — 7 red · 1 finding(s)
         // (case, tick.log, a live lock, launchctl loaded, kern.waketime) → exit, the plain report,
         // the JSON tick
         let old = format!("{}\n2026-08-14T08:00:00Z run x\n", "x".repeat(70_000)); // the tail only
-        let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due — its output is <h>/.state/due.log";
+        let kick = "routine upgrade, which restarts gui/$UID/dev.gigantic.routines.due past its launch constraint — its output is <h>/.state/due.log";
         let cases = [
         ("unloaded", None, String::new(), false, false, 1, "not-loaded: tick — gui/$UID/dev.gigantic.routines.due is not loaded\n  fix: routine setup\nunhealthy — 1 red\n".into(), r#""verdict":"not-loaded","swept":null,"finding":"gui/$UID/dev.gigantic.routines.due is not loaded","fix":"routine setup""#.to_owned()),
         ("silent", None, String::new(), false, true, 1, format!("stale: tick — tick.log has no line\n  fix: {kick}\nunhealthy — 1 red\n"), format!(r#""verdict":"stale","swept":null,"finding":"tick.log has no line","fix":"{kick}""#)),

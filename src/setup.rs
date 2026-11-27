@@ -154,7 +154,7 @@ pub fn setup(remove: bool) -> Result<(), String> {
 }
 
 /// routine's manifest: releases from jgeschwendt/routines under its packslip signer; the tick is
-/// the one agent to kickstart, and both that kick and setup's reload kill a tick in flight, so the
+/// the one agent to kick (restart), and both that kick and setup's reload kill a tick in flight, so the
 /// drain refuses while any routine holds its `lock/`; `routine status` proves the new binary reads
 /// the home.
 fn manifest() -> hotswap::Manifest {
