@@ -297,7 +297,9 @@ fn tick(
     );
     let out = states.join("due.log");
     let fix = format!(
-        "routine upgrade, which restarts {target} past its launch constraint — its output is {}",
+        "launchctl bootout {target}, wait until launchctl print {target} fails, then launchctl bootstrap {} ~/Library/LaunchAgents/{}.plist, which drops a launch constraint a kickstart keeps (routine upgrade is a no-op on a settled host) — its output is {}",
+        setup::gui(),
+        setup::TICK,
         out.display()
     );
     ("stale", Some((finding, fix)))
