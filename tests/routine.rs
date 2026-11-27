@@ -8,7 +8,7 @@
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "a failed unwrap fails the test")]
 mod tests {
-    use hotswap as _;
+    use hotswap::KICK;
     use std::{
         ffi::OsStr,
         fs::{self, Permissions},
@@ -286,7 +286,7 @@ two                  —                n/a    \n9    —                     3 
         drop(fs::remove_dir_all(&tmp));
         fs::create_dir_all(tmp.join("bin")).unwrap();
         let stub = format!(
-            "#!/bin/sh\np='{0}'; log=log\ncase \"$(ps -ww -o command= -p $PPID)\" in *bootout*) log=waiter.log;; esac\n\
+            "#!/bin/sh\np='{0}'; log=log\ncase \"$(ps -ww -o command= -p $PPID)\" in *\"state = running\"*) log=waiter.log;; esac\n\
          echo \"${{0##*/}} $*\" >> \"$p/$log\"\nl=${{2##*/}}\ncase \"${{0##*/}} $1\" in\n\
          'curl '*) printf 'https://github.com/jgeschwendt/routines/releases/tag/v%s' \"$(cat \"$p/tag\")\";;\n\
          'launchctl bootout') touch \"$p/booted.$l\";;\n\
@@ -440,7 +440,8 @@ two                  —                n/a    \n9    —                     3 
             format!("0\n{linked}current {due_shown}\n{probes}")
         );
         let latest = "curl -q -fsSIL -o /dev/null -w %{url_effective} https://github.com/jgeschwendt/routines/releases/latest\n";
-        let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
+        let kick =
+            format!("{print}due\nlaunchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n");
         // no record: the drain refuses while a routine holds its lock, then the swap goes green
         fs::create_dir_all(tmp.join("home/.state/a/lock")).unwrap();
         let drain = r#"/bin/sh -c set -- "$0"/*/lock; [ ! -e "$1" ] ~/home/.state"#;
@@ -515,6 +516,39 @@ two                  —                n/a    \n9    —                     3 
         assert_eq!(
             run(&["upgrade"], &[]),
             "2\nroutines: no version under ~/.local/share/hotswap/routines; run routine setup\n"
+        );
+    }
+
+    // An agent loaded at login carries a managed launch constraint, which only a bootout then a
+    // bootstrap drops: the swap's step reloads the tick from the plist path its print names, waits
+    // out the bootout, and never kickstarts.
+    #[test]
+    fn upgrade_reloads_a_managed_agent() {
+        let tmp = host("managed");
+        let layout = tmp.join(".local/share/hotswap/routines");
+        fs::create_dir_all(layout.join("1")).unwrap();
+        symlink(EXE, layout.join("1/routine")).unwrap();
+        symlink("1", layout.join("current")).unwrap();
+        let due_shown = "~/Library/LaunchAgents/dev.gigantic.routines.due.plist";
+        let print = "launchctl print gui/$UID/dev.gigantic.routines.";
+        let run = |args: &[&str]| launchd(&tmp, Path::new(EXE), args, &[]);
+        drop(run(&["setup"]));
+        let due = tmp.join("Library/LaunchAgents/dev.gigantic.routines.due.plist");
+        let out = format!(
+            "path = {}\nproperties = managed LWCR | has LWCR\n",
+            due.display()
+        );
+        fs::write(tmp.join("print.out"), out).unwrap();
+        fs::write(tmp.join("loaded"), "").unwrap();
+        let latest = "curl -q -fsSIL -o /dev/null -w %{url_effective} https://github.com/jgeschwendt/routines/releases/latest\n";
+        let old = "launchctl bootout gui/$UID/com.routines.due\n";
+        assert_eq!(
+            run(&["upgrade"]),
+            format!(
+                "0\nroutines 1: green, 1 smoke probes\n{latest}{old}{print}upgrade\n{print}due\n{print}due\n\
+                 launchctl print-disabled gui/$UID\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
+                 {print}due\nlaunchctl bootstrap gui/$UID {due_shown}\n"
+            )
         );
     }
 
@@ -658,7 +692,8 @@ two                  —                n/a    \n9    —                     3 
             "{old}{print}upgrade\n{print}due\nlaunchctl bootout gui/$UID/dev.gigantic.routines.due\n\
          launchctl bootstrap gui/$UID {due_shown}\n"
         );
-        let kick = "launchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n";
+        let kick =
+            format!("{print}due\nlaunchctl kickstart -k gui/$UID/dev.gigantic.routines.due\n");
 
         // green: the old release's setup step, through the shim, runs 2's setup
         on_mise();
@@ -706,8 +741,7 @@ two                  —                n/a    \n9    —                     3 
         assert_eq!(
             launchd(&tmp, &link, &["upgrade"], &[]),
             format!(
-                "1\nroutines: {} failed; rolled back to 1\n{latest}{moved}{kick}{pin}routine@1 setup\n{kick}routine@1 status\n",
-                kick.trim_end()
+                "1\nroutines: /bin/sh -c {KICK} dev.gigantic.routines.due gui/$UID failed; rolled back to 1\n{latest}{moved}{kick}{pin}routine@1 setup\n{kick}routine@1 status\n"
             )
         );
         assert_eq!(read(&tmp.join("active")), "1\n");
